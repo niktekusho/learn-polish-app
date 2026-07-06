@@ -5,5 +5,10 @@ description = "Polish morphology sidecar (FastAPI). Backlog #2 adds /analyze."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
+    "pl-core-news-sm",
+    "spacy>=3.7",
     "uvicorn[standard]>=0.32",
 ]
+
+[tool.uv.sources]
+pl-core-news-sm = { url = "https://github.com/explosion/spacy-models/releases/download/pl_core_news_sm-3.8.0/pl_core_news_sm-3.8.0-py3-none-any.whl" }

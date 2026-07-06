@@ -27,7 +27,7 @@ migration creates and reads a row.
 
 ---
 
-## #2 — Morphology sidecar: analyze Polish text
+## DONE - #2 — Morphology sidecar: analyze Polish text
 
 **Blocked by:** #1
 **Deliver:** the Python seam that turns raw text into lemmas.
