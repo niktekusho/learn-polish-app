@@ -9,10 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PracticeRouteImport } from './routes/practice'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReadTextIdRouteImport } from './routes/read.$textId'
 
+const PracticeRoute = PracticeRouteImport.update({
+  id: '/practice',
+  path: '/practice',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ImportRoute = ImportRouteImport.update({
   id: '/import',
   path: '/import',
@@ -32,35 +38,46 @@ const ReadTextIdRoute = ReadTextIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
+  '/practice': typeof PracticeRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
+  '/practice': typeof PracticeRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
+  '/practice': typeof PracticeRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/import' | '/read/$textId'
+  fullPaths: '/' | '/import' | '/practice' | '/read/$textId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/import' | '/read/$textId'
-  id: '__root__' | '/' | '/import' | '/read/$textId'
+  to: '/' | '/import' | '/practice' | '/read/$textId'
+  id: '__root__' | '/' | '/import' | '/practice' | '/read/$textId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ImportRoute: typeof ImportRoute
+  PracticeRoute: typeof PracticeRoute
   ReadTextIdRoute: typeof ReadTextIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/practice': {
+      id: '/practice'
+      path: '/practice'
+      fullPath: '/practice'
+      preLoaderRoute: typeof PracticeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/import': {
       id: '/import'
       path: '/import'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ImportRoute: ImportRoute,
+  PracticeRoute: PracticeRoute,
   ReadTextIdRoute: ReadTextIdRoute,
 }
 export const routeTree = rootRouteImport

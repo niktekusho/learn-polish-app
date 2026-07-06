@@ -30,12 +30,20 @@ function Home() {
     <div className="mx-auto max-w-2xl p-8">
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">Learn Polish</h1>
-        <Link
-          to="/import"
-          className="rounded bg-blue-600 px-4 py-2 font-medium text-white"
-        >
-          Import text
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            to="/practice"
+            className="rounded border border-gray-300 px-4 py-2 font-medium"
+          >
+            Practice
+          </Link>
+          <Link
+            to="/import"
+            className="rounded bg-blue-600 px-4 py-2 font-medium text-white"
+          >
+            Import text
+          </Link>
+        </div>
       </div>
 
       {texts.length === 0 ? (
