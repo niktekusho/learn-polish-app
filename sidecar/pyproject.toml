@@ -1,0 +1,9 @@
+[project]
+name = "learn-polish-sidecar"
+version = "0.1.0"
+description = "Polish morphology sidecar (FastAPI). Backlog #2 adds /analyze."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]

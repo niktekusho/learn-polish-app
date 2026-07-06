@@ -18,6 +18,39 @@ independently.
 - **FSRS** (`ts-fsrs`) for scheduling, **Wiktionary/kaikki** for the home dictionary, an LLM
   for Italian glosses, **Whisper** (JS) for speech.
 
+## Running locally
+
+Prereqs: Node 24+, [pnpm](https://pnpm.io), [uv](https://docs.astral.sh/uv/), Python 3.11+.
+
+```sh
+pnpm install            # JS deps (TanStack app, Drizzle, better-sqlite3)
+uv sync --project sidecar   # Python deps (FastAPI, uvicorn)
+pnpm dev                # starts app + sidecar together (concurrently)
+```
+
+- App: <http://localhost:3000> (TanStack Start, port 3000)
+- Sidecar: <http://localhost:8000> — `GET /health` → `{"status":"ok"}`
+
+Run them separately if you prefer: `pnpm dev:app` and `pnpm dev:sidecar`.
+
+### Database
+
+SQLite lives at `app/data/app.db` (gitignored, WAL). Schema is defined with Drizzle
+in [`app/src/db/schema.ts`](app/src/db/schema.ts); migrations are applied automatically on
+app startup.
+
+```sh
+pnpm db:generate   # generate a migration after editing the schema
+pnpm db:migrate    # apply migrations manually (also runs on app boot)
+```
+
+### Layout
+
+```
+app/       TanStack Start (React) + SQLite (Drizzle / better-sqlite3)
+sidecar/   Python FastAPI morphology service (uv-managed)
+```
+
 ## Documentation
 
 - [CONTEXT.md](./CONTEXT.md) — the project's shared vocabulary.
