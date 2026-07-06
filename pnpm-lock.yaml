@@ -56,6 +56,9 @@ importers:
       ts-fsrs:
         specifier: ^5.4.1
         version: 5.4.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
       '@tailwindcss/typography':
         specifier: ^0.5.16

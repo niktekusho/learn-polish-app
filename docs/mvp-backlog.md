@@ -64,7 +64,7 @@ grading writes a `review_log` row. Implements the model in [CONTEXT.md](../CONTE
 
 ---
 
-## #4 — Import + analyze pipeline (paste text)
+## DONE - #4 — Import + analyze pipeline (paste text)
 
 **Blocked by:** #2, #3
 **Deliver:** paste → stored, analyzed text.
