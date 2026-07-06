@@ -134,7 +134,7 @@ with a future due date; batch-mark clears all visible unknowns at once.
 
 ---
 
-## #8 — FSRS integration (`ts-fsrs`)
+## DONE - #8 — FSRS integration (`ts-fsrs`)
 
 **Blocked by:** #3
 **Deliver:** the scheduling brain.

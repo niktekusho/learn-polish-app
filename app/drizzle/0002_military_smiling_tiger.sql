@@ -1,0 +1,1 @@
+ALTER TABLE `knowledge` ADD `learning_steps` integer DEFAULT 0 NOT NULL;

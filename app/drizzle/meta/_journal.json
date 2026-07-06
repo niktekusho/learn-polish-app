@@ -15,6 +15,13 @@
       "when": 1783376481950,
       "tag": "0001_low_loners",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1783376627316,
+      "tag": "0002_military_smiling_tiger",
+      "breakpoints": true
     }
   ]
 }

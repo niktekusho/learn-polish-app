@@ -96,6 +96,7 @@ export const knowledge = sqliteTable(
     lapses: integer('lapses').notNull().default(0),
     elapsedDays: integer('elapsed_days').notNull().default(0),
     scheduledDays: integer('scheduled_days').notNull().default(0),
+    learningSteps: integer('learning_steps').notNull().default(0),
   },
   (t) => [
     uniqueIndex('knowledge_lemma_track_uq').on(t.lemmaId, t.track),
