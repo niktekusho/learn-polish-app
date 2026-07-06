@@ -1,11 +1,10 @@
 import { createServerFn } from '@tanstack/react-start'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
-import type { ReaderToken } from './types'
+import type { KnowledgeFlags, ReaderToken } from './types'
 
 // Server-only: resolve (and cache) the Italian gloss for a lemma. The reader
-// always has a sentence, so this path may generate; cache-only callers (#10)
-// go through getGloss with an empty sentence instead.
+// always has a sentence, so this path may generate.
 const lookupGloss = createServerFn({ method: 'POST' })
   .validator((d: unknown) =>
     z
@@ -23,19 +22,47 @@ const lookupGloss = createServerFn({ method: 'POST' })
     return getGloss(db, data)
   })
 
-// Word detail panel: surface, lemma, POS, the cached Italian gloss, and a
-// Wiktionary link (#6).
+// Server-only: grade the receptive track, return the server's fresh verdict.
+const markLemma = createServerFn({ method: 'POST' })
+  .validator((d: unknown) =>
+    z
+      .object({
+        lemmaId: z.number().int(),
+        rating: z.number().int().min(1).max(4),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }): Promise<KnowledgeFlags> => {
+    const { db } = await import('#/db/index')
+    const { gradeLemma } = await import('#/fsrs/index')
+    const { knowledgeFlags } = await import('#/reader/knowledge')
+    const next = gradeLemma(
+      db,
+      data.lemmaId,
+      'receptive',
+      data.rating as 1 | 2 | 3 | 4,
+    )
+    return knowledgeFlags(next.state)
+  })
+
+// ts-fsrs Rating values used by the two learner actions.
+const RATING_KNOWN = 4 // Easy: long interval, marks the word learned
+const RATING_LEARNING = 1 // Again: short interval, keep it in rotation
+
 export function WordPanel({
   token,
   sentence,
+  onGraded,
   onClose,
 }: {
   token: ReaderToken
   sentence: string
+  onGraded: (lemmaId: number, flags: KnowledgeFlags) => void
   onClose: () => void
 }) {
   const [gloss, setGloss] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [marking, setMarking] = useState(false)
 
   useEffect(() => {
     if (token.lemmaId == null || token.lemma == null) return
@@ -57,6 +84,18 @@ export function WordPanel({
       alive = false
     }
   }, [token.lemmaId, token.lemma, token.pos, sentence])
+
+  async function mark(rating: number) {
+    if (token.lemmaId == null) return
+    setMarking(true)
+    try {
+      const flags = await markLemma({ data: { lemmaId: token.lemmaId, rating } })
+      onGraded(token.lemmaId, flags)
+      if (flags.known) onClose()
+    } finally {
+      setMarking(false)
+    }
+  }
 
   const wiktionary = token.lemma
     ? `https://en.wiktionary.org/wiki/${encodeURIComponent(token.lemma)}#Polish`
@@ -90,6 +129,25 @@ export function WordPanel({
           </dd>
         </div>
       </dl>
+
+      <div className="mt-6 flex gap-2">
+        <button
+          type="button"
+          disabled={marking}
+          onClick={() => mark(RATING_KNOWN)}
+          className="rounded bg-green-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+        >
+          Mark known
+        </button>
+        <button
+          type="button"
+          disabled={marking}
+          onClick={() => mark(RATING_LEARNING)}
+          className="rounded border border-gray-300 px-3 py-1.5 text-sm disabled:opacity-50"
+        >
+          Still learning
+        </button>
+      </div>
 
       {wiktionary && (
         <a

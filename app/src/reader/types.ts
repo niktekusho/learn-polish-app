@@ -1,7 +1,7 @@
 // One rendered token in the reader. Word tokens have a lemma; layout and
-// punctuation tokens have lemmaId === null. `known` is the server-decided
-// receptive-knowledge verdict (see reader/knowledge.ts) — the UI highlights on
-// this boolean, never on a raw FSRS state enum.
+// punctuation tokens have lemmaId === null. `known` / `stillLearning` are the
+// server-decided receptive-knowledge verdicts (see reader/knowledge.ts) — the
+// UI renders on these booleans, never on a raw FSRS state enum.
 export interface ReaderToken {
   surface: string
   isSpace: boolean
@@ -11,4 +11,11 @@ export interface ReaderToken {
   lemma: string | null
   pos: string | null
   known: boolean
+  stillLearning: boolean
+}
+
+// The server's verdict after grading a lemma, used to update highlights live.
+export interface KnowledgeFlags {
+  known: boolean
+  stillLearning: boolean
 }

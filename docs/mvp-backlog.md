@@ -117,7 +117,7 @@ import + top-5k seeding parked).
 
 ---
 
-## #7 — Mark known / batch-mark → FSRS receptive
+## DONE - #7 — Mark known / batch-mark → FSRS receptive
 
 **Blocked by:** #5, #8
 **Deliver:** knowledge input from reading.
