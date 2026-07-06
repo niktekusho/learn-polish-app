@@ -93,7 +93,7 @@ known words are not highlighted.
 
 ---
 
-## #6 — Word panel: Italian gloss (LLM, cached) + Wiktionary link
+## DONE - #6 — Word panel: Italian gloss (LLM, cached) + Wiktionary link
 
 **Blocked by:** #5, #3
 **Deliver:** meaning on demand.

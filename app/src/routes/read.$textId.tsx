@@ -95,7 +95,14 @@ function Reader() {
       </article>
 
       {selected && (
-        <WordPanel token={selected} onClose={() => setSelected(null)} />
+        <WordPanel
+          token={selected}
+          sentence={tokens
+            .filter((t) => t.sentenceIndex === selected.sentenceIndex)
+            .map((t) => t.surface)
+            .join('')}
+          onClose={() => setSelected(null)}
+        />
       )}
     </div>
   )
