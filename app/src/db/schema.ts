@@ -8,16 +8,6 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/sqlite-core'
 
-// ponytail: kept one more issue so the scaffold home route (#1) stays green.
-// The reader (#5) replaces that route and this table gets dropped there.
-export const scaffoldCheck = sqliteTable('scaffold_check', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  note: text('note').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' })
-    .notNull()
-    .$defaultFn(() => new Date()),
-})
-
 // ---------------------------------------------------------------------------
 // Vocab store (backlog #3). Model per CONTEXT.md:
 //   surface form -> token, lemma = tracked unit, knowledge = per-track FSRS,

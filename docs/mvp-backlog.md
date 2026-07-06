@@ -79,7 +79,7 @@ appear in the store each with a `knowledge` row.
 
 ---
 
-## #5 — Reader UI: render text, highlight unknown lemmas
+## DONE - #5 — Reader UI: render text, highlight unknown lemmas
 
 **Blocked by:** #4
 **Deliver:** the reading surface.
