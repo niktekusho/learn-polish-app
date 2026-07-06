@@ -42,7 +42,7 @@ with correct POS. See [ADR-0001](./adr/0001-typescript-app-with-python-morpholog
 
 ---
 
-## #3 — DB schema: texts, tokens, lemmas, knowledge, glosses
+## DONE - #3 — DB schema: texts, tokens, lemmas, knowledge, glosses
 
 **Blocked by:** #1
 **Deliver:** the vocab store shape.
@@ -51,10 +51,16 @@ with correct POS. See [ADR-0001](./adr/0001-typescript-app-with-python-morpholog
   `lemma` (base form, POS), `knowledge` (per-lemma FSRS state, **receptive** and
   **productive** tracks), `gloss` (lemma/sense → Italian, cached).
 - FSRS fields on `knowledge` per track: stability, difficulty, due, last_review, state.
+- `review_log`: append-only history of every grade (lemma, track, rating, state
+  before/after, reviewed_at). Required from day 1 — FSRS parameter optimization needs the
+  full review history and it cannot be reconstructed later.
+- `gloss.provider` (or `source`) column: which provider produced the gloss (stub, ollama,
+  api). Without it, stub glosses cached during development are indistinguishable from real
+  ones and can never be purged.
 - Indexes for "due lemmas" query and "lemma by surface form" lookup.
 
-**Acceptance:** schema migrates clean; can insert a lemma with two independent track states.
-Implements the model in [CONTEXT.md](../CONTEXT.md).
+**Acceptance:** schema migrates clean; can insert a lemma with two independent track states;
+grading writes a `review_log` row. Implements the model in [CONTEXT.md](../CONTEXT.md).
 
 ---
 
@@ -94,6 +100,12 @@ known words are not highlighted.
 
 - On first lookup of a lemma, generate an Italian **gloss** via LLM using the sentence as
   context; cache in `gloss`. Subsequent lookups read cache (no LLM call).
+- Sentence context is **mandatory** for generation: never generate-and-cache a gloss with
+  empty context (a context-free gloss written to the cache becomes *the* gloss for that
+  lemma forever, defeating the disambiguation design). Callers without a sentence read the
+  cache only.
+- Cache rows record their provider (see #3) so stub output can be found and purged when a
+  real provider lands.
 - Panel shows: surface form, lemma, POS, Italian gloss, external link
   `https://en.wiktionary.org/wiki/{lemma}#Polish` (Diki link optional).
 - LLM provider behind a small interface (local Ollama or API — swappable).
@@ -112,7 +124,10 @@ import + top-5k seeding parked).
 
 - Word panel: "mark known" and "still learning" actions → update receptive FSRS state.
 - Batch action in reader: "mark all visible unknowns as known" to burn trivial words.
-- Marking updates highlight state live.
+  **Excludes** lemmas the user explicitly marked "still learning" (state Learning /
+  Relearning) — the batch must not overwrite an explicit judgment with Easy.
+- Marking updates highlight state live. Whether a word counts as "known" is decided
+  server-side (one rule), not by comparing raw FSRS state enums in the UI.
 
 **Acceptance:** marking a word known removes its highlight and sets a receptive FSRS state
 with a future due date; batch-mark clears all visible unknowns at once.
@@ -126,11 +141,17 @@ with a future due date; batch-mark clears all visible unknowns at once.
 
 - Wrap `ts-fsrs`: given a `knowledge` track state + a rating, return the next state (stability,
   difficulty, due).
-- "Due lemmas" query: fetch lemmas whose receptive (or productive) track is due, weakest first.
-- Grade→update helper both #7 and #10 call.
+- "Due lemmas" query: fetch lemmas whose receptive (or productive) track is due, weakest first —
+  **but new-card introduction is gated**. Import makes every lemma due immediately with
+  stability 0, so a naive weakest-first order lets one pasted article bury genuine reviews
+  indefinitely. Rule: actual reviews (state ≠ New) come first, then at most a capped number
+  of New cards per session (e.g. 10).
+- Grade→update helper both #7 and #10 call. Every grade appends a `review_log` row (#3) in
+  the same transaction as the state update.
 
-**Acceptance:** rating a lemma advances its FSRS state deterministically; the due-query returns
-lemmas ordered by urgency. Implements the FSRS model in
+**Acceptance:** rating a lemma advances its FSRS state deterministically and logs the review;
+the due-query returns due reviews before New cards and never returns more than the New-card
+cap. Implements the FSRS model in
 [ADR-0003](./adr/0003-srs-driven-sessions-with-exercise-plugins.md).
 
 ---
@@ -144,10 +165,15 @@ lemmas ordered by urgency. Implements the FSRS model in
   `modality`) as shared types.
 - Implement **recognition-MCQ**: prompt = Polish lemma; choices = its Italian gloss + 3
   distractor glosses from other lemmas; trains the **receptive** track.
-- `grade` maps correct/incorrect → an FSRS rating.
+- `grade` maps correct/incorrect → an FSRS rating, and runs **server-side against a
+  server-held item**: the client submits only its choice (by item id), never the item or
+  `correctIndex` back. The contract must not require round-tripping grade material through
+  the client — the next exercise will copy whatever shape this one sets.
+- Server functions validate their input (real validators, not identity passthroughs).
 
 **Acceptance:** given a due lemma with a cached gloss, the exercise generates a 4-choice item
-with exactly one correct answer; grading a response returns a valid FSRS rating.
+with exactly one correct answer; grading a response returns a valid FSRS rating; the payload
+sent to the client contains no correct-answer marker.
 
 ---
 
@@ -156,15 +182,31 @@ with exactly one correct answer; grading a response returns a valid FSRS rating.
 **Blocked by:** #8, #9
 **Deliver:** the daily loop, end to end.
 
-- "Practice" screen: scheduler pulls due lemmas (weakest track first), renders each through an
-  applicable exercise (only recognition-MCQ exists yet), collects the response, grades via #8.
+- "Practice" screen: scheduler pulls due lemmas (reviews first, capped New cards — #8),
+  renders each through an applicable exercise (only recognition-MCQ exists yet), collects the
+  response, grades via #8.
+- Session is built once and held server-side (id → items): a page reload/refocus resumes it
+  instead of re-running the scheduler mid-session; grading an item twice is rejected.
+- **No gloss generation inside session build.** Practice has no sentence context (#6 rule);
+  lemmas without a cached gloss are skipped — glosses come from reading. No LLM calls in a
+  route loader.
 - Session ends when the due queue is exhausted or a cap is hit; show a brief summary.
 
 **Acceptance:** starting Practice presents due lemmas as MCQ items one by one; answering
-updates each lemma's FSRS state; finishing shows how many were reviewed. This closes the
-tracer bullet. Implements [ADR-0003](./adr/0003-srs-driven-sessions-with-exercise-plugins.md).
+updates each lemma's FSRS state exactly once per item; a session makes zero LLM calls;
+finishing shows how many were reviewed. This closes the tracer bullet. Implements
+[ADR-0003](./adr/0003-srs-driven-sessions-with-exercise-plugins.md).
 
 ---
+
+### Nits from design review (fold into whichever issue touches the file)
+
+- DB path is `process.cwd()`-relative — starting the server from repo root vs `app/`
+  silently creates two databases. Make it absolute or env-configured.
+- `gradeLemma`'s read-then-write should run in one transaction; batch-mark should be one
+  transaction, not N.
+- CONTEXT.md's "tracked unit = lemma + surface forms encountered" is only derivable by
+  scanning `token` — fine for MVP, but the gap is deliberate; note it, don't model it yet.
 
 ### Suggested grab order
 

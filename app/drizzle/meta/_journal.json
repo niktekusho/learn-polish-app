@@ -8,6 +8,13 @@
       "when": 1783338259343,
       "tag": "0000_aspiring_speed",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1783376481950,
+      "tag": "0001_low_loners",
+      "breakpoints": true
     }
   ]
 }
