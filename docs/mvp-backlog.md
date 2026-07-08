@@ -42,7 +42,7 @@ with correct POS. See [ADR-0001](./adr/0001-typescript-app-with-python-morpholog
 
 ---
 
-## #3 — DB schema: texts, tokens, lemmas, knowledge, glosses
+## DONE - #3 — DB schema: texts, tokens, lemmas, knowledge, glosses
 
 **Blocked by:** #1
 **Deliver:** the vocab store shape.
