@@ -1,32 +1,67 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { count } from 'drizzle-orm'
 
-// Server-only: proves the migrated SQLite DB round-trips (insert + read a row).
-const dbPing = createServerFn().handler(async () => {
+// List imported texts, newest first, with their token counts.
+const listTexts = createServerFn().handler(async () => {
   const { db, schema } = await import('#/db/index')
-  await db.insert(schema.scaffoldCheck).values({ note: 'scaffold ping' })
-  const [{ rows }] = await db
-    .select({ rows: count() })
-    .from(schema.scaffoldCheck)
-  return { rows }
+  const { count, desc, eq } = await import('drizzle-orm')
+  return db
+    .select({
+      id: schema.sourceText.id,
+      title: schema.sourceText.title,
+      createdAt: schema.sourceText.createdAt,
+      tokens: count(schema.token.id),
+    })
+    .from(schema.sourceText)
+    .leftJoin(schema.token, eq(schema.token.textId, schema.sourceText.id))
+    .groupBy(schema.sourceText.id)
+    .orderBy(desc(schema.sourceText.createdAt))
+    .all()
 })
 
 export const Route = createFileRoute('/')({
   component: Home,
-  loader: () => dbPing(),
+  loader: () => listTexts(),
 })
 
 function Home() {
-  const { rows } = Route.useLoaderData()
+  const texts = Route.useLoaderData()
   return (
-    <div className="p-8">
-      <h1 className="text-4xl font-bold">Learn Polish</h1>
-      <p className="mt-4 text-lg">Repo scaffold is live.</p>
-      <p className="mt-2 text-sm text-gray-600">
-        SQLite round-trip OK — <code>scaffold_check</code> now holds {rows}{' '}
-        row(s).
-      </p>
+    <div className="mx-auto max-w-2xl p-8">
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Learn Polish</h1>
+        <Link
+          to="/import"
+          className="rounded bg-blue-600 px-4 py-2 font-medium text-white"
+        >
+          Import text
+        </Link>
+      </div>
+
+      {texts.length === 0 ? (
+        <p className="mt-8 text-gray-600">
+          No texts yet.{' '}
+          <Link to="/import" className="text-blue-600 underline">
+            Import one
+          </Link>{' '}
+          to start reading.
+        </p>
+      ) : (
+        <ul className="mt-8 divide-y divide-gray-200">
+          {texts.map((t) => (
+            <li key={t.id}>
+              <Link
+                to="/read/$textId"
+                params={{ textId: String(t.id) }}
+                className="flex items-center justify-between py-3 hover:bg-gray-50"
+              >
+                <span className="font-medium">{t.title || `Text #${t.id}`}</span>
+                <span className="text-sm text-gray-500">{t.tokens} tokens</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
 }
