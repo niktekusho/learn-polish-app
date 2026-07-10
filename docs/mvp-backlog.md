@@ -177,7 +177,7 @@ sent to the client contains no correct-answer marker.
 
 ---
 
-## #10 — Practice queue (SRS-driven session)
+## DONE - #10 — Practice queue (SRS-driven session)
 
 **Blocked by:** #8, #9
 **Deliver:** the daily loop, end to end.
