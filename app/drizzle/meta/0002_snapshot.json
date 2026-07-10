@@ -1,8 +1,8 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fc7d6b79-0b93-4e11-83e4-0a98afd5dd66",
-  "prevId": "a71761ae-cb18-449f-ba47-f55c97c02d2c",
+  "id": "d7bbd851-3d92-442d-841d-a3a64897f539",
+  "prevId": "619168d1-7609-432f-a8ae-f5ad8f566aa9",
   "tables": {
     "gloss": {
       "name": "gloss",
@@ -55,7 +55,10 @@
       "indexes": {
         "gloss_lemma_sense_uq": {
           "name": "gloss_lemma_sense_uq",
-          "columns": ["lemma_id", "sense"],
+          "columns": [
+            "lemma_id",
+            "sense"
+          ],
           "isUnique": true
         }
       },
@@ -64,8 +67,12 @@
           "name": "gloss_lemma_id_lemma_id_fk",
           "tableFrom": "gloss",
           "tableTo": "lemma",
-          "columnsFrom": ["lemma_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "lemma_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -167,17 +174,31 @@
           "notNull": true,
           "autoincrement": false,
           "default": 0
+        },
+        "learning_steps": {
+          "name": "learning_steps",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         }
       },
       "indexes": {
         "knowledge_lemma_track_uq": {
           "name": "knowledge_lemma_track_uq",
-          "columns": ["lemma_id", "track"],
+          "columns": [
+            "lemma_id",
+            "track"
+          ],
           "isUnique": true
         },
         "knowledge_track_due_idx": {
           "name": "knowledge_track_due_idx",
-          "columns": ["track", "due"],
+          "columns": [
+            "track",
+            "due"
+          ],
           "isUnique": false
         }
       },
@@ -186,8 +207,12 @@
           "name": "knowledge_lemma_id_lemma_id_fk",
           "tableFrom": "knowledge",
           "tableTo": "lemma",
-          "columnsFrom": ["lemma_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "lemma_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -224,12 +249,17 @@
       "indexes": {
         "lemma_lemma_pos_uq": {
           "name": "lemma_lemma_pos_uq",
-          "columns": ["lemma", "pos"],
+          "columns": [
+            "lemma",
+            "pos"
+          ],
           "isUnique": true
         },
         "lemma_lemma_idx": {
           "name": "lemma_lemma_idx",
-          "columns": ["lemma"],
+          "columns": [
+            "lemma"
+          ],
           "isUnique": false
         }
       },
@@ -294,12 +324,17 @@
       "indexes": {
         "review_log_lemma_idx": {
           "name": "review_log_lemma_idx",
-          "columns": ["lemma_id", "track"],
+          "columns": [
+            "lemma_id",
+            "track"
+          ],
           "isUnique": false
         },
         "review_log_reviewed_idx": {
           "name": "review_log_reviewed_idx",
-          "columns": ["reviewed_at"],
+          "columns": [
+            "reviewed_at"
+          ],
           "isUnique": false
         }
       },
@@ -308,8 +343,12 @@
           "name": "review_log_lemma_id_lemma_id_fk",
           "tableFrom": "review_log",
           "tableTo": "lemma",
-          "columnsFrom": ["lemma_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "lemma_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -444,17 +483,24 @@
       "indexes": {
         "token_text_idx": {
           "name": "token_text_idx",
-          "columns": ["text_id", "position"],
+          "columns": [
+            "text_id",
+            "position"
+          ],
           "isUnique": false
         },
         "token_lemma_idx": {
           "name": "token_lemma_idx",
-          "columns": ["lemma_id"],
+          "columns": [
+            "lemma_id"
+          ],
           "isUnique": false
         },
         "token_surface_idx": {
           "name": "token_surface_idx",
-          "columns": ["surface"],
+          "columns": [
+            "surface"
+          ],
           "isUnique": false
         }
       },
@@ -463,8 +509,12 @@
           "name": "token_text_id_source_text_id_fk",
           "tableFrom": "token",
           "tableTo": "source_text",
-          "columnsFrom": ["text_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "text_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -472,8 +522,12 @@
           "name": "token_lemma_id_lemma_id_fk",
           "tableFrom": "token",
           "tableTo": "lemma",
-          "columnsFrom": ["lemma_id"],
-          "columnsTo": ["id"],
+          "columnsFrom": [
+            "lemma_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
           "onDelete": "no action",
           "onUpdate": "no action"
         }

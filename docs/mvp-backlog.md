@@ -64,7 +64,7 @@ grading writes a `review_log` row. Implements the model in [CONTEXT.md](../CONTE
 
 ---
 
-## #4 — Import + analyze pipeline (paste text)
+## DONE - #4 — Import + analyze pipeline (paste text)
 
 **Blocked by:** #2, #3
 **Deliver:** paste → stored, analyzed text.
@@ -134,7 +134,7 @@ with a future due date; batch-mark clears all visible unknowns at once.
 
 ---
 
-## #8 — FSRS integration (`ts-fsrs`)
+## DONE - #8 — FSRS integration (`ts-fsrs`)
 
 **Blocked by:** #3
 **Deliver:** the scheduling brain.
