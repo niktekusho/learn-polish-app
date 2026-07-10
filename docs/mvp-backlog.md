@@ -117,7 +117,7 @@ import + top-5k seeding parked).
 
 ---
 
-## #7 — Mark known / batch-mark → FSRS receptive
+## DONE - #7 — Mark known / batch-mark → FSRS receptive
 
 **Blocked by:** #5, #8
 **Deliver:** knowledge input from reading.
@@ -156,7 +156,7 @@ cap. Implements the FSRS model in
 
 ---
 
-## #9 — Exercise plugin contract + recognition-MCQ exercise
+## DONE - #9 — Exercise plugin contract + recognition-MCQ exercise
 
 **Blocked by:** #3, #6
 **Deliver:** the first exercise behind the extensible contract.
