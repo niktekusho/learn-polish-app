@@ -79,6 +79,12 @@ The **Exercise** of reading a displayed Polish sentence out loud. Trains pronunc
 decoding; grades **Receptive knowledge** only.
 _Avoid_: speaking exercise
 
+**Comprehension check**:
+A question about a text the learner just read, answered to verify understanding of the
+text itself. Part of the reading flow, NOT an **Exercise**: it is tied to a text rather
+than to lemmas, is not scheduled by SRS, and does not grade any **Knowledge state**.
+_Avoid_: quiz, comprehension exercise
+
 **Focused drill**:
 A secondary mode where the learner explicitly picks one **Exercise** type to grind (e.g.
 genitive), instead of the mixed **Practice** queue.

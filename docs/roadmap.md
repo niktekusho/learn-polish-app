@@ -45,6 +45,34 @@ Sidecar gains a **Piper** TTS endpoint with audio caching (ADR-0004). Exercise: 
 Polish word/sentence, type or choose what was heard. Grades receptive. First audio-input
 training in the app — the listening half of the comprehension goal.
 
+## Comprehension checks (designed 2026-07-12, not yet scheduled)
+
+**Comprehension check** (term in [CONTEXT.md](../CONTEXT.md)): questions about a text,
+answered after reading to verify understanding. NOT an Exercise — no FSRS write, no
+scheduler involvement. Decisions:
+
+- End-of-text explicit trigger (button) — also the app's first "I read this" signal.
+- Italian MCQ, 3–4 choices; isolates text comprehension from question comprehension at
+  sub-A1. Free text rejected (needs LLM grading); true/false rejected (guessable).
+- LLM-generated lazily on first check click, cached in DB — mirrors the lazy-gloss
+  decision, same escape hatch (move to import-time batch if the wait hurts).
+- 1–10 questions per text, count proportional to text length, LLM picks within range
+  (tiny paste ≈ 1–2, long text caps at 10). Not configurable.
+- Cached questions are **disposable derived data** — no manual tier (unlike glosses),
+  safe to regenerate or delete. Language switch later = regenerate; if variants ever
+  coexist, cache key becomes (text, language, difficulty) via migration.
+- Learner **responses** NOT persisted (the **answer key** is — it's part of the cached
+  question; grading compares the clicked choice against it in-session). "4/5" toast, then
+  forgotten. Stats slice can add a results table later if it wants comprehension history.
+- Bad questions (wrong key, ambiguous distractors): recourse = per-text regenerate
+  button, nukes cache. No per-question editing — throwaway data, not gloss-tier.
+
+Future notes (explicitly wanted, not v1):
+
+- **Polish questions** — once vocab grows, asking in Polish doubles as reading practice.
+- **Difficulty selector** — depending on the text, let the learner pick question
+  difficulty before generation.
+
 ---
 
 ## Parked (revisit only on dogfooding signal)
@@ -71,5 +99,13 @@ training in the app — the listening half of the comprehension goal.
   rule; superseded by pre-gloss-on-import if glossing latency ever hurts.
 - **Frequency-onboarding UI** — effectively dead: at sub-A1 vocabulary there is nothing
   to batch-mark as known.
+- **Per-sense glosses (context-dependent meanings)** — dogfooding signal confirmed
+  (2026-07-12): *przedmiot* cached as "oggetto" but means "materia (scolastica)" in a
+  school text; first-encountered sense wins forever (see ADR-0002 amendment). **Blocked
+  by kaikki import** — the sense inventory comes from Wiktionary senses; building
+  LLM-derived senses without it was considered and rejected. Interim decision: live with
+  first-sense-wins (regenerate/manual edit if a gloss bothers), no interim mitigation.
+  Schema is ready (`gloss.sense` column + unique index already exist).
 - **Word-sense disambiguation, accent scoring (tier-3), IPA exercises, native audio
-  (v2)** — unchanged, still parked.
+  (v2)** — unchanged, still parked. (WSD = auto-picking the right sense per occurrence;
+  a later layer on top of per-sense glosses above.)
