@@ -42,11 +42,23 @@ export async function getGloss(
   const sentence = input.sentence.trim()
   if (!sentence) return { italian: null, cached: false } // read-only, no context
 
-  const italian = await provider.gloss({
-    lemma: input.lemma,
-    pos: input.pos,
-    sentence,
-  })
+  let italian: string
+  try {
+    italian = await provider.gloss({
+      lemma: input.lemma,
+      pos: input.pos,
+      sentence,
+    })
+  } catch (err) {
+    // Log server-side (the pnpm dev terminal) — the error otherwise only
+    // surfaces as the panel's generic "failed" state, hiding the real cause
+    // (e.g. `claude exited 1: 401 Invalid authentication credentials`).
+    console.error(
+      `[gloss] provider "${provider.name}" failed for lemma "${input.lemma}" (id ${input.lemmaId}):`,
+      err,
+    )
+    throw err
+  }
   db.insert(gloss)
     .values({
       lemmaId: input.lemmaId,
