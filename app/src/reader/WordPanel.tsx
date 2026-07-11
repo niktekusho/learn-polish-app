@@ -22,6 +22,37 @@ const lookupGloss = createServerFn({ method: 'POST' })
     return getGloss(db, data)
   })
 
+// Server-only: discard the cached gloss and generate a fresh one from context.
+const regenerateGlossFn = createServerFn({ method: 'POST' })
+  .validator((d: unknown) =>
+    z
+      .object({
+        lemmaId: z.number().int(),
+        lemma: z.string(),
+        pos: z.string(),
+        sentence: z.string().min(1),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { db } = await import('#/db/index')
+    const { regenerateGloss } = await import('#/gloss/service')
+    return regenerateGloss(db, data)
+  })
+
+// Server-only: save a learner-written gloss (provider 'manual').
+const saveGlossFn = createServerFn({ method: 'POST' })
+  .validator((d: unknown) =>
+    z
+      .object({ lemmaId: z.number().int(), italian: z.string().trim().min(1) })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { db } = await import('#/db/index')
+    const { setManualGloss } = await import('#/gloss/service')
+    return { italian: setManualGloss(db, data.lemmaId, data.italian) }
+  })
+
 // Server-only: grade the receptive track, return the server's fresh verdict.
 const markLemma = createServerFn({ method: 'POST' })
   .validator((d: unknown) =>
@@ -64,6 +95,9 @@ export function WordPanel({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [marking, setMarking] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false) // save/regenerate in flight
 
   // In the reader the sentence is always present, so lookupGloss either resolves
   // with a gloss or rejects (provider/CLI failure) — a rejection is a real error,
@@ -91,6 +125,41 @@ export function WordPanel({
   }, [token.lemmaId, token.lemma, token.pos, sentence])
 
   useEffect(() => runLookup(), [runLookup])
+
+  async function regenerate() {
+    if (token.lemmaId == null || token.lemma == null) return
+    setBusy(true)
+    setError(false)
+    try {
+      const r = await regenerateGlossFn({
+        data: {
+          lemmaId: token.lemmaId,
+          lemma: token.lemma,
+          pos: token.pos ?? '',
+          sentence,
+        },
+      })
+      setGloss(r.italian)
+    } catch {
+      setError(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveGloss() {
+    if (token.lemmaId == null || !draft.trim()) return
+    setBusy(true)
+    try {
+      const r = await saveGlossFn({
+        data: { lemmaId: token.lemmaId, italian: draft },
+      })
+      setGloss(r.italian)
+      setEditing(false)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   async function mark(rating: number) {
     if (token.lemmaId == null) return
@@ -132,7 +201,7 @@ export function WordPanel({
         <div>
           <dt className="text-gray-500">Italiano</dt>
           <dd className="font-medium">
-            {loading ? (
+            {loading || busy ? (
               <span className="text-gray-400">…</span>
             ) : error ? (
               <span className="text-red-600">
@@ -145,8 +214,62 @@ export function WordPanel({
                   Riprova
                 </button>
               </span>
+            ) : editing ? (
+              <div className="flex flex-col gap-2">
+                <input
+                  type="text"
+                  value={draft}
+                  autoFocus
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') saveGloss()
+                    if (e.key === 'Escape') setEditing(false)
+                  }}
+                  className="rounded border border-gray-300 px-2 py-1 text-sm"
+                />
+                <div className="flex gap-3 text-sm">
+                  <button
+                    type="button"
+                    onClick={saveGloss}
+                    disabled={!draft.trim()}
+                    className="text-blue-600 underline disabled:opacity-50"
+                  >
+                    Salva
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditing(false)}
+                    className="text-gray-500 underline"
+                  >
+                    Annulla
+                  </button>
+                </div>
+              </div>
             ) : (
-              (gloss ?? '—')
+              <div className="flex items-center justify-between gap-2">
+                <span>{gloss ?? '—'}</span>
+                {token.lemmaId != null && (
+                  <span className="flex gap-2 text-xs text-gray-400">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraft(gloss ?? '')
+                        setEditing(true)
+                      }}
+                      className="underline hover:text-gray-700"
+                    >
+                      Modifica
+                    </button>
+                    <button
+                      type="button"
+                      onClick={regenerate}
+                      className="underline hover:text-gray-700"
+                    >
+                      Rigenera
+                    </button>
+                  </span>
+                )}
+              </div>
             )}
           </dd>
         </div>

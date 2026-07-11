@@ -2,7 +2,12 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
-import type { GlossProvider, GlossRequest, ProviderName } from './provider'
+import {
+  buildGlossPrompt,
+  type GlossProvider,
+  type GlossRequest,
+  type ProviderName,
+} from './provider'
 
 // Real Italian gloss via the `codex` CLI already on PATH. Codex exec can print
 // progress/log output, so the final assistant message is captured with
@@ -10,15 +15,6 @@ import type { GlossProvider, GlossRequest, ProviderName } from './provider'
 
 const TIMEOUT_MS = 60_000
 const MAX_GLOSS_LEN = 60
-
-function buildPrompt(req: GlossRequest): string {
-  return (
-    'Sei un dizionario polacco-italiano. Rispondi SOLO con una glossa ' +
-    'italiana breve (1-4 parole) per il lemma, nel senso usato nella frase. ' +
-    'Nessuna spiegazione, nessuna punteggiatura finale.\n\n' +
-    `Lemma: ${req.lemma}\nPOS: ${req.pos}\nFrase: ${req.sentence}`
-  )
-}
 
 async function runCodex(prompt: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'learn-polish-codex-'))
@@ -70,6 +66,6 @@ export class CodexCliGlossProvider implements GlossProvider {
   constructor(private readonly exec: (prompt: string) => Promise<string> = runCodex) {}
 
   async gloss(req: GlossRequest): Promise<string> {
-    return parseGloss(await this.exec(buildPrompt(req)))
+    return parseGloss(await this.exec(buildGlossPrompt(req)))
   }
 }

@@ -77,3 +77,36 @@ export async function getGloss(
     .all()
   return { italian: row.italian, cached: false }
 }
+
+/**
+ * Overwrite the default-sense gloss for a lemma with a learner-written value.
+ * Recorded as provider 'manual' — the highest-trust tier, which purge and
+ * regenerate never touch. Trims and rejects empty input.
+ */
+export function setManualGloss(db: DB, lemmaId: number, italian: string): string {
+  const value = italian.trim()
+  if (!value) throw new Error('manual gloss cannot be empty')
+  db.insert(gloss)
+    .values({ lemmaId, sense: '', italian: value, provider: 'manual' })
+    .onConflictDoUpdate({
+      target: [gloss.lemmaId, gloss.sense],
+      set: { italian: value, provider: 'manual' },
+    })
+    .run()
+  return value
+}
+
+/**
+ * Discard the cached default-sense gloss and generate a fresh one from context.
+ * The explicit user "regenerate" action — so it overwrites even a manual gloss.
+ */
+export async function regenerateGloss(
+  db: DB,
+  input: GlossInput,
+  provider: GlossProvider = getGlossProvider(),
+): Promise<GlossResult> {
+  db.delete(gloss)
+    .where(and(eq(gloss.lemmaId, input.lemmaId), eq(gloss.sense, '')))
+    .run()
+  return getGloss(db, input, provider)
+}

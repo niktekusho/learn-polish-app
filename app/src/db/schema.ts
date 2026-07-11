@@ -133,8 +133,9 @@ export const gloss = sqliteTable(
     italian: text("italian").notNull(),
     // Which provider produced this gloss, so stub output written during
     // development can be found and purged when a real provider lands.
+    // 'manual' = learner-written; highest trust, never auto-purged/regenerated.
     provider: text("provider", {
-      enum: ["stub", "claude-cli", "codex-cli", "ollama", "api"],
+      enum: ["stub", "claude-cli", "codex-cli", "ollama", "api", "manual"],
     })
       .notNull()
       .default("stub"),

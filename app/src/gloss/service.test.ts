@@ -4,7 +4,7 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { expect, test } from 'vitest'
 import * as schema from '#/db/schema'
 import type { GlossProvider } from '#/llm/provider'
-import { getGloss } from './service'
+import { getGloss, regenerateGloss, setManualGloss } from './service'
 
 function freshDb() {
   const sqlite = new Database(':memory:')
@@ -79,5 +79,46 @@ test('no-context caller still reads an existing cached gloss', async () => {
     provider,
   )
   expect(res).toEqual({ italian: 'IT:dom', cached: true })
+  expect(provider.calls).toBe(1)
+})
+
+test('manual gloss overrides a cached machine gloss and is not regenerated over', async () => {
+  const db = freshDb()
+  const lemmaId = addLemma(db, 'rzecz')
+  const provider = countingProvider()
+  const input = { lemmaId, lemma: 'rzecz', pos: 'NOUN', sentence: 'Ciekawe rzeczy.' }
+
+  await getGloss(db, input, provider) // machine gloss cached
+  setManualGloss(db, lemmaId, '  cosa  ')
+
+  // A no-context read now serves the manual value, tagged 'manual'.
+  const res = await getGloss(db, { ...input, sentence: '' }, provider)
+  expect(res).toEqual({ italian: 'cosa', cached: true })
+  const [row] = db.select().from(schema.gloss).all()
+  expect(row.provider).toBe('manual')
+
+  // getGloss with context must NOT overwrite the manual gloss.
+  const still = await getGloss(db, input, provider)
+  expect(still.italian).toBe('cosa')
+})
+
+test('setManualGloss rejects empty input', () => {
+  const db = freshDb()
+  const lemmaId = addLemma(db, 'pies')
+  expect(() => setManualGloss(db, lemmaId, '   ')).toThrow()
+})
+
+test('regenerate discards even a manual gloss and generates fresh', async () => {
+  const db = freshDb()
+  const lemmaId = addLemma(db, 'kot')
+  const provider = countingProvider()
+  setManualGloss(db, lemmaId, 'gatto-vecchio')
+
+  const res = await regenerateGloss(
+    db,
+    { lemmaId, lemma: 'kot', pos: 'NOUN', sentence: 'Mam kota.' },
+    provider,
+  )
+  expect(res).toEqual({ italian: 'IT:kot', cached: false })
   expect(provider.calls).toBe(1)
 })

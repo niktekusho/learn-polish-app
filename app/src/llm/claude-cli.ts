@@ -1,5 +1,10 @@
 import { spawn } from 'node:child_process'
-import type { GlossProvider, GlossRequest, ProviderName } from './provider'
+import {
+  buildGlossPrompt,
+  type GlossProvider,
+  type GlossRequest,
+  type ProviderName,
+} from './provider'
 
 // Real Italian gloss via the `claude` CLI already on PATH (bills the user's
 // subscription, no API key). One-shot per lemma: `claude -p "<prompt>"` prints
@@ -9,15 +14,6 @@ import type { GlossProvider, GlossRequest, ProviderName } from './provider'
 
 const TIMEOUT_MS = 60_000
 const MAX_GLOSS_LEN = 60
-
-function buildPrompt(req: GlossRequest): string {
-  return (
-    'Sei un dizionario polacco-italiano. Rispondi SOLO con una glossa ' +
-    'italiana breve (1-4 parole) per il lemma, nel senso usato nella frase. ' +
-    'Nessuna spiegazione, nessuna punteggiatura finale.\n\n' +
-    `Lemma: ${req.lemma}\nPOS: ${req.pos}\nFrase: ${req.sentence}`
-  )
-}
 
 // Run `claude -p <prompt>` with stdin closed. spawn (not execFile) so we can set
 // stdin to 'ignore' (= /dev/null): claude -p otherwise treats the non-TTY pipe
@@ -65,6 +61,6 @@ export class ClaudeCliGlossProvider implements GlossProvider {
   constructor(private readonly exec: (prompt: string) => Promise<string> = runClaude) {}
 
   async gloss(req: GlossRequest): Promise<string> {
-    return parseGloss(await this.exec(buildPrompt(req)))
+    return parseGloss(await this.exec(buildGlossPrompt(req)))
   }
 }
