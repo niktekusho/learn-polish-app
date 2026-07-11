@@ -2,7 +2,7 @@
 // Italian gloss depends only on this interface; the concrete provider (stub
 // now, Ollama or an API later) is chosen in getGlossProvider().
 
-export type ProviderName = 'stub' | 'claude-cli' | 'ollama' | 'api'
+export type ProviderName = 'stub' | 'claude-cli' | 'codex-cli' | 'ollama' | 'api'
 
 export interface GlossRequest {
   lemma: string
@@ -16,18 +16,26 @@ export interface GlossProvider {
 }
 
 import { ClaudeCliGlossProvider } from './claude-cli'
+import { CodexCliGlossProvider } from './codex-cli'
 import { StubGlossProvider } from './stub'
 
 let cached: GlossProvider | null = null
 
 // GLOSS_PROVIDER selects the concrete provider; default stub keeps tests and
-// offline dev untouched. Set GLOSS_PROVIDER=claude-cli to use the real CLI.
+// offline dev untouched. Set GLOSS_PROVIDER=claude-cli or codex-cli to use a
+// real CLI.
 export function getGlossProvider(): GlossProvider {
   if (!cached) {
-    cached =
-      process.env.GLOSS_PROVIDER === 'claude-cli'
-        ? new ClaudeCliGlossProvider()
-        : new StubGlossProvider()
+    switch (process.env.GLOSS_PROVIDER) {
+      case 'claude-cli':
+        cached = new ClaudeCliGlossProvider()
+        break
+      case 'codex-cli':
+        cached = new CodexCliGlossProvider()
+        break
+      default:
+        cached = new StubGlossProvider()
+    }
   }
   return cached
 }
