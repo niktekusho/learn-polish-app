@@ -15,9 +15,17 @@ The dictionary/base form of a word that groups all its surface forms. *kot* is t
 of *kota*, *kotu*, *kotem*. The unit at which knowledge is tracked.
 _Avoid_: root, stem, base word
 
+**Multi-word expression (MWE)**:
+A fixed expression whose meaning is not derivable from its parts — *na pewno* (di sicuro),
+*dzień dobry*, *zdawać sobie sprawę* (rendersi conto). A lexical unit in its own right and
+therefore a **Tracked unit**. May be discontinuous in a sentence (*zdaję sobie z tego
+sprawę*). Compositional phrases (*ciekawe rzeczy*, *czerwone wino*) are NOT MWEs — they
+stay separate lemmas.
+_Avoid_: phrase, collocation, idiom (as data terms)
+
 **Tracked unit**:
-What the user's knowledge is recorded against. It is the **Lemma** plus the set of
-**Surface forms** encountered, not the raw surface form.
+What the user's knowledge is recorded against: a **Lemma** (plus the set of **Surface
+forms** encountered) or a **Multi-word expression**. Never a raw surface form.
 
 **L1**:
 The learner's native language. Here it is **Italian**, not English. All translations,
