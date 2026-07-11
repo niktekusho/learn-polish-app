@@ -51,8 +51,9 @@ training in the app — the listening half of the comprehension goal.
 
 - **Importers (URL / .srt / .epub / YouTube)** — manual paste chosen as the content
   strategy; importers rise only if daily copy-paste becomes the friction.
-- **kaikki bulk import (home dictionary)** — needed only by grammar drills and a richer
-  word panel. Note the hidden dependency: grammar drills can't start before this.
+- **kaikki bulk import (home dictionary)** — needed by grammar drills, a richer word
+  panel, MWE detection, and per-sense glosses. Note the hidden dependency: none of those
+  can start before this. Three parked features now stack on it — rising promotion signal.
 - **MWE tracking (multi-word expressions)** — decided (2026-07-11): MWEs are first-class
   Tracked units (see CONTEXT.md), but detection strategy is deferred until kaikki import
   lands — the dictionary's multi-word entries enable lookup-based detection (bigram match

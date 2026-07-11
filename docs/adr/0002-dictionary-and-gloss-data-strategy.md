@@ -45,5 +45,8 @@ This is a deliberate interim, not a change of target:
   remain the goal, **gated on the kaikki import**.
 - Consequence of the interim: a polysemous lemma shows only its first-encountered sense
   (e.g. *zamek* = castle/lock/zipper). Acceptable for single-user MVP reading.
+  - Confirmed in dogfooding (2026-07-12): *przedmiot* cached as "oggetto", wrong in a
+    school text ("materia scolastica"). Decision: stay blocked on kaikki rather than
+    build LLM-derived senses; live with first-sense-wins meanwhile.
 - When kaikki lands, the onboarding wave batch-translates senses; sentence-context
   generation is retained only as the **lazy fallback** for lemmas absent from the dump.
