@@ -28,20 +28,7 @@ async function runCodex(prompt: string): Promise<string> {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(
         'codex',
-        [
-          'exec',
-          '--color',
-          'never',
-          '--sandbox',
-          'read-only',
-          '--ask-for-approval',
-          'never',
-          '--ephemeral',
-          '--ignore-rules',
-          '--output-last-message',
-          outputPath,
-          prompt,
-        ],
+        buildCodexArgs(prompt, outputPath),
         {
           stdio: ['ignore', 'ignore', 'pipe'],
           timeout: TIMEOUT_MS,
@@ -63,6 +50,10 @@ async function runCodex(prompt: string): Promise<string> {
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+}
+
+export function buildCodexArgs(prompt: string, outputPath: string): string[] {
+  return ['exec', '--color', 'never', '--output-last-message', outputPath, prompt]
 }
 
 export function parseGloss(stdout: string): string {
