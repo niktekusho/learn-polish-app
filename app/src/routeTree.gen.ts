@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as PracticeRouteImport } from './routes/practice'
+import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReadTextIdRouteImport } from './routes/read.$textId'
@@ -17,6 +18,11 @@ import { Route as ReadTextIdRouteImport } from './routes/read.$textId'
 const PracticeRoute = PracticeRouteImport.update({
   id: '/practice',
   path: '/practice',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MaintenanceRoute = MaintenanceRouteImport.update({
+  id: '/maintenance',
+  path: '/maintenance',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ImportRoute = ImportRouteImport.update({
@@ -38,12 +44,14 @@ const ReadTextIdRoute = ReadTextIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
+  '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
+  '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
@@ -51,20 +59,28 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
+  '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/import' | '/practice' | '/read/$textId'
+  fullPaths: '/' | '/import' | '/maintenance' | '/practice' | '/read/$textId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/import' | '/practice' | '/read/$textId'
-  id: '__root__' | '/' | '/import' | '/practice' | '/read/$textId'
+  to: '/' | '/import' | '/maintenance' | '/practice' | '/read/$textId'
+  id:
+    | '__root__'
+    | '/'
+    | '/import'
+    | '/maintenance'
+    | '/practice'
+    | '/read/$textId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ImportRoute: typeof ImportRoute
+  MaintenanceRoute: typeof MaintenanceRoute
   PracticeRoute: typeof PracticeRoute
   ReadTextIdRoute: typeof ReadTextIdRoute
 }
@@ -76,6 +92,13 @@ declare module '@tanstack/react-router' {
       path: '/practice'
       fullPath: '/practice'
       preLoaderRoute: typeof PracticeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/maintenance': {
+      id: '/maintenance'
+      path: '/maintenance'
+      fullPath: '/maintenance'
+      preLoaderRoute: typeof MaintenanceRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/import': {
@@ -105,6 +128,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ImportRoute: ImportRoute,
+  MaintenanceRoute: MaintenanceRoute,
   PracticeRoute: PracticeRoute,
   ReadTextIdRoute: ReadTextIdRoute,
 }

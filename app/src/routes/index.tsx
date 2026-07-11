@@ -32,6 +32,12 @@ function Home() {
         <h1 className="text-3xl font-bold">Learn Polish</h1>
         <div className="flex gap-2">
           <Link
+            to="/maintenance"
+            className="rounded border border-gray-300 px-4 py-2 font-medium"
+          >
+            Maintenance
+          </Link>
+          <Link
             to="/practice"
             className="rounded border border-gray-300 px-4 py-2 font-medium"
           >
