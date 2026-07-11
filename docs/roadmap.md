@@ -53,6 +53,12 @@ training in the app — the listening half of the comprehension goal.
   strategy; importers rise only if daily copy-paste becomes the friction.
 - **kaikki bulk import (home dictionary)** — needed only by grammar drills and a richer
   word panel. Note the hidden dependency: grammar drills can't start before this.
+- **MWE tracking (multi-word expressions)** — decided (2026-07-11): MWEs are first-class
+  Tracked units (see CONTEXT.md), but detection strategy is deferred until kaikki import
+  lands — the dictionary's multi-word entries enable lookup-based detection (bigram match
+  at tokenization), which beats both manual marking and LLM proposal as the first rung.
+  v1 scope when picked up: contiguous MWEs only; discontinuous (*zdaję sobie z tego
+  sprawę*) deferred further.
 - **Grammar drills (case/aspect/gender/conjugation)** — learner is grammar-strong; low
   value today. Blocked by kaikki import.
 - **LLM-generated graded texts** — new candidate from this session, not pursued: hard to

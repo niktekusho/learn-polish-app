@@ -32,8 +32,13 @@ The learner's native language. Here it is **Italian**, not English. All translat
 glosses, and UI copy are Italian. (L2 = the language being learned = Polish.)
 
 **Gloss**:
-The Italian meaning attached to a Polish lemma or word-sense, shown while reading and used
-in exercises. Sourced per word-sense, not per surface form.
+The Italian meaning attached to a Polish **Tracked unit** or word-sense, shown while
+reading and used in exercises. Sourced per word-sense, not per surface form. Machine-
+generated glosses are provisional; a **Manual gloss** overrides them.
+
+**Manual gloss**:
+A **Gloss** written or corrected by the learner. The highest-trust tier: never overwritten
+or purged by automated regeneration.
 
 **Knowledge state**:
 Per-lemma memory tracked with the FSRS algorithm (stability/difficulty → due date), rather
