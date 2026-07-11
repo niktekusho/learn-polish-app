@@ -34,11 +34,14 @@ than a fixed status ladder. Split into two independent tracks: **Receptive** and
 
 **Receptive knowledge**:
 Ability to *understand* a lemma when reading or hearing it. Fed by reading, listening,
-PL→IT translation, and recognition-style grammar exercises.
+PL→IT translation, recognition-style grammar exercises, and **Read-aloud** (the word is on
+screen — decoding and pronouncing it is comprehension evidence, not retrieval).
 
 **Productive knowledge**:
-Ability to *produce* a lemma when speaking. Fed by speaking exercises (tier-2 ASR) and
-spoken grammar drills. Tracked separately because comprehension precedes production.
+Ability to *produce* a lemma from memory when speaking. Fed only by exercises that require
+retrieval — producing the lemma without seeing it (**Spoken recall**, spoken grammar
+drills). Reading a word off the screen, even aloud, never grades this track. Tracked
+separately because comprehension precedes production.
 
 ## Practice
 
@@ -52,6 +55,16 @@ _Avoid_: game, lesson, quiz
 The default daily session: an SRS-driven **mixed queue** where the scheduler pulls due
 lemmas (weakest track first) and renders each through an applicable **Exercise**.
 _Avoid_: lesson, review session
+
+**Spoken recall**:
+The **Exercise** that proves **Productive knowledge**: given the Italian meaning, say the
+Polish lemma; the spoken answer is checked against the target.
+_Avoid_: speaking exercise (ambiguous with **Read-aloud**)
+
+**Read-aloud**:
+The **Exercise** of reading a displayed Polish sentence out loud. Trains pronunciation and
+decoding; grades **Receptive knowledge** only.
+_Avoid_: speaking exercise
 
 **Focused drill**:
 A secondary mode where the learner explicitly picks one **Exercise** type to grind (e.g.

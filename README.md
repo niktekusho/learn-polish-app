@@ -13,10 +13,10 @@ independently.
 ## Stack
 
 - **TanStack Start** (React, full-stack) + **SQLite** — the app and its data.
-- **Python sidecar** (FastAPI) — Polish morphological analysis, the one thing with no good
-  JS equivalent.
+- **Python sidecar** (FastAPI) — Python ML services: morphological analysis today,
+  ASR (faster-whisper) and TTS (Piper) planned. See ADR-0004.
 - **FSRS** (`ts-fsrs`) for scheduling, **Wiktionary/kaikki** for the home dictionary, an LLM
-  for Italian glosses, **Whisper** (JS) for speech.
+  for Italian glosses.
 
 ## Running locally
 
@@ -58,4 +58,5 @@ sidecar/   Python FastAPI morphology service (uv-managed)
 
 - [CONTEXT.md](./CONTEXT.md) — the project's shared vocabulary.
 - [docs/adr/](./docs/adr/) — architecture decisions and the reasoning behind them.
-- [docs/mvp-backlog.md](./docs/mvp-backlog.md) — the first slice, broken into issues.
+- [docs/mvp-backlog.md](./docs/mvp-backlog.md) — the first slice, broken into issues (done).
+- [docs/roadmap.md](./docs/roadmap.md) — post-MVP roadmap.
