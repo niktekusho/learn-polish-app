@@ -2,7 +2,7 @@
 // Italian gloss depends only on this interface; the concrete provider (stub
 // now, Ollama or an API later) is chosen in getGlossProvider().
 
-export type ProviderName = 'stub' | 'ollama' | 'api'
+export type ProviderName = 'stub' | 'claude-cli' | 'ollama' | 'api'
 
 export interface GlossRequest {
   lemma: string
@@ -15,13 +15,19 @@ export interface GlossProvider {
   gloss(req: GlossRequest): Promise<string>
 }
 
+import { ClaudeCliGlossProvider } from './claude-cli'
 import { StubGlossProvider } from './stub'
 
 let cached: GlossProvider | null = null
 
+// GLOSS_PROVIDER selects the concrete provider; default stub keeps tests and
+// offline dev untouched. Set GLOSS_PROVIDER=claude-cli to use the real CLI.
 export function getGlossProvider(): GlossProvider {
-  // ponytail: stub only for now. When a real provider lands, switch on an
-  // LLM_PROVIDER env var here — callers never change.
-  if (!cached) cached = new StubGlossProvider()
+  if (!cached) {
+    cached =
+      process.env.GLOSS_PROVIDER === 'claude-cli'
+        ? new ClaudeCliGlossProvider()
+        : new StubGlossProvider()
+  }
   return cached
 }
