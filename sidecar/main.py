@@ -53,7 +53,7 @@ def analyze(req: AnalyzeRequest) -> AnalyzeResponse:
             Sentence(
                 tokens=[
                     Token(
-                        surface=t.text,
+                        surface=t.text_with_ws,  # keep trailing space; reader reconstructs layout verbatim
                         lemma=_lemma(t),
                         pos=t.pos_,
                         tags=str(t.morph).split("|") if t.morph else [],

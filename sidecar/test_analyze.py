@@ -33,7 +33,17 @@ def test_sentence_boundaries_preserved():
     assert len(r.json()["sentences"]) == 2
 
 
+def test_surface_reconstructs_original():
+    # Surfaces carry trailing whitespace so the reader renders spaces between
+    # tokens; concatenating them must reproduce the input verbatim.
+    text = "Ola szykuje się do szkoły. Jest już w piątej klasie."
+    r = client.post("/analyze", json={"text": text})
+    surfaces = [t["surface"] for s in r.json()["sentences"] for t in s["tokens"]]
+    assert "".join(surfaces) == text
+
+
 if __name__ == "__main__":
     test_acceptance_sentence()
     test_sentence_boundaries_preserved()
+    test_surface_reconstructs_original()
     print("OK")
