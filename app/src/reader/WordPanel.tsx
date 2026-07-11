@@ -1,5 +1,5 @@
 import { createServerFn } from '@tanstack/react-start'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
 import type { KnowledgeFlags, ReaderToken } from './types'
 
@@ -62,12 +62,17 @@ export function WordPanel({
 }) {
   const [gloss, setGloss] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
   const [marking, setMarking] = useState(false)
 
-  useEffect(() => {
-    if (token.lemmaId == null || token.lemma == null) return
+  // In the reader the sentence is always present, so lookupGloss either resolves
+  // with a gloss or rejects (provider/CLI failure) — a rejection is a real error,
+  // not "no translation". Shared by the mount effect and the Retry button.
+  const runLookup = useCallback(() => {
+    if (token.lemmaId == null || token.lemma == null) return () => {}
     let alive = true
     setLoading(true)
+    setError(false)
     setGloss(null)
     lookupGloss({
       data: {
@@ -78,12 +83,14 @@ export function WordPanel({
       },
     })
       .then((r) => alive && setGloss(r.italian))
-      .catch(() => alive && setGloss('—'))
+      .catch(() => alive && setError(true))
       .finally(() => alive && setLoading(false))
     return () => {
       alive = false
     }
   }, [token.lemmaId, token.lemma, token.pos, sentence])
+
+  useEffect(() => runLookup(), [runLookup])
 
   async function mark(rating: number) {
     if (token.lemmaId == null) return
@@ -125,7 +132,22 @@ export function WordPanel({
         <div>
           <dt className="text-gray-500">Italiano</dt>
           <dd className="font-medium">
-            {loading ? <span className="text-gray-400">…</span> : (gloss ?? '—')}
+            {loading ? (
+              <span className="text-gray-400">…</span>
+            ) : error ? (
+              <span className="text-red-600">
+                Traduzione non riuscita{' '}
+                <button
+                  type="button"
+                  onClick={runLookup}
+                  className="underline hover:text-red-700"
+                >
+                  Riprova
+                </button>
+              </span>
+            ) : (
+              (gloss ?? '—')
+            )}
           </dd>
         </div>
       </dl>

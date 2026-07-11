@@ -31,3 +31,19 @@ Diki is link-only — it has no dump or API, and scraping it is against its ToS.
   matters only if the app is ever distributed.
 - The kaikki dictionary complements the morphology sidecar (ADR-0001): the analyzer parses
   running text (form → lemma); Wiktionary supplies the inflection tables for drills.
+
+## Amendment (2026-07-11): interim gloss source until kaikki lands
+
+The kaikki Home-dictionary import is still parked, so there are **no Wiktionary senses
+to translate from**. The shipped lazy wave therefore diverges from the decision above:
+it generates the Italian gloss from the **Polish lemma + its sentence context** (via a
+click-time LLM provider), and stores **one gloss per lemma** (`gloss.sense = ''`).
+
+This is a deliberate interim, not a change of target:
+- Sourcing glosses from the **Wiktionary English sense** and storing **one gloss per
+  word-sense** (the decision above, and CONTEXT.md's "Gloss … sourced per word-sense")
+  remain the goal, **gated on the kaikki import**.
+- Consequence of the interim: a polysemous lemma shows only its first-encountered sense
+  (e.g. *zamek* = castle/lock/zipper). Acceptable for single-user MVP reading.
+- When kaikki lands, the onboarding wave batch-translates senses; sentence-context
+  generation is retained only as the **lazy fallback** for lemmas absent from the dump.
