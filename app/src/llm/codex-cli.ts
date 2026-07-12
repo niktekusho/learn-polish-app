@@ -4,9 +4,13 @@ import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 import {
   buildGlossPrompt,
+  buildSenseGlossPrompt,
   type GlossProvider,
   type GlossRequest,
+  parseSenseGlossJson,
   type ProviderName,
+  type SenseGlossRequest,
+  type SenseGlossResult,
 } from './provider'
 
 // Real Italian gloss via the `codex` CLI already on PATH. Codex exec can print
@@ -67,5 +71,12 @@ export class CodexCliGlossProvider implements GlossProvider {
 
   async gloss(req: GlossRequest): Promise<string> {
     return parseGloss(await this.exec(buildGlossPrompt(req)))
+  }
+
+  async glossSenses(req: SenseGlossRequest): Promise<SenseGlossResult> {
+    return parseSenseGlossJson(
+      await this.exec(buildSenseGlossPrompt(req)),
+      req.senses.length,
+    )
   }
 }

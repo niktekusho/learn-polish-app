@@ -1,7 +1,7 @@
 import { asc, eq, inArray } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import * as schema from '#/db/schema'
-import { dictEntry, dictForm, dictSense } from '#/db/schema'
+import { dictEntry, dictForm, dictSense, gloss } from '#/db/schema'
 
 type DB = BetterSQLite3Database<typeof schema>
 
@@ -23,10 +23,21 @@ export const UPOS_TO_KAIKKI: Record<string, string[]> = {
   DET: ['det', 'pron'],
 }
 
+/**
+ * Cache key for a per-sense gloss row: the English Wiktionary sense text,
+ * truncated to fit the unique(lemmaId, sense) index comfortably. Text (not a
+ * numeric index) so re-importing the dictionary doesn't orphan the cache.
+ * Lives here (not gloss/service) to keep the import graph acyclic.
+ */
+export function senseKey(englishGloss: string): string {
+  return englishGloss.slice(0, 200)
+}
+
 export interface DictSenseView {
   gloss: string
   rawGloss: string | null
   tags: string[]
+  italian: string | null // learner's cached per-sense gloss, if any
 }
 
 export interface DictEntryView {
@@ -57,6 +68,7 @@ export function lookupDictionary(
   db: DB,
   lemma: string,
   upos: string,
+  lemmaId?: number,
 ): DictLookupResult {
   const mapped = UPOS_TO_KAIKKI[upos] ?? []
 
@@ -68,10 +80,12 @@ export function lookupDictionary(
         .where(eq(dictEntry.word, word))
         .all()
         .filter((r) => mapped.includes(r.pos))
-      if (rows.length > 0) return { matchedBy: 'lemma+pos', entries: hydrate(db, rows) }
+      if (rows.length > 0)
+        return { matchedBy: 'lemma+pos', entries: hydrate(db, rows, lemmaId) }
     }
     const rows = db.select().from(dictEntry).where(eq(dictEntry.word, word)).all()
-    if (rows.length > 0) return { matchedBy: 'lemma', entries: hydrate(db, rows) }
+    if (rows.length > 0)
+      return { matchedBy: 'lemma', entries: hydrate(db, rows, lemmaId) }
     if (word === lemma.toLowerCase()) break // no second iteration needed
   }
   return { matchedBy: null, entries: [] }
@@ -80,6 +94,7 @@ export function lookupDictionary(
 function hydrate(
   db: DB,
   rows: (typeof dictEntry.$inferSelect)[],
+  lemmaId?: number,
 ): DictEntryView[] {
   const ids = rows.map((r) => r.id)
   const senses = db
@@ -93,6 +108,17 @@ function hydrate(
     .from(dictForm)
     .where(inArray(dictForm.entryId, ids))
     .all()
+  // Learner's cached per-sense Italian glosses, keyed by senseKey.
+  const italianBySense = new Map<string, string>()
+  if (lemmaId !== undefined) {
+    for (const g of db
+      .select()
+      .from(gloss)
+      .where(eq(gloss.lemmaId, lemmaId))
+      .all()) {
+      if (g.sense !== '') italianBySense.set(g.sense, g.italian)
+    }
+  }
   return rows.map((r) => ({
     id: r.id,
     word: r.word,
@@ -101,7 +127,12 @@ function hydrate(
     etymology: r.etymology,
     senses: senses
       .filter((s) => s.entryId === r.id)
-      .map((s) => ({ gloss: s.gloss, rawGloss: s.rawGloss, tags: s.tags })),
+      .map((s) => ({
+        gloss: s.gloss,
+        rawGloss: s.rawGloss,
+        tags: s.tags,
+        italian: italianBySense.get(senseKey(s.gloss)) ?? null,
+      })),
     forms: forms
       .filter((f) => f.entryId === r.id)
       .map((f) => ({ form: f.form, tags: f.tags })),

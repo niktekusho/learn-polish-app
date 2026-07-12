@@ -81,12 +81,18 @@ const markLemma = createServerFn({ method: 'POST' })
 // etymology). Read-only, no LLM involved.
 const lookupDictFn = createServerFn({ method: 'POST' })
   .validator((d: unknown) =>
-    z.object({ lemma: z.string().min(1), pos: z.string() }).parse(d),
+    z
+      .object({
+        lemma: z.string().min(1),
+        pos: z.string(),
+        lemmaId: z.number().int().nullable(),
+      })
+      .parse(d),
   )
   .handler(async ({ data }): Promise<DictLookupResult> => {
     const { db } = await import('#/db/index')
     const { lookupDictionary } = await import('#/dictionary/service')
-    return lookupDictionary(db, data.lemma, data.pos)
+    return lookupDictionary(db, data.lemma, data.pos, data.lemmaId ?? undefined)
   })
 
 // ts-fsrs Rating values used by the two learner actions.
@@ -140,18 +146,24 @@ export function WordPanel({
 
   useEffect(() => runLookup(), [runLookup])
 
-  // Dictionary reference is independent of the gloss: fetch on lemma change.
+  // Dictionary reference: fetch on lemma change and again when the gloss
+  // settles (the hybrid path may have just written per-sense Italian rows).
   useEffect(() => {
     if (token.lemma == null) return
     let alive = true
-    setDict(null)
-    lookupDictFn({ data: { lemma: token.lemma, pos: token.pos ?? '' } })
+    lookupDictFn({
+      data: {
+        lemma: token.lemma,
+        pos: token.pos ?? '',
+        lemmaId: token.lemmaId,
+      },
+    })
       .then((r) => alive && setDict(r))
       .catch(() => {}) // reference data only; panel just omits the section
     return () => {
       alive = false
     }
-  }, [token.lemma, token.pos])
+  }, [token.lemma, token.pos, token.lemmaId, gloss])
 
   async function regenerate() {
     if (token.lemmaId == null || token.lemma == null) return
@@ -365,6 +377,9 @@ function DictSection({ dict }: { dict: DictLookupResult }) {
             <ol className="list-decimal space-y-1 pl-5">
               {senses.map((s, i) => (
                 <li key={i}>
+                  {s.italian && (
+                    <span className="font-semibold">{s.italian} — </span>
+                  )}
                   <span>{s.gloss}</span>
                   {s.tags.length > 0 && (
                     <span className="ml-1 text-xs text-gray-400">
