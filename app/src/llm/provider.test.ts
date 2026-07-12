@@ -1,5 +1,10 @@
 import { expect, test } from 'vitest'
-import { buildSenseGlossPrompt, parseSenseGlossJson } from './provider'
+import {
+  buildComprehensionPrompt,
+  buildSenseGlossPrompt,
+  parseComprehensionJson,
+  parseSenseGlossJson,
+} from './provider'
 
 const good = JSON.stringify({
   translations: [
@@ -35,6 +40,57 @@ test('throws when bestIndex is not among translations', () => {
 test('throws on junk output', () => {
   expect(() => parseSenseGlossJson('Ecco la traduzione: ...', 2)).toThrow(/not JSON/)
   expect(() => parseSenseGlossJson('{"translations":[]}', 2)).toThrow()
+})
+
+// --- Comprehension checks ----------------------------------------------------
+
+const goodCheck = JSON.stringify({
+  questions: [
+    { question: 'Di cosa parla il testo?', choices: ['gatti', 'cani', 'case'], correctIndex: 0 },
+  ],
+})
+
+test('comprehension: parses plain JSON and strips fences', () => {
+  expect(parseComprehensionJson(goodCheck).questions).toHaveLength(1)
+  const fenced = '```json\n' + goodCheck + '\n```'
+  expect(parseComprehensionJson(fenced).questions[0].correctIndex).toBe(0)
+})
+
+test('comprehension: throws on junk, empty questions, bad choice counts', () => {
+  expect(() => parseComprehensionJson('Ecco le domande: ...')).toThrow(/not JSON/)
+  expect(() => parseComprehensionJson('{"questions":[]}')).toThrow()
+  const twoChoices = JSON.stringify({
+    questions: [{ question: 'Q?', choices: ['a', 'b'], correctIndex: 0 }],
+  })
+  expect(() => parseComprehensionJson(twoChoices)).toThrow()
+  const fiveChoices = JSON.stringify({
+    questions: [{ question: 'Q?', choices: ['a', 'b', 'c', 'd', 'e'], correctIndex: 0 }],
+  })
+  expect(() => parseComprehensionJson(fiveChoices)).toThrow()
+})
+
+test('comprehension: throws on more than 10 questions', () => {
+  const many = JSON.stringify({
+    questions: Array.from({ length: 11 }, (_, i) => ({
+      question: `Q${i}?`,
+      choices: ['a', 'b', 'c'],
+      correctIndex: 0,
+    })),
+  })
+  expect(() => parseComprehensionJson(many)).toThrow()
+})
+
+test('comprehension: throws on out-of-range correctIndex', () => {
+  const bad = JSON.stringify({
+    questions: [{ question: 'Q?', choices: ['a', 'b', 'c'], correctIndex: 3 }],
+  })
+  expect(() => parseComprehensionJson(bad)).toThrow(/out of range/)
+})
+
+test('comprehension: prompt embeds the text and demands JSON', () => {
+  const prompt = buildComprehensionPrompt({ text: 'Ala ma kota.' })
+  expect(prompt).toContain('Ala ma kota.')
+  expect(prompt).toContain('correctIndex')
 })
 
 test('prompt lists senses with their indexes and demands JSON', () => {

@@ -45,7 +45,7 @@ Sidecar gains a **Piper** TTS endpoint with audio caching (ADR-0004). Exercise: 
 Polish word/sentence, type or choose what was heard. Grades receptive. First audio-input
 training in the app — the listening half of the comprehension goal.
 
-## Comprehension checks (designed 2026-07-12, not yet scheduled)
+## Comprehension checks (designed 2026-07-12, shipped 2026-07-12)
 
 **Comprehension check** (term in [CONTEXT.md](../CONTEXT.md)): questions about a text,
 answered after reading to verify understanding. NOT an Exercise — no FSRS write, no

@@ -1,9 +1,13 @@
 import { spawn } from 'node:child_process'
 import {
+  buildComprehensionPrompt,
   buildGlossPrompt,
   buildSenseGlossPrompt,
+  type ComprehensionRequest,
+  type ComprehensionResult,
   type GlossProvider,
   type GlossRequest,
+  parseComprehensionJson,
   parseSenseGlossJson,
   type ProviderName,
   type SenseGlossRequest,
@@ -73,5 +77,9 @@ export class ClaudeCliGlossProvider implements GlossProvider {
       await this.exec(buildSenseGlossPrompt(req)),
       req.senses.length,
     )
+  }
+
+  async comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {
+    return parseComprehensionJson(await this.exec(buildComprehensionPrompt(req)))
   }
 }

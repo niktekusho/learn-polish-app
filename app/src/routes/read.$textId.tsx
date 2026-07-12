@@ -2,6 +2,7 @@ import { Link, createFileRoute, notFound } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useMemo, useState } from 'react'
 import { z } from 'zod'
+import { ComprehensionCheck } from '#/reader/ComprehensionCheck'
 import { WordPanel } from '#/reader/WordPanel'
 import type { KnowledgeFlags, ReaderToken } from '#/reader/types'
 
@@ -94,6 +95,8 @@ type MweInfo = {
 function Reader() {
   const { text, tokens, mwes } = Route.useLoaderData()
   const [selected, setSelected] = useState<ReaderToken | null>(null)
+  // End-of-text comprehension check; the click is the "I read this" signal.
+  const [checking, setChecking] = useState(false)
   // Live verdict overrides so marking updates highlights without a reload.
   const [overrides, setOverrides] = useState<Record<number, KnowledgeFlags>>({})
 
@@ -182,6 +185,18 @@ function Reader() {
           )
         })}
       </article>
+
+      {!checking ? (
+        <button
+          type="button"
+          onClick={() => setChecking(true)}
+          className="mt-8 rounded border border-gray-300 px-3 py-1.5 text-sm"
+        >
+          Verifica comprensione
+        </button>
+      ) : (
+        <ComprehensionCheck textId={text.id} />
+      )}
 
       {selected && (
         <WordPanel

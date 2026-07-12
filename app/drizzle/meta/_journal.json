@@ -43,6 +43,13 @@
       "when": 1783842508957,
       "tag": "0005_messy_hairball",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1783855552557,
+      "tag": "0006_wealthy_nomad",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,6 @@
 import type {
+  ComprehensionRequest,
+  ComprehensionResult,
   GlossProvider,
   GlossRequest,
   ProviderName,
@@ -23,6 +25,18 @@ export class StubGlossProvider implements GlossProvider {
         italian: `IT:${s.gloss}`,
       })),
       bestIndex: 0,
+    }
+  }
+
+  async comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {
+    return {
+      questions: [
+        {
+          question: `Domanda stub sul testo (${req.text.length} caratteri)?`,
+          choices: ['Risposta giusta (stub)', 'Distrattore A', 'Distrattore B'],
+          correctIndex: 0,
+        },
+      ],
     }
   }
 }

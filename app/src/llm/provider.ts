@@ -104,12 +104,88 @@ export function parseSenseGlossJson(
   return parsed
 }
 
+// --- Comprehension checks (roadmap 2026-07-12) ------------------------------
+// ONE call generates all MCQ questions for a text. Italian questions/choices
+// isolate text comprehension from question comprehension at sub-A1.
+
+export interface ComprehensionRequest {
+  text: string // full text content
+}
+
+export interface ComprehensionQuestion {
+  question: string
+  choices: string[] // 3–4 Italian choices
+  correctIndex: number
+}
+
+export interface ComprehensionResult {
+  questions: ComprehensionQuestion[] // 1–10, LLM picks the count
+}
+
+// Shared prompt for the CLI providers, same hardened tone as the gloss prompts.
+// The model picks the question count (1–10) proportional to text length — no
+// server-side length math.
+export function buildComprehensionPrompt(req: ComprehensionRequest): string {
+  return (
+    'Sei un insegnante di polacco. Verifica se uno studente italiano ha capito ' +
+    'il testo polacco qui sotto. Scrivi domande a scelta multipla IN ITALIANO ' +
+    'sul contenuto del testo. Scegli tu tra 1 e 10 domande in proporzione alla ' +
+    'lunghezza del testo (testo brevissimo ≈ 1-2, testo lungo massimo 10). ' +
+    'Ogni domanda ha 3 o 4 risposte in italiano, di cui ESATTAMENTE una ' +
+    'corretta secondo il testo; i distrattori devono essere plausibili ma ' +
+    'chiaramente sbagliati. Rispondi SOLO con JSON valido, senza testo attorno, ' +
+    'nel formato: {"questions":[{"question":"...","choices":["...","...","..."],"correctIndex":0}]}\n\n' +
+    `Testo:\n${req.text}`
+  )
+}
+
+const comprehensionResponse = z.object({
+  questions: z
+    .array(
+      z.object({
+        question: z.string().trim().min(1),
+        choices: z.array(z.string().trim().min(1)).min(3).max(4),
+        correctIndex: z.number().int().min(0),
+      }),
+    )
+    .min(1)
+    .max(10),
+})
+
+// Validate the raw CLI output. Throws on junk so nothing gets cached — the
+// service writes all questions in one transaction only after this passes.
+export function parseComprehensionJson(stdout: string): ComprehensionResult {
+  const raw = stdout
+    .trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '')
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    throw new Error(
+      `comprehension output is not JSON: ${JSON.stringify(raw.slice(0, 120))}`,
+    )
+  }
+  const parsed = comprehensionResponse.parse(json)
+  for (const q of parsed.questions) {
+    if (q.correctIndex >= q.choices.length) {
+      throw new Error(
+        `comprehension correctIndex ${q.correctIndex} out of range (${q.choices.length} choices)`,
+      )
+    }
+  }
+  return parsed
+}
+
 export interface GlossProvider {
   readonly name: ProviderName // recorded on the cache row so output can be purged
   gloss(req: GlossRequest): Promise<string>
   // Optional capability: providers without it fall back to sentence-context
   // glossing even for in-dictionary lemmas.
   glossSenses?(req: SenseGlossRequest): Promise<SenseGlossResult>
+  // Optional capability: comprehension-check MCQ generation for a whole text.
+  comprehension?(req: ComprehensionRequest): Promise<ComprehensionResult>
 }
 
 import { ClaudeCliGlossProvider } from './claude-cli'

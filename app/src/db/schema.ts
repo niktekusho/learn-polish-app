@@ -148,6 +148,34 @@ export const gloss = sqliteTable(
   (t) => [uniqueIndex("gloss_lemma_sense_uq").on(t.lemmaId, t.sense)],
 );
 
+/**
+ * Cached comprehension-check questions (roadmap "Comprehension checks"), one
+ * row per question, cache key = textId. Disposable derived data: no manual
+ * tier, regenerate = delete + re-generate. Learner responses are NOT stored —
+ * only the answer key is, as part of the cached question.
+ */
+export const comprehensionQuestion = sqliteTable(
+  "comprehension_question",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    textId: integer("text_id")
+      .notNull()
+      .references(() => sourceText.id, { onDelete: "cascade" }),
+    questionIndex: integer("question_index").notNull(), // order within the check
+    question: text("question").notNull(), // Italian
+    // 3–4 Italian choices. No .default: the service always supplies the array.
+    choices: text("choices", { mode: "json" }).$type<string[]>().notNull(),
+    correctIndex: integer("correct_index").notNull(), // the persisted answer key
+    provider: text("provider", {
+      enum: ["stub", "claude-cli", "codex-cli", "ollama", "api", "manual"],
+    }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [uniqueIndex("cq_text_question_uq").on(t.textId, t.questionIndex)],
+);
+
 // ---------------------------------------------------------------------------
 // Home dictionary (ADR-0002): kaikki.org Polish JSONL imported into SQLite.
 // Bulk-replaced on re-import; never referenced by FK from learner data
