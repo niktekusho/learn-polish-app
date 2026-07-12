@@ -2,7 +2,18 @@ import { and, count, eq, notExists } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import * as schema from '#/db/schema'
-import { gloss, knowledge, lemma, reviewLog, sourceText, token } from '#/db/schema'
+import {
+  dictEntry,
+  dictForm,
+  dictSense,
+  gloss,
+  knowledge,
+  lemma,
+  reviewLog,
+  sourceText,
+  token,
+} from '#/db/schema'
+import { wipeDictionary } from '#/dictionary/loader'
 
 type DB = BetterSQLite3Database<typeof schema>
 
@@ -14,6 +25,10 @@ export interface MaintenanceStats {
   stubGlosses: number
   knowledge: number
   reviews: number
+  dictEntries: number
+  dictSenses: number
+  dictForms: number
+  dictMwes: number
 }
 
 export function getStats(db: DB): MaintenanceStats {
@@ -30,6 +45,14 @@ export function getStats(db: DB): MaintenanceStats {
       .all()[0].n,
     knowledge: one(knowledge),
     reviews: one(reviewLog),
+    dictEntries: one(dictEntry),
+    dictSenses: one(dictSense),
+    dictForms: one(dictForm),
+    dictMwes: db
+      .select({ n: count() })
+      .from(dictEntry)
+      .where(eq(dictEntry.isMwe, true))
+      .all()[0].n,
   }
 }
 
@@ -64,4 +87,9 @@ export function pruneOrphanLemmas(db: DB): number {
 /** Delete glosses written by the dev stub provider so real ones regenerate. */
 export function purgeStubGlosses(db: DB): number {
   return db.delete(gloss).where(eq(gloss.provider, 'stub')).run().changes
+}
+
+/** Delete the whole home dictionary (entries, senses, forms). */
+export function clearDictionary(db: DB): number {
+  return wipeDictionary(db)
 }

@@ -1,7 +1,8 @@
 import { createFileRoute, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { z } from 'zod'
+import type { DictImportStatus } from '#/dictionary/import-job'
 import type { MaintenanceStats } from '#/maintenance/ops'
 
 const loadStats = createServerFn().handler(async (): Promise<MaintenanceStats> => {
@@ -11,7 +12,12 @@ const loadStats = createServerFn().handler(async (): Promise<MaintenanceStats> =
 })
 
 const actionInput = z.object({
-  action: z.enum(['clear-texts', 'prune-lemmas', 'purge-stub-glosses']),
+  action: z.enum([
+    'clear-texts',
+    'prune-lemmas',
+    'purge-stub-glosses',
+    'clear-dictionary',
+  ]),
 })
 
 const runAction = createServerFn({ method: 'POST' })
@@ -26,8 +32,25 @@ const runAction = createServerFn({ method: 'POST' })
         return { deleted: ops.pruneOrphanLemmas(db) }
       case 'purge-stub-glosses':
         return { deleted: ops.purgeStubGlosses(db) }
+      case 'clear-dictionary':
+        return { deleted: ops.clearDictionary(db) }
     }
   })
+
+const startDictImport = createServerFn({ method: 'POST' })
+  .validator((d: unknown) => z.object({ filePath: z.string().min(1) }).parse(d))
+  .handler(async ({ data }) => {
+    const { db } = await import('#/db/index')
+    const { startImport } = await import('#/dictionary/import-job')
+    return startImport(db, data.filePath)
+  })
+
+const getDictImportStatus = createServerFn().handler(
+  async (): Promise<DictImportStatus> => {
+    const { getImportStatus } = await import('#/dictionary/import-job')
+    return getImportStatus()
+  },
+)
 
 export const Route = createFileRoute('/maintenance')({
   component: Maintenance,
@@ -42,6 +65,48 @@ function Maintenance() {
   const [pending, setPending] = useState<Action | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [dictPath, setDictPath] = useState('')
+  const [dictStatus, setDictStatus] = useState<DictImportStatus | null>(null)
+
+  const importing = dictStatus?.state === 'running'
+
+  // Fetch once on mount (reattaches to a job after a page reload), then poll
+  // every second while an import runs; refresh stats when it settles.
+  useEffect(() => {
+    let stop = false
+    getDictImportStatus().then((s) => !stop && setDictStatus(s))
+    return () => {
+      stop = true
+    }
+  }, [])
+  useEffect(() => {
+    if (!importing) return
+    const id = setInterval(async () => {
+      const s = await getDictImportStatus()
+      setDictStatus(s)
+      if (s.state !== 'running') await router.invalidate()
+    }, 1000)
+    return () => clearInterval(id)
+  }, [importing, router])
+
+  async function runImport() {
+    const filePath = dictPath.trim()
+    if (!filePath) return
+    if (
+      !window.confirm(
+        'Import the kaikki dictionary? The current dictionary is wiped and reloaded from the file.',
+      )
+    )
+      return
+    setError(null)
+    setMessage(null)
+    const res = await startDictImport({ data: { filePath } })
+    if (!res.started) {
+      setError(res.reason ?? 'Import did not start.')
+      return
+    }
+    setDictStatus(await getDictImportStatus())
+  }
 
   async function run(action: Action, confirmText: string, noun: string) {
     if (!window.confirm(confirmText)) return
@@ -74,7 +139,52 @@ function Maintenance() {
         <Stat label="Glosses" value={stats.glosses} />
         <Stat label="Stub glosses" value={stats.stubGlosses} />
         <Stat label="Reviews" value={stats.reviews} />
+        <Stat label="Dict entries" value={stats.dictEntries} />
+        <Stat label="Dict senses" value={stats.dictSenses} />
+        <Stat label="Dict forms" value={stats.dictForms} />
+        <Stat label="Dict MWEs" value={stats.dictMwes} />
       </dl>
+
+      <div className="mt-8 rounded border border-gray-200 p-4">
+        <h2 className="font-semibold">Home dictionary</h2>
+        <p className="mt-1 text-sm text-gray-600">
+          Import the kaikki.org Polish JSONL dump (see docs/adr/0002). Download
+          it manually, then paste the absolute file path (no ~).
+        </p>
+        <div className="mt-3 flex gap-2">
+          <input
+            type="text"
+            value={dictPath}
+            onChange={(e) => setDictPath(e.target.value)}
+            placeholder="/absolute/path/to/kaikki.org-dictionary-Polish.jsonl"
+            disabled={importing}
+            className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+          />
+          <button
+            type="button"
+            onClick={runImport}
+            disabled={importing || dictPath.trim() === ''}
+            className="shrink-0 rounded border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+          >
+            {importing ? 'Importing…' : 'Import'}
+          </button>
+        </div>
+        {dictStatus && dictStatus.state !== 'idle' && (
+          <p className="mt-2 text-sm text-gray-600">
+            {dictStatus.state === 'running' &&
+              `Imported ${dictStatus.importedEntries} entries — ${
+                dictStatus.totalBytes > 0
+                  ? Math.round((100 * dictStatus.readBytes) / dictStatus.totalBytes)
+                  : 0
+              }%`}
+            {dictStatus.state === 'done' &&
+              `Done: ${dictStatus.importedEntries} entries imported (${dictStatus.processedLines} lines).`}
+            {dictStatus.state === 'error' && (
+              <span className="text-red-700">Import failed: {dictStatus.error}</span>
+            )}
+          </p>
+        )}
+      </div>
 
       <div className="mt-8 space-y-6">
         <ActionRow
@@ -116,6 +226,20 @@ function Maintenance() {
               'purge-stub-glosses',
               `Delete ${stats.stubGlosses} stub glosses?`,
               'stub glosses',
+            )
+          }
+        />
+        <ActionRow
+          title="Clear dictionary"
+          description="Deletes the whole home dictionary (entries, senses, forms). Re-import from the kaikki file to restore it."
+          button="Clear dictionary"
+          pending={pending === 'clear-dictionary'}
+          disabled={pending !== null || importing || stats.dictEntries === 0}
+          onClick={() =>
+            run(
+              'clear-dictionary',
+              `Delete all ${stats.dictEntries} dictionary entries?`,
+              'dictionary entries',
             )
           }
         />

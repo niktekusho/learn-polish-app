@@ -146,6 +146,68 @@ export const gloss = sqliteTable(
   (t) => [uniqueIndex("gloss_lemma_sense_uq").on(t.lemmaId, t.sense)],
 );
 
+// ---------------------------------------------------------------------------
+// Home dictionary (ADR-0002): kaikki.org Polish JSONL imported into SQLite.
+// Bulk-replaced on re-import; never referenced by FK from learner data
+// (lemma/gloss/knowledge), so a wipe+reload is always safe.
+// ---------------------------------------------------------------------------
+
+/** One kaikki entry: a headword + POS (one row per etymology section). */
+export const dictEntry = sqliteTable(
+  "dict_entry",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    word: text("word").notNull(), // headword as in the dump
+    pos: text("pos").notNull(), // kaikki code: 'noun' | 'verb' | 'adj' | ...
+    ipa: text("ipa"), // first sounds[].ipa, null if absent
+    etymology: text("etymology"), // etymology_text, null if absent
+    // Headword contains a space => MWE candidate for lookup-based detection.
+    isMwe: integer("is_mwe", { mode: "boolean" }).notNull().default(false),
+  },
+  (t) => [
+    // NOT unique(word,pos): the dump legitimately has multiple entries per
+    // (word,pos) — one per etymology section.
+    index("dict_entry_word_pos_idx").on(t.word, t.pos),
+    index("dict_entry_mwe_idx").on(t.isMwe),
+  ],
+);
+
+/** One sense (meaning) of a dict entry. Form-of/alt-of senses are skipped. */
+export const dictSense = sqliteTable(
+  "dict_sense",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    entryId: integer("entry_id")
+      .notNull()
+      .references(() => dictEntry.id, { onDelete: "cascade" }),
+    senseIndex: integer("sense_index").notNull(), // order within the entry
+    gloss: text("gloss").notNull(), // English; last senses[].glosses element
+    rawGloss: text("raw_gloss"), // raw_glosses[0] if present
+    // No .default([]): drizzle-sqlite json defaults are a footgun; the loader
+    // always supplies the array.
+    tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
+  },
+  (t) => [index("dict_sense_entry_idx").on(t.entryId, t.senseIndex)],
+);
+
+/** One inflected form from an entry's forms[] table (grammar-drill fuel). */
+export const dictForm = sqliteTable(
+  "dict_form",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    entryId: integer("entry_id")
+      .notNull()
+      .references(() => dictEntry.id, { onDelete: "cascade" }),
+    form: text("form").notNull(),
+    tags: text("tags", { mode: "json" }).$type<string[]>().notNull(),
+  },
+  (t) => [
+    index("dict_form_entry_idx").on(t.entryId),
+    // Reverse lookup: surface form -> entry.
+    index("dict_form_form_idx").on(t.form),
+  ],
+);
+
 // Relations (used by drizzle's relational query API in later issues).
 export const sourceTextRelations = relations(sourceText, ({ many }) => ({
   tokens: many(token),
@@ -176,4 +238,23 @@ export const reviewLogRelations = relations(reviewLog, ({ one }) => ({
 
 export const glossRelations = relations(gloss, ({ one }) => ({
   lemma: one(lemma, { fields: [gloss.lemmaId], references: [lemma.id] }),
+}));
+
+export const dictEntryRelations = relations(dictEntry, ({ many }) => ({
+  senses: many(dictSense),
+  forms: many(dictForm),
+}));
+
+export const dictSenseRelations = relations(dictSense, ({ one }) => ({
+  entry: one(dictEntry, {
+    fields: [dictSense.entryId],
+    references: [dictEntry.id],
+  }),
+}));
+
+export const dictFormRelations = relations(dictForm, ({ one }) => ({
+  entry: one(dictEntry, {
+    fields: [dictForm.entryId],
+    references: [dictEntry.id],
+  }),
 }));
