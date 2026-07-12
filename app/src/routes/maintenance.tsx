@@ -105,7 +105,10 @@ function Maintenance() {
       setError(res.reason ?? 'Import did not start.')
       return
     }
-    setDictStatus(await getDictImportStatus())
+    const s = await getDictImportStatus()
+    setDictStatus(s)
+    // Tiny files can finish before the first poll tick — refresh stats now.
+    if (s.state !== 'running') await router.invalidate()
   }
 
   async function run(action: Action, confirmText: string, noun: string) {
