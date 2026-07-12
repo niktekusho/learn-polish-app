@@ -1,6 +1,7 @@
 import { createServerFn } from '@tanstack/react-start'
 import { useCallback, useEffect, useState } from 'react'
 import { z } from 'zod'
+import type { DictLookupResult } from '#/dictionary/service'
 import type { KnowledgeFlags, ReaderToken } from './types'
 
 // Server-only: resolve (and cache) the Italian gloss for a lemma. The reader
@@ -76,6 +77,18 @@ const markLemma = createServerFn({ method: 'POST' })
     return knowledgeFlags(next.state)
   })
 
+// Server-only: home-dictionary reference for the lemma (senses, IPA, forms,
+// etymology). Read-only, no LLM involved.
+const lookupDictFn = createServerFn({ method: 'POST' })
+  .validator((d: unknown) =>
+    z.object({ lemma: z.string().min(1), pos: z.string() }).parse(d),
+  )
+  .handler(async ({ data }): Promise<DictLookupResult> => {
+    const { db } = await import('#/db/index')
+    const { lookupDictionary } = await import('#/dictionary/service')
+    return lookupDictionary(db, data.lemma, data.pos)
+  })
+
 // ts-fsrs Rating values used by the two learner actions.
 const RATING_KNOWN = 4 // Easy: long interval, marks the word learned
 const RATING_LEARNING = 1 // Again: short interval, keep it in rotation
@@ -98,6 +111,7 @@ export function WordPanel({
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false) // save/regenerate in flight
+  const [dict, setDict] = useState<DictLookupResult | null>(null)
 
   // In the reader the sentence is always present, so lookupGloss either resolves
   // with a gloss or rejects (provider/CLI failure) — a rejection is a real error,
@@ -125,6 +139,19 @@ export function WordPanel({
   }, [token.lemmaId, token.lemma, token.pos, sentence])
 
   useEffect(() => runLookup(), [runLookup])
+
+  // Dictionary reference is independent of the gloss: fetch on lemma change.
+  useEffect(() => {
+    if (token.lemma == null) return
+    let alive = true
+    setDict(null)
+    lookupDictFn({ data: { lemma: token.lemma, pos: token.pos ?? '' } })
+      .then((r) => alive && setDict(r))
+      .catch(() => {}) // reference data only; panel just omits the section
+    return () => {
+      alive = false
+    }
+  }, [token.lemma, token.pos])
 
   async function regenerate() {
     if (token.lemmaId == null || token.lemma == null) return
@@ -178,7 +205,7 @@ export function WordPanel({
     : null
 
   return (
-    <aside className="fixed right-0 top-0 h-full w-80 border-l border-gray-200 bg-white p-6 shadow-lg">
+    <aside className="fixed right-0 top-0 h-full w-80 overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-lg">
       <button
         type="button"
         onClick={onClose}
@@ -188,7 +215,14 @@ export function WordPanel({
         ✕
       </button>
 
-      <div className="text-2xl font-bold">{token.surface}</div>
+      <div className="text-2xl font-bold">
+        {token.surface}
+        {dict?.entries[0]?.ipa && (
+          <span className="ml-2 text-sm font-normal text-gray-400">
+            {dict.entries[0].ipa}
+          </span>
+        )}
+      </div>
       <dl className="mt-4 space-y-2 text-sm">
         <div>
           <dt className="text-gray-500">Lemma</dt>
@@ -275,6 +309,8 @@ export function WordPanel({
         </div>
       </dl>
 
+      {dict && dict.matchedBy !== null && <DictSection dict={dict} />}
+
       <div className="mt-6 flex gap-2">
         <button
           type="button"
@@ -305,5 +341,76 @@ export function WordPanel({
         </a>
       )}
     </aside>
+  )
+}
+
+const SENSE_PREVIEW = 5
+
+// Home-dictionary reference block: senses (+ tags), inflection forms and
+// etymology per entry. Multiple entries per word are legitimate (one per
+// etymology section in the dump).
+function DictSection({ dict }: { dict: DictLookupResult }) {
+  const [showAll, setShowAll] = useState(false)
+  return (
+    <div className="mt-6 border-t border-gray-100 pt-4 text-sm">
+      <h3 className="font-semibold text-gray-700">Dizionario</h3>
+      {dict.entries.map((entry, ei) => {
+        const senses = showAll ? entry.senses : entry.senses.slice(0, SENSE_PREVIEW)
+        return (
+          <div key={entry.id} className={ei > 0 ? 'mt-3' : 'mt-1'}>
+            {/* On a pos-mismatched (lemma-only) match, label each entry. */}
+            {dict.matchedBy === 'lemma' && (
+              <div className="text-xs uppercase text-gray-400">{entry.pos}</div>
+            )}
+            <ol className="list-decimal space-y-1 pl-5">
+              {senses.map((s, i) => (
+                <li key={i}>
+                  <span>{s.gloss}</span>
+                  {s.tags.length > 0 && (
+                    <span className="ml-1 text-xs text-gray-400">
+                      {s.tags.join(' ')}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ol>
+            {entry.senses.length > SENSE_PREVIEW && (
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                className="mt-1 text-xs text-blue-600 underline"
+              >
+                {showAll
+                  ? 'mostra meno'
+                  : `mostra tutte (${entry.senses.length})`}
+              </button>
+            )}
+            {entry.forms.length > 0 && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-gray-500">
+                  Forme ({entry.forms.length})
+                </summary>
+                <ul className="mt-1 space-y-0.5 text-xs">
+                  {entry.forms.map((f, i) => (
+                    <li key={i} className="flex justify-between gap-2">
+                      <span className="text-gray-400">{f.tags.join(' ')}</span>
+                      <span className="font-medium">{f.form}</span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+            {entry.etymology && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-gray-500">
+                  Etimologia
+                </summary>
+                <p className="mt-1 text-xs text-gray-600">{entry.etymology}</p>
+              </details>
+            )}
+          </div>
+        )
+      })}
+    </div>
   )
 }
