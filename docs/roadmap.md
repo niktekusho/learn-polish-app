@@ -79,17 +79,18 @@ Future notes (explicitly wanted, not v1):
 
 - **Importers (URL / .srt / .epub / YouTube)** — manual paste chosen as the content
   strategy; importers rise only if daily copy-paste becomes the friction.
-- **kaikki bulk import (home dictionary)** — needed by grammar drills, a richer word
-  panel, MWE detection, and per-sense glosses. Note the hidden dependency: none of those
-  can start before this. Three parked features now stack on it — rising promotion signal.
-- **MWE tracking (multi-word expressions)** — decided (2026-07-11): MWEs are first-class
-  Tracked units (see CONTEXT.md), but detection strategy is deferred until kaikki import
-  lands — the dictionary's multi-word entries enable lookup-based detection (bigram match
-  at tokenization), which beats both manual marking and LLM proposal as the first rung.
-  v1 scope when picked up: contiguous MWEs only; discontinuous (*zdaję sobie z tego
-  sprawę*) deferred further.
+- ~~**kaikki bulk import (home dictionary)**~~ — **shipped (2026-07-12)**: schema +
+  streaming importer (maintenance page), word-panel reference (senses, IPA, forms,
+  etymology), hybrid per-sense glosses, contiguous MWE detection. See ADR-0002
+  "Amendment resolved".
+- ~~**MWE tracking (multi-word expressions)**~~ — **v1 shipped (2026-07-12)**:
+  contiguous lookup-based detection at import (dictionary multi-word headwords, surface
+  or lemma match). Discontinuous MWEs (*zdaję sobie z tego sprawę*) stay parked.
 - **Grammar drills (case/aspect/gender/conjugation)** — learner is grammar-strong; low
-  value today. Blocked by kaikki import.
+  value today. Now unblocked (`dict_form` has the inflection tables), still low priority.
+- **Etymology-based games** — new idea (2026-07-12): `dict_entry.etymology` is now
+  stored; explore exercises built on it (cognate guessing, Proto-Slavic roots,
+  borrowing-language quizzes). Fun layer, not a knowledge-track feeder.
 - **LLM-generated graded texts** — new candidate from this session, not pursued: hard to
   give the model reliable cognition of the learner's level. Counterpoint for later: the
   FSRS store *is* a machine-readable known-lemma list, which is exactly that cognition.
@@ -99,13 +100,11 @@ Future notes (explicitly wanted, not v1):
   rule; superseded by pre-gloss-on-import if glossing latency ever hurts.
 - **Frequency-onboarding UI** — effectively dead: at sub-A1 vocabulary there is nothing
   to batch-mark as known.
-- **Per-sense glosses (context-dependent meanings)** — dogfooding signal confirmed
-  (2026-07-12): *przedmiot* cached as "oggetto" but means "materia (scolastica)" in a
-  school text; first-encountered sense wins forever (see ADR-0002 amendment). **Blocked
-  by kaikki import** — the sense inventory comes from Wiktionary senses; building
-  LLM-derived senses without it was considered and rejected. Interim decision: live with
-  first-sense-wins (regenerate/manual edit if a gloss bothers), no interim mitigation.
-  Schema is ready (`gloss.sense` column + unique index already exist).
+- ~~**Per-sense glosses (context-dependent meanings)**~~ — **shipped (2026-07-12)**
+  via the hybrid strategy (one call translates all senses + flags the context fit; see
+  ADR-0002 "Amendment resolved"). The word panel now shows every sense with its Italian,
+  so the *przedmiot*/"oggetto" trap is visible and fixable. Inline display is still
+  first-pick-wins until WSD (below) is picked up.
 - **Word-sense disambiguation, accent scoring (tier-3), IPA exercises, native audio
   (v2)** — unchanged, still parked. (WSD = auto-picking the right sense per occurrence;
   a later layer on top of per-sense glosses above.)

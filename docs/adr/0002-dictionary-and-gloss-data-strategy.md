@@ -50,3 +50,30 @@ This is a deliberate interim, not a change of target:
     build LLM-derived senses; live with first-sense-wins meanwhile.
 - When kaikki lands, the onboarding wave batch-translates senses; sentence-context
   generation is retained only as the **lazy fallback** for lemmas absent from the dump.
+
+## Amendment resolved (2026-07-12): kaikki import shipped
+
+The Home dictionary is live: `dict_entry` / `dict_sense` / `dict_form` tables, loaded by
+a streaming importer run from the maintenance page (background job + progress polling).
+Source file: `https://kaikki.org/dictionary/Polish/kaikki.org-dictionary-Polish.jsonl`
+(~736 MB, ~173k words), downloaded manually. kaikki marks the per-language files
+deprecated; the raw English-edition wiktextract dump from
+`https://kaikki.org/dictionary/rawdata.html` works too — the importer filters
+`lang_code == "pl"` per line. Do NOT use `pl-extract.jsonl` (Polish-edition Wiktionary,
+Polish-language glosses). Pure inflected-form entries are skipped (forms come from head
+entries), as are affix/character POS. Etymology text is stored per entry.
+
+Per-sense glosses diverge slightly from the original two-wave plan:
+
+- The onboarding batch wave stays dead (mandatory-context rule, see roadmap).
+- Shipped instead: a **hybrid lazy wave** — on first click of an in-dictionary lemma,
+  ONE LLM call translates ALL its Wiktionary senses to Italian AND flags the sense
+  fitting the sentence. Every sense gets a `gloss` row (`sense` = English sense text,
+  truncated); the flagged sense's Italian is copied to `sense = ''`, which remains the
+  single inline-display gloss. Cost stays one call per lemma; the word panel shows every
+  meaning, so a polysemous lemma no longer hides its other senses (the *zamek* /
+  *przedmiot* problem).
+- Sentence-context generation is retained exactly as predicted: the lazy fallback for
+  lemmas absent from the dump.
+- WSD (auto-picking the right sense per occurrence) remains parked; inline display is
+  first-pick-wins, with manual edit/regenerate as recourse.

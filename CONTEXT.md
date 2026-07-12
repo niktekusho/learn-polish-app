@@ -20,7 +20,8 @@ A fixed expression whose meaning is not derivable from its parts — *na pewno* 
 *dzień dobry*, *zdawać sobie sprawę* (rendersi conto). A lexical unit in its own right and
 therefore a **Tracked unit**. May be discontinuous in a sentence (*zdaję sobie z tego
 sprawę*). Compositional phrases (*ciekawe rzeczy*, *czerwone wino*) are NOT MWEs — they
-stay separate lemmas.
+stay separate lemmas. Detected at text import by matching token runs against the **Home
+dictionary**'s multi-word headwords (contiguous only in v1; discontinuous parked).
 _Avoid_: phrase, collocation, idiom (as data terms)
 
 **Tracked unit**:
@@ -33,8 +34,11 @@ glosses, and UI copy are Italian. (L2 = the language being learned = Polish.)
 
 **Gloss**:
 The Italian meaning attached to a Polish **Tracked unit** or word-sense, shown while
-reading and used in exercises. Sourced per word-sense, not per surface form. Machine-
-generated glosses are provisional; a **Manual gloss** overrides them.
+reading and used in exercises. Sourced per word-sense, not per surface form: for lemmas
+in the **Home dictionary**, one LLM call translates every Wiktionary sense and flags the
+one fitting the sentence (the inline gloss); out-of-dictionary lemmas fall back to
+sentence-context generation. Machine-generated glosses are provisional; a **Manual
+gloss** overrides them.
 
 **Manual gloss**:
 A **Gloss** written or corrected by the learner. The highest-trust tier: never overwritten
