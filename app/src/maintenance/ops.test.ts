@@ -47,6 +47,34 @@ test('clearing texts keeps glossed and reviewed lemmas; prune drops the rest', (
   expect(db.select().from(schema.knowledge).all()).toHaveLength(1)
 })
 
+test('prune keeps unglossed MWE lemmas that have occurrences', () => {
+  const db = freshDb()
+  const analysis: AnalyzeResponse = {
+    sentences: [{ tokens: [w('na', 'na', 'ADP'), w('pewno', 'pewno', 'ADV')] }],
+  }
+  persistAnalysis(
+    db,
+    { content: 'na pewno' },
+    analysis,
+    new Date(),
+    new Map([['na', ['na pewno']]]),
+  )
+  const mwe = db.select().from(schema.lemma).all().find((l) => l.pos === 'MWE')!
+
+  // MWE has no token rows, no gloss, no reviews — but an occurrence: kept.
+  pruneOrphanLemmas(db)
+  expect(
+    db.select().from(schema.lemma).all().find((l) => l.id === mwe.id),
+  ).toBeDefined()
+
+  // Once its text (and occurrence) is gone, prune sweeps it like any orphan.
+  clearSourceTexts(db)
+  pruneOrphanLemmas(db)
+  expect(
+    db.select().from(schema.lemma).all().find((l) => l.id === mwe.id),
+  ).toBeUndefined()
+})
+
 test('purgeStubGlosses removes only stub rows', () => {
   const db = freshDb()
   persistAnalysis(db, { content: 'Robię obiad' }, ANALYSIS)

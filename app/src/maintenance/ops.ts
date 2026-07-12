@@ -9,6 +9,7 @@ import {
   gloss,
   knowledge,
   lemma,
+  mweOccurrence,
   reviewLog,
   sourceText,
   token,
@@ -66,8 +67,11 @@ export function clearSourceTexts(db: DB): number {
 
 /**
  * Delete lemmas that carry nothing: no token references them, no gloss was
- * ever produced, and they were never reviewed. Their (empty) knowledge rows
- * cascade. Run after clearSourceTexts to sweep the never-practiced backlog.
+ * ever produced, they were never reviewed, and no MWE occurrence points at
+ * them (MWE lemmas have no token rows — their components keep their own
+ * lemmas — so without this check every unglossed MWE would be pruned).
+ * Their (empty) knowledge rows cascade. Run after clearSourceTexts to sweep
+ * the never-practiced backlog.
  */
 export function pruneOrphanLemmas(db: DB): number {
   return db
@@ -78,6 +82,12 @@ export function pruneOrphanLemmas(db: DB): number {
         notExists(db.select().from(gloss).where(eq(gloss.lemmaId, lemma.id))),
         notExists(
           db.select().from(reviewLog).where(eq(reviewLog.lemmaId, lemma.id)),
+        ),
+        notExists(
+          db
+            .select()
+            .from(mweOccurrence)
+            .where(eq(mweOccurrence.lemmaId, lemma.id)),
         ),
       ),
     )

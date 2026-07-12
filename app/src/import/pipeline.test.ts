@@ -79,3 +79,64 @@ test('re-importing links to existing lemmas without duplicating them', () => {
   expect(db.select().from(schema.lemma).all()).toHaveLength(4)
   expect(db.select().from(schema.knowledge).all()).toHaveLength(4)
 })
+
+test('detected MWEs become pos=MWE tracked units with occurrences', () => {
+  const db = freshDb()
+  // "Na pewno tak."
+  const analysis: AnalyzeResponse = {
+    sentences: [
+      {
+        tokens: [
+          w('Na', 'na', 'ADP'),
+          sp(' '),
+          w('pewno', 'pewno', 'ADV'),
+          sp(' '),
+          w('tak', 'tak', 'PART'),
+          w('.', '.', 'PUNCT'),
+        ],
+      },
+    ],
+  }
+  const headwords = new Map([['na', ['na pewno']]])
+  const res = persistAnalysis(
+    db,
+    { content: 'Na pewno tak.' },
+    analysis,
+    new Date(),
+    headwords,
+  )
+  expect(res.mweCount).toBe(1)
+
+  const mweLemma = db
+    .select()
+    .from(schema.lemma)
+    .all()
+    .find((l) => l.pos === 'MWE')
+  expect(mweLemma?.lemma).toBe('na pewno')
+
+  const know = db
+    .select()
+    .from(schema.knowledge)
+    .all()
+    .find((k) => k.lemmaId === mweLemma?.id)
+  expect(know?.track).toBe('receptive')
+
+  const [occ] = db.select().from(schema.mweOccurrence).all()
+  expect(occ.lemmaId).toBe(mweLemma?.id)
+  expect(occ.startPosition).toBe(0)
+  expect(occ.endPosition).toBe(2) // 'pewno' sits at position 2 (space at 1)
+  expect(occ.sentenceIndex).toBe(0)
+})
+
+test('no headwords: zero MWE occurrences, pipeline unchanged', () => {
+  const db = freshDb()
+  const res = persistAnalysis(
+    db,
+    { content: 'x' },
+    ANALYSIS,
+    new Date(),
+    new Map(),
+  )
+  expect(res.mweCount).toBe(0)
+  expect(db.select().from(schema.mweOccurrence).all()).toHaveLength(0)
+})

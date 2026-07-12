@@ -49,7 +49,22 @@ const getText = createServerFn()
       ...t,
       ...knowledgeFlags(receptiveState),
     }))
-    return { text, tokens }
+
+    // MWE occurrences detected at import (contiguous, pos='MWE' lemmas).
+    const mwes = db
+      .select({
+        lemmaId: schema.mweOccurrence.lemmaId,
+        headword: schema.lemma.lemma,
+        startPosition: schema.mweOccurrence.startPosition,
+        endPosition: schema.mweOccurrence.endPosition,
+        sentenceIndex: schema.mweOccurrence.sentenceIndex,
+      })
+      .from(schema.mweOccurrence)
+      .innerJoin(schema.lemma, eq(schema.mweOccurrence.lemmaId, schema.lemma.id))
+      .where(eq(schema.mweOccurrence.textId, textId))
+      .all()
+
+    return { text, tokens, mwes }
   })
 
 // Batch-mark every still-New word in a text as known (grade Easy) in ONE
@@ -68,11 +83,28 @@ export const Route = createFileRoute('/read/$textId')({
   loader: ({ params }) => getText({ data: params.textId }),
 })
 
+type MweInfo = {
+  lemmaId: number
+  headword: string
+  startPosition: number
+  endPosition: number
+  sentenceIndex: number
+}
+
 function Reader() {
-  const { text, tokens } = Route.useLoaderData()
+  const { text, tokens, mwes } = Route.useLoaderData()
   const [selected, setSelected] = useState<ReaderToken | null>(null)
   // Live verdict overrides so marking updates highlights without a reload.
   const [overrides, setOverrides] = useState<Record<number, KnowledgeFlags>>({})
+
+  // Token position -> covering MWE occurrence, for underline + panel link.
+  const mweAt = useMemo(() => {
+    const map = new Map<number, MweInfo>()
+    for (const m of mwes) {
+      for (let p = m.startPosition; p <= m.endPosition; p++) map.set(p, m)
+    }
+    return map
+  }, [mwes])
 
   const flagsOf = (t: ReaderToken): KnowledgeFlags =>
     t.lemmaId != null && overrides[t.lemmaId]
@@ -135,11 +167,15 @@ function Reader() {
             : f.stillLearning
               ? 'bg-orange-200 hover:bg-orange-300' // explicit "still learning"
               : 'bg-yellow-200 hover:bg-yellow-300' // never-touched unknown
+          // Dotted underline marks tokens covered by a detected MWE.
+          const mweCls = mweAt.has(t.position)
+            ? ' underline decoration-dotted decoration-blue-400 underline-offset-4'
+            : ''
           return (
             <span
               key={i}
               onClick={() => setSelected(t)}
-              className={`cursor-pointer rounded ${cls}`}
+              className={`cursor-pointer rounded ${cls}${mweCls}`}
             >
               {t.surface}
             </span>
@@ -154,6 +190,26 @@ function Reader() {
             .filter((t) => t.sentenceIndex === selected.sentenceIndex)
             .map((t) => t.surface)
             .join('')}
+          mwe={(() => {
+            const m = mweAt.get(selected.position)
+            if (!m || selected.pos === 'MWE') return null
+            return { lemmaId: m.lemmaId, headword: m.headword }
+          })()}
+          onSelectMwe={(m) => {
+            const occ = mweAt.get(selected.position)
+            // Swap the panel to a synthetic token for the MWE tracked unit.
+            setSelected({
+              surface: m.headword,
+              isSpace: false,
+              position: occ?.startPosition ?? selected.position,
+              sentenceIndex: selected.sentenceIndex,
+              lemmaId: m.lemmaId,
+              lemma: m.headword,
+              pos: 'MWE',
+              known: false,
+              stillLearning: false,
+            })
+          }}
           onGraded={markGraded}
           onClose={() => setSelected(null)}
         />

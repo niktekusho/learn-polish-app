@@ -32,7 +32,9 @@ export const lemma = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     lemma: text("lemma").notNull(),
-    pos: text("pos").notNull(), // UPOS: NOUN, VERB, ADP, ...
+    // UPOS: NOUN, VERB, ADP, ... — or 'MWE' for multi-word tracked units
+    // (dictionary headwords detected at import, see mweOccurrence).
+    pos: text("pos").notNull(),
   },
   (t) => [
     // A lemma is identified by its base form + POS (kot/NOUN vs homographs).
@@ -208,6 +210,34 @@ export const dictForm = sqliteTable(
   ],
 );
 
+/**
+ * A contiguous MWE occurrence in a text, spanning token positions. The MWE
+ * itself is a `lemma` row with pos='MWE' (first-class tracked unit per
+ * CONTEXT.md); occurrences need their own table because one token.lemmaId
+ * can't span tokens. Component tokens keep their own word lemmas — *pewno*
+ * inside *na pewno* still counts as its own exposure (accepted v1
+ * double-count).
+ */
+export const mweOccurrence = sqliteTable(
+  "mwe_occurrence",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    textId: integer("text_id")
+      .notNull()
+      .references(() => sourceText.id, { onDelete: "cascade" }),
+    lemmaId: integer("lemma_id") // the pos='MWE' lemma row
+      .notNull()
+      .references(() => lemma.id, { onDelete: "cascade" }),
+    startPosition: integer("start_position").notNull(), // token.position, inclusive
+    endPosition: integer("end_position").notNull(), // inclusive
+    sentenceIndex: integer("sentence_index").notNull(),
+  },
+  (t) => [
+    index("mwe_occ_text_idx").on(t.textId, t.startPosition),
+    index("mwe_occ_lemma_idx").on(t.lemmaId),
+  ],
+);
+
 // Relations (used by drizzle's relational query API in later issues).
 export const sourceTextRelations = relations(sourceText, ({ many }) => ({
   tokens: many(token),
@@ -238,6 +268,17 @@ export const reviewLogRelations = relations(reviewLog, ({ one }) => ({
 
 export const glossRelations = relations(gloss, ({ one }) => ({
   lemma: one(lemma, { fields: [gloss.lemmaId], references: [lemma.id] }),
+}));
+
+export const mweOccurrenceRelations = relations(mweOccurrence, ({ one }) => ({
+  sourceText: one(sourceText, {
+    fields: [mweOccurrence.textId],
+    references: [sourceText.id],
+  }),
+  lemma: one(lemma, {
+    fields: [mweOccurrence.lemmaId],
+    references: [lemma.id],
+  }),
 }));
 
 export const dictEntryRelations = relations(dictEntry, ({ many }) => ({

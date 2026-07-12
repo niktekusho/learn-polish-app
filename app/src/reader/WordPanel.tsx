@@ -102,11 +102,16 @@ const RATING_LEARNING = 1 // Again: short interval, keep it in rotation
 export function WordPanel({
   token,
   sentence,
+  mwe = null,
+  onSelectMwe,
   onGraded,
   onClose,
 }: {
   token: ReaderToken
   sentence: string
+  // Set when the clicked token sits inside a detected MWE occurrence.
+  mwe?: { lemmaId: number; headword: string } | null
+  onSelectMwe?: (mwe: { lemmaId: number; headword: string }) => void
   onGraded: (lemmaId: number, flags: KnowledgeFlags) => void
   onClose: () => void
 }) {
@@ -320,6 +325,19 @@ export function WordPanel({
           </dd>
         </div>
       </dl>
+
+      {mwe && (
+        <p className="mt-4 text-sm text-gray-600">
+          Parte di:{' '}
+          <button
+            type="button"
+            onClick={() => onSelectMwe?.(mwe)}
+            className="font-semibold text-blue-600 underline"
+          >
+            {mwe.headword}
+          </button>
+        </p>
+      )}
 
       {dict && dict.matchedBy !== null && <DictSection dict={dict} />}
 
