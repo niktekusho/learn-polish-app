@@ -10,11 +10,15 @@ export interface Modality {
 
 // The lemma-plus-reference view an exercise operates on. `gloss` is the cached
 // Italian meaning when available (the "dict" side of ADR-0003's contract).
+// `sentence` is a sentence from the user's imported texts containing the
+// lemma — populated by the session builder only when a speaking exercise
+// might use it (read-aloud).
 export interface ExerciseCandidate {
   lemmaId: number
   lemma: string
   pos: string
   gloss?: string
+  sentence?: string
 }
 
 /**

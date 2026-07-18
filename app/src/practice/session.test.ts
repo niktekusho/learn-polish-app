@@ -53,7 +53,8 @@ test('buildSession skips un-glossed lemmas and never generates a gloss', () => {
   // Client items carry no correct-answer marker.
   for (const item of session.items) {
     expect('correctIndex' in item).toBe(false)
-    expect(item.choices).toHaveLength(4)
+    expect(item.kind).toBe('recognition-mcq')
+    if (item.kind === 'recognition-mcq') expect(item.choices).toHaveLength(4)
   }
 })
 

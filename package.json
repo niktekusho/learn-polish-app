@@ -4,7 +4,7 @@
   "scripts": {
     "dev": "concurrently -k -n app,sidecar -c blue,green \"pnpm --filter app dev\" \"pnpm dev:sidecar\"",
     "dev:app": "pnpm --filter app dev",
-    "dev:sidecar": "cd sidecar && uv run uvicorn main:app --reload --port 8000",
+    "dev:sidecar": "cd sidecar && TRANSCRIBE_DUMP=1 uv run uvicorn main:app --reload --port 8000",
     "db:generate": "pnpm --filter app db:generate",
     "db:migrate": "pnpm --filter app db:migrate"
   },

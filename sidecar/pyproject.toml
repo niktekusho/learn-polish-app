@@ -5,7 +5,9 @@ description = "Polish morphology sidecar (FastAPI). Backlog #2 adds /analyze."
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
+    "faster-whisper>=1.1",
     "pl-core-news-sm",
+    "python-multipart>=0.0.18",
     "spacy>=3.7",
     "uvicorn[standard]>=0.32",
 ]

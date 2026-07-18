@@ -22,7 +22,7 @@ for the text's unknown lemmas *with their sentence context* in the background at
 time. That respects the mandatory-context rule from MVP issue #6 and permanently kills
 top-5k seeding (which has no sentence context and contradicts that rule).
 
-## Slice 1 — Speaking (opens the productive track)
+## Slice 1 — Speaking (opens the productive track; designed 2026-07-12)
 
 Sidecar gains a **faster-whisper** ASR endpoint (audio in → transcript out). See
 [ADR-0004](./adr/0004-sidecar-hosts-asr-and-tts.md). Browser side: mic capture,
@@ -38,6 +38,55 @@ Two exercises share the audio infrastructure (terms in [CONTEXT.md](../CONTEXT.m
 - **Read-aloud** — Polish sentence shown, read it out loud. Grades **receptive only**:
   the word is on screen, so it proves decoding and pronunciation, not retrieval.
   (Decided explicitly to keep the productive track pure.)
+
+Design decisions (2026-07-12 brainstorm):
+
+- **ASR**: `POST /transcribe` on the sidecar — multipart audio → `{ text }`.
+  faster-whisper int8 (CPU/CTranslate2 on the M1 Max; no MPS), `language="pl"`,
+  `vad_filter=True`, `condition_on_previous_text=False`. Model name is a config knob
+  (`WHISPER_MODEL`), default **`medium`** — the 2026-07-13 eval on real mic clips found
+  it more accurate than `small` at the same short-clip latency (~2.5s; fixed overhead
+  dominates), while `large-v3-turbo` was *worse* on Polish single words. Lazy-load on
+  first call, stays warm. No lemmatization in `/transcribe` — the app runs the
+  transcript through the existing `/analyze`.
+- **Phonetic-fuzzy grading** (2026-07-13, from the same eval): whisper hears non-native
+  single words nearly right but spells them wrong (*szykować* → "Szykowacz"), so exact
+  lemma match failed constantly. Grading now compares Polish **phonetic keys**
+  (orthographic identities rz=ż/ó=u/ch=h; ASR confusion folds ć/cz, ś/sz, ź/ż, y/i,
+  denasalized ę/ą) with a length-scaled edit-distance budget (≤4 chars exact, 5–7 one
+  edit, 8+ two). Known cost, accepted: true minimal pairs fold together (być=bić) —
+  this grades recall, not pronunciation; self-grade fallback remains the escape hatch.
+  Parked upgrade path if misfires still hurt: constrained decoding (score P(audio |
+  target) instead of open transcription).
+- **Capture-side finding** (2026-07-13): real clips came in at RMS −43…−49 dB (normal
+  speech ≈ −20 dB) despite `autoGainControl` — raise the OS input level. Server-side
+  gain normalization was tested and did **not** improve transcripts (whisper normalizes
+  internally); not added.
+- **Audio path**: browser → app server (multipart) → sidecar. Sidecar never exposed to
+  the phone; grading stays server-side. Audio discarded after transcription (store only
+  if accent scoring ever lands).
+- **Queue integration**: speaking exercises join the mixed Practice queue with a
+  per-session **mic toggle** — mic off skips productive dues (no silent productive
+  exercise exists yet) and read-aloud.
+- **Productive queue entry**: no maturity gate — any glossed lemma becomes a New
+  productive card; the existing per-track `newCardLimit` throttles volume.
+- **Grading**: target lemma ∈ transcript lemmas → Good, FSRS written immediately.
+  ASR miss writes **no FSRS** yet: reveal + transcript shown, learner self-grades
+  ("said it" / "didn't") → then write. Binary like MCQ, no 4-button FSRS UI.
+  Exact target lemma only (no synonym reverse-lookup); self-grade catches valid
+  synonyms. Read-aloud grades the **target lemma only** (sentence picked to contain
+  it; shortest candidate wins for least ASR noise).
+- **No `initial_prompt` biasing** toward the target word — would inflate false
+  positives, grading retrieval that didn't happen.
+- **Devices**: desktop Mac + phone (daily browser: Firefox on Android; Chrome must
+  work too). MediaRecorder mimetype fallback `ogg/opus` → `webm/opus` → `mp4`; PyAV
+  decodes all three server-side. Push-to-talk via pointer events (mouse + touch, one
+  code path), spacebar bonus on desktop. LAN HTTPS for `getUserMedia` via
+  **Tailscale serve** — zero app code.
+
+Ship order (each shippable): 1) sidecar `/transcribe` 2) mic capture component
+3) spoken-recall plugin + audio answer route + fallback 4) session multi-exercise
+mixing + mic toggle 5) read-aloud plugin.
 
 ## Slice 2 — Listening dictation
 

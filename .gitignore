@@ -11,3 +11,6 @@ sidecar/.venv/
 __pycache__/
 *.pyc
 .env
+
+# Ignore clips dump
+clips-dump/

@@ -1,4 +1,4 @@
-// Client for the Python morphology sidecar (#2). Server-only: called from a
+// Client for the Python ML sidecar (#2, ADR-0004). Server-only: called from a
 // server function, never bundled to the browser.
 
 export interface AnalyzedToken {
@@ -27,4 +27,22 @@ export async function analyze(text: string): Promise<AnalyzeResponse> {
     throw new Error(`sidecar /analyze failed: ${res.status} ${res.statusText}`)
   }
   return (await res.json()) as AnalyzeResponse
+}
+
+/**
+ * ASR (ADR-0004): browser-recorded audio in (ogg/webm/mp4 — PyAV sniffs the
+ * container, filename is decoration), raw Polish transcript out. First call
+ * ever is slow: the sidecar lazy-loads (and once, downloads) the model.
+ */
+export async function transcribe(audio: Blob): Promise<string> {
+  const form = new FormData()
+  form.append('audio', audio, 'clip')
+  const res = await fetch(`${SIDECAR_URL}/transcribe`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    throw new Error(`sidecar /transcribe failed: ${res.status} ${res.statusText}`)
+  }
+  return ((await res.json()) as { text: string }).text
 }
