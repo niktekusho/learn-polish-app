@@ -28,9 +28,9 @@ function Home() {
   const texts = Route.useLoaderData()
   return (
     <div className="mx-auto max-w-2xl p-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-bold">Learn Polish</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Link
             to="/maintenance"
             className="rounded border border-gray-300 px-4 py-2 font-medium"

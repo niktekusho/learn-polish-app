@@ -6,7 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "GLOSS_PROVIDER=claude-cli vite dev --port 3000",
+    "dev": "GLOSS_PROVIDER=claude-cli VITE_ALLOWED_HOSTS=mb14.local vite dev --port 3000 --host 0.0.0.0",
     "generate-routes": "tsr generate",
     "purge-stub": "node scripts/purge-stub.mjs",
     "build": "vite build",
