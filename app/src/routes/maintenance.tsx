@@ -1,151 +1,142 @@
-import { createFileRoute, useRouter } from '@tanstack/react-router'
-import { createServerFn } from '@tanstack/react-start'
-import { useEffect, useState } from 'react'
-import { z } from 'zod'
-import type { DictImportStatus } from '#/dictionary/import-job'
-import type { FlaggedLemma, MaintenanceStats } from '#/maintenance/ops'
+import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
+import { useEffect, useState } from "react";
+import { z } from "zod";
+import type { DictImportStatus } from "#/dictionary/import-job";
+import type { FlaggedLemma, MaintenanceStats } from "#/maintenance/ops";
 
 const loadStats = createServerFn().handler(async (): Promise<MaintenanceStats> => {
-  const { db } = await import('#/db/index')
-  const { getStats } = await import('#/maintenance/ops')
-  return getStats(db)
-})
+  const { db } = await import("#/db/index");
+  const { getStats } = await import("#/maintenance/ops");
+  return getStats(db);
+});
 
 const loadFlagged = createServerFn().handler(async (): Promise<FlaggedLemma[]> => {
-  const { db } = await import('#/db/index')
-  const { listFlagged } = await import('#/maintenance/ops')
-  return listFlagged(db)
-})
+  const { db } = await import("#/db/index");
+  const { listFlagged } = await import("#/maintenance/ops");
+  return listFlagged(db);
+});
 
 // Clear a practice report; with `italian`, save it as the manual gloss first.
-const resolveFlagFn = createServerFn({ method: 'POST' })
+const resolveFlagFn = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
-    z
-      .object({ lemmaId: z.number().int(), italian: z.string().min(1).optional() })
-      .parse(d),
+    z.object({ lemmaId: z.number().int(), italian: z.string().min(1).optional() }).parse(d),
   )
   .handler(async ({ data }) => {
-    const { db } = await import('#/db/index')
-    const { resolveFlag } = await import('#/maintenance/ops')
-    resolveFlag(db, data.lemmaId, data.italian)
-  })
+    const { db } = await import("#/db/index");
+    const { resolveFlag } = await import("#/maintenance/ops");
+    resolveFlag(db, data.lemmaId, data.italian);
+  });
 
 const actionInput = z.object({
-  action: z.enum([
-    'clear-texts',
-    'prune-lemmas',
-    'purge-stub-glosses',
-    'clear-dictionary',
-  ]),
-})
+  action: z.enum(["clear-texts", "prune-lemmas", "purge-stub-glosses", "clear-dictionary"]),
+});
 
-const runAction = createServerFn({ method: 'POST' })
+const runAction = createServerFn({ method: "POST" })
   .validator((d: unknown) => actionInput.parse(d))
   .handler(async ({ data }): Promise<{ deleted: number }> => {
-    const { db } = await import('#/db/index')
-    const ops = await import('#/maintenance/ops')
+    const { db } = await import("#/db/index");
+    const ops = await import("#/maintenance/ops");
     switch (data.action) {
-      case 'clear-texts':
-        return { deleted: ops.clearSourceTexts(db) }
-      case 'prune-lemmas':
-        return { deleted: ops.pruneOrphanLemmas(db) }
-      case 'purge-stub-glosses':
-        return { deleted: ops.purgeStubGlosses(db) }
-      case 'clear-dictionary':
-        return { deleted: ops.clearDictionary(db) }
+      case "clear-texts":
+        return { deleted: ops.clearSourceTexts(db) };
+      case "prune-lemmas":
+        return { deleted: ops.pruneOrphanLemmas(db) };
+      case "purge-stub-glosses":
+        return { deleted: ops.purgeStubGlosses(db) };
+      case "clear-dictionary":
+        return { deleted: ops.clearDictionary(db) };
     }
-  })
+  });
 
-const startDictImport = createServerFn({ method: 'POST' })
+const startDictImport = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ filePath: z.string().min(1) }).parse(d))
   .handler(async ({ data }) => {
-    const { db } = await import('#/db/index')
-    const { startImport } = await import('#/dictionary/import-job')
-    return startImport(db, data.filePath)
-  })
+    const { db } = await import("#/db/index");
+    const { startImport } = await import("#/dictionary/import-job");
+    return startImport(db, data.filePath);
+  });
 
-const getDictImportStatus = createServerFn().handler(
-  async (): Promise<DictImportStatus> => {
-    const { getImportStatus } = await import('#/dictionary/import-job')
-    return getImportStatus()
-  },
-)
+const getDictImportStatus = createServerFn().handler(async (): Promise<DictImportStatus> => {
+  const { getImportStatus } = await import("#/dictionary/import-job");
+  return getImportStatus();
+});
 
-export const Route = createFileRoute('/maintenance')({
+export const Route = createFileRoute("/maintenance")({
   component: Maintenance,
   loader: async () => {
-    const [stats, flagged] = await Promise.all([loadStats(), loadFlagged()])
-    return { stats, flagged }
+    const [stats, flagged] = await Promise.all([loadStats(), loadFlagged()]);
+    return { stats, flagged };
   },
-})
+});
 
-type Action = z.infer<typeof actionInput>['action']
+type Action = z.infer<typeof actionInput>["action"];
 
 function Maintenance() {
-  const { stats, flagged } = Route.useLoaderData()
-  const router = useRouter()
-  const [pending, setPending] = useState<Action | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [dictPath, setDictPath] = useState('')
-  const [dictStatus, setDictStatus] = useState<DictImportStatus | null>(null)
+  const { stats, flagged } = Route.useLoaderData();
+  const router = useRouter();
+  const [pending, setPending] = useState<Action | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [dictPath, setDictPath] = useState("");
+  const [dictStatus, setDictStatus] = useState<DictImportStatus | null>(null);
 
-  const importing = dictStatus?.state === 'running'
+  const importing = dictStatus?.state === "running";
 
   // Fetch once on mount (reattaches to a job after a page reload), then poll
   // every second while an import runs; refresh stats when it settles.
   useEffect(() => {
-    let stop = false
-    getDictImportStatus().then((s) => !stop && setDictStatus(s))
+    let stop = false;
+    getDictImportStatus().then((s) => !stop && setDictStatus(s));
     return () => {
-      stop = true
-    }
-  }, [])
+      stop = true;
+    };
+  }, []);
   useEffect(() => {
-    if (!importing) return
+    if (!importing) return;
     const id = setInterval(async () => {
-      const s = await getDictImportStatus()
-      setDictStatus(s)
-      if (s.state !== 'running') await router.invalidate()
-    }, 1000)
-    return () => clearInterval(id)
-  }, [importing, router])
+      const s = await getDictImportStatus();
+      setDictStatus(s);
+      if (s.state !== "running") await router.invalidate();
+    }, 1000);
+    return () => clearInterval(id);
+  }, [importing, router]);
 
   async function runImport() {
-    const filePath = dictPath.trim()
-    if (!filePath) return
+    const filePath = dictPath.trim();
+    if (!filePath) return;
     if (
       !window.confirm(
-        'Import the kaikki dictionary? The current dictionary is wiped and reloaded from the file.',
+        "Import the kaikki dictionary? The current dictionary is wiped and reloaded from the file.",
       )
     )
-      return
-    setError(null)
-    setMessage(null)
-    const res = await startDictImport({ data: { filePath } })
+      return;
+    setError(null);
+    setMessage(null);
+    const res = await startDictImport({ data: { filePath } });
     if (!res.started) {
-      setError(res.reason ?? 'Import did not start.')
-      return
+      setError(res.reason ?? "Import did not start.");
+      return;
     }
-    const s = await getDictImportStatus()
-    setDictStatus(s)
+    const s = await getDictImportStatus();
+    setDictStatus(s);
     // Tiny files can finish before the first poll tick — refresh stats now.
-    if (s.state !== 'running') await router.invalidate()
+    if (s.state !== "running") await router.invalidate();
   }
 
   async function run(action: Action, confirmText: string, noun: string) {
-    if (!window.confirm(confirmText)) return
-    setPending(action)
-    setMessage(null)
-    setError(null)
+    if (!window.confirm(confirmText)) return;
+    setPending(action);
+    setMessage(null);
+    setError(null);
     try {
-      const { deleted } = await runAction({ data: { action } })
-      setMessage(`Deleted ${deleted} ${noun}.`)
-      await router.invalidate()
+      const { deleted } = await runAction({ data: { action } });
+      setMessage(`Deleted ${deleted} ${noun}.`);
+      await router.invalidate();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Operation failed.')
+      setError(err instanceof Error ? err.message : "Operation failed.");
     } finally {
-      setPending(null)
+      setPending(null);
     }
   }
 
@@ -153,16 +144,16 @@ function Maintenance() {
     <div className="mx-auto max-w-2xl p-8">
       <h1 className="text-3xl font-bold">Maintenance</h1>
       <p className="mt-2 text-sm text-gray-600">
-        Housekeeping for the vocab store. Glosses (translations) and FSRS
-        progress are never touched by "Clear imported texts".
+        Housekeeping for the vocab store. Glosses (translations) and FSRS progress are never touched
+        by "Clear imported texts".
       </p>
 
       {flagged.length > 0 && (
         <div className="mt-8 rounded border border-amber-300 bg-amber-50 p-4">
           <h2 className="font-semibold">Requires attention ({flagged.length})</h2>
           <p className="mt-1 text-sm text-gray-600">
-            Reported from Practice — out of practice until resolved. Fix the
-            gloss (saved as manual) or just clear the flag.
+            Reported from Practice — out of practice until resolved. Fix the gloss (saved as manual)
+            or just clear the flag.
           </p>
           <ul className="mt-3 space-y-3">
             {flagged.map((f) => (
@@ -188,8 +179,8 @@ function Maintenance() {
       <div className="mt-8 rounded border border-gray-200 p-4">
         <h2 className="font-semibold">Home dictionary</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Import the kaikki.org Polish JSONL dump (see docs/adr/0002). Download
-          it manually, then paste the absolute file path (no ~).
+          Import the kaikki.org Polish JSONL dump (see docs/adr/0002). Download it manually, then
+          paste the absolute file path (no ~).
         </p>
         <div className="mt-3 flex gap-2">
           <input
@@ -203,23 +194,23 @@ function Maintenance() {
           <button
             type="button"
             onClick={runImport}
-            disabled={importing || dictPath.trim() === ''}
+            disabled={importing || dictPath.trim() === ""}
             className="shrink-0 rounded border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
           >
-            {importing ? 'Importing…' : 'Import'}
+            {importing ? "Importing…" : "Import"}
           </button>
         </div>
-        {dictStatus && dictStatus.state !== 'idle' && (
+        {dictStatus && dictStatus.state !== "idle" && (
           <p className="mt-2 text-sm text-gray-600">
-            {dictStatus.state === 'running' &&
+            {dictStatus.state === "running" &&
               `Imported ${dictStatus.importedEntries} entries — ${
                 dictStatus.totalBytes > 0
                   ? Math.round((100 * dictStatus.readBytes) / dictStatus.totalBytes)
                   : 0
               }%`}
-            {dictStatus.state === 'done' &&
+            {dictStatus.state === "done" &&
               `Done: ${dictStatus.importedEntries} entries imported (${dictStatus.processedLines} lines).`}
-            {dictStatus.state === 'error' && (
+            {dictStatus.state === "error" && (
               <span className="text-red-700">Import failed: {dictStatus.error}</span>
             )}
           </p>
@@ -231,13 +222,13 @@ function Maintenance() {
           title="Clear imported texts"
           description="Deletes all imported texts and their tokens. Lemmas, translations, and learning progress are kept."
           button="Clear texts"
-          pending={pending === 'clear-texts'}
+          pending={pending === "clear-texts"}
           disabled={pending !== null || stats.texts === 0}
           onClick={() =>
             run(
-              'clear-texts',
+              "clear-texts",
               `Delete all ${stats.texts} imported texts? Translations and progress are kept.`,
-              'texts',
+              "texts",
             )
           }
         />
@@ -245,13 +236,13 @@ function Maintenance() {
           title="Prune orphan lemmas"
           description="Deletes lemmas that appear in no text, have no translation, and were never practiced. Run after clearing texts to drop the untouched backlog."
           button="Prune lemmas"
-          pending={pending === 'prune-lemmas'}
+          pending={pending === "prune-lemmas"}
           disabled={pending !== null}
           onClick={() =>
             run(
-              'prune-lemmas',
-              'Delete all lemmas with no text, no translation, and no review history?',
-              'lemmas',
+              "prune-lemmas",
+              "Delete all lemmas with no text, no translation, and no review history?",
+              "lemmas",
             )
           }
         />
@@ -259,65 +250,55 @@ function Maintenance() {
           title="Purge stub glosses"
           description="Deletes translations produced by the development stub provider so the real provider can regenerate them."
           button="Purge stubs"
-          pending={pending === 'purge-stub-glosses'}
+          pending={pending === "purge-stub-glosses"}
           disabled={pending !== null || stats.stubGlosses === 0}
           onClick={() =>
-            run(
-              'purge-stub-glosses',
-              `Delete ${stats.stubGlosses} stub glosses?`,
-              'stub glosses',
-            )
+            run("purge-stub-glosses", `Delete ${stats.stubGlosses} stub glosses?`, "stub glosses")
           }
         />
         <ActionRow
           title="Clear dictionary"
           description="Deletes the whole home dictionary (entries, senses, forms). Re-import from the kaikki file to restore it."
           button="Clear dictionary"
-          pending={pending === 'clear-dictionary'}
+          pending={pending === "clear-dictionary"}
           disabled={pending !== null || importing || stats.dictEntries === 0}
           onClick={() =>
             run(
-              'clear-dictionary',
+              "clear-dictionary",
               `Delete all ${stats.dictEntries} dictionary entries?`,
-              'dictionary entries',
+              "dictionary entries",
             )
           }
         />
       </div>
 
-      {message && (
-        <p className="mt-6 rounded bg-green-50 p-3 text-sm text-green-800">
-          {message}
-        </p>
-      )}
-      {error && (
-        <p className="mt-6 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>
-      )}
+      {message && <p className="mt-6 rounded bg-green-50 p-3 text-sm text-green-800">{message}</p>}
+      {error && <p className="mt-6 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     </div>
-  )
+  );
 }
 
 function FlaggedRow({ f, onDone }: { f: FlaggedLemma; onDone: () => void }) {
-  const [italian, setItalian] = useState(f.gloss ?? '')
-  const [busy, setBusy] = useState(false)
-  const changed = italian.trim() !== '' && italian.trim() !== (f.gloss ?? '')
+  const [italian, setItalian] = useState(f.gloss ?? "");
+  const [busy, setBusy] = useState(false);
+  const changed = italian.trim() !== "" && italian.trim() !== (f.gloss ?? "");
 
   async function resolve(withGloss: boolean) {
-    setBusy(true)
+    setBusy(true);
     try {
       await resolveFlagFn({
         data: { lemmaId: f.lemmaId, italian: withGloss ? italian.trim() : undefined },
-      })
-      onDone()
+      });
+      onDone();
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
   return (
     <li className="rounded border border-amber-200 bg-white p-3 text-sm">
       <div>
-        <span className="text-base font-semibold">{f.lemma}</span>{' '}
+        <span className="text-base font-semibold">{f.lemma}</span>{" "}
         <span className="text-gray-500">{f.pos}</span>
       </div>
       {f.note && <p className="mt-1 text-gray-700">“{f.note}”</p>}
@@ -347,7 +328,7 @@ function FlaggedRow({ f, onDone }: { f: FlaggedLemma; onDone: () => void }) {
         </button>
       </div>
     </li>
-  )
+  );
 }
 
 function Stat({ label, value }: { label: string; value: number }) {
@@ -356,16 +337,16 @@ function Stat({ label, value }: { label: string; value: number }) {
       <dt className="text-gray-600">{label}</dt>
       <dd className="font-medium tabular-nums">{value}</dd>
     </div>
-  )
+  );
 }
 
 function ActionRow(props: {
-  title: string
-  description: string
-  button: string
-  pending: boolean
-  disabled: boolean
-  onClick: () => void
+  title: string;
+  description: string;
+  button: string;
+  pending: boolean;
+  disabled: boolean;
+  onClick: () => void;
 }) {
   return (
     <div className="flex items-start justify-between gap-4 rounded border border-gray-200 p-4">
@@ -379,8 +360,8 @@ function ActionRow(props: {
         disabled={props.disabled}
         className="shrink-0 rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
       >
-        {props.pending ? 'Working…' : props.button}
+        {props.pending ? "Working…" : props.button}
       </button>
     </div>
-  )
+  );
 }

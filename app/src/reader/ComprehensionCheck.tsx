@@ -1,69 +1,67 @@
-import { createServerFn } from '@tanstack/react-start'
-import { useEffect, useState } from 'react'
-import { z } from 'zod'
+import { createServerFn } from "@tanstack/react-start";
+import { useEffect, useState } from "react";
+import { z } from "zod";
 
 // Server-only: get (and lazily generate + cache) the comprehension check.
-const getCheckFn = createServerFn({ method: 'POST' })
+const getCheckFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ textId: z.number().int() }).parse(d))
   .handler(async ({ data }) => {
-    const { db } = await import('#/db/index')
-    const { getComprehensionCheck } = await import('#/comprehension/service')
-    return getComprehensionCheck(db, data.textId)
-  })
+    const { db } = await import("#/db/index");
+    const { getComprehensionCheck } = await import("#/comprehension/service");
+    return getComprehensionCheck(db, data.textId);
+  });
 
 // Server-only: nuke the cached questions and generate fresh.
-const regenerateCheckFn = createServerFn({ method: 'POST' })
+const regenerateCheckFn = createServerFn({ method: "POST" })
   .validator((d: unknown) => z.object({ textId: z.number().int() }).parse(d))
   .handler(async ({ data }) => {
-    const { db } = await import('#/db/index')
-    const { regenerateComprehensionCheck } = await import('#/comprehension/service')
-    return regenerateComprehensionCheck(db, data.textId)
-  })
+    const { db } = await import("#/db/index");
+    const { regenerateComprehensionCheck } = await import("#/comprehension/service");
+    return regenerateComprehensionCheck(db, data.textId);
+  });
 
-type Question = { question: string; choices: string[]; correctIndex: number }
+type Question = { question: string; choices: string[]; correctIndex: number };
 
 // End-of-text comprehension check (roadmap): Italian MCQs about the text,
 // answered all-at-once, graded client-side. The answer key travels to the
 // client deliberately — single-user local app, nothing persisted, so a
 // server-grading round-trip buys nothing (unlike Practice, which feeds FSRS).
 export function ComprehensionCheck({ textId }: { textId: number }) {
-  const [questions, setQuestions] = useState<Question[] | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
-  const [answers, setAnswers] = useState<Record<number, number>>({})
-  const [graded, setGraded] = useState(false)
+  const [questions, setQuestions] = useState<Question[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [answers, setAnswers] = useState<Record<number, number>>({});
+  const [graded, setGraded] = useState(false);
 
   async function load(fn: typeof getCheckFn) {
-    setLoading(true)
-    setError(false)
-    setQuestions(null)
-    setAnswers({})
-    setGraded(false)
+    setLoading(true);
+    setError(false);
+    setQuestions(null);
+    setAnswers({});
+    setGraded(false);
     try {
-      const r = await fn({ data: { textId } })
-      setQuestions(r.questions)
+      const r = await fn({ data: { textId } });
+      setQuestions(r.questions);
     } catch {
-      setError(true)
+      setError(true);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => void load(getCheckFn), [textId])
+  useEffect(() => void load(getCheckFn), [textId]);
 
-  const allAnswered =
-    questions !== null && questions.every((_, i) => answers[i] !== undefined)
-  const score =
-    questions?.filter((q, i) => answers[i] === q.correctIndex).length ?? 0
+  const allAnswered = questions !== null && questions.every((_, i) => answers[i] !== undefined);
+  const score = questions?.filter((q, i) => answers[i] === q.correctIndex).length ?? 0;
 
   if (loading) {
-    return <p className="mt-8 text-sm text-gray-400">Generazione domande…</p>
+    return <p className="mt-8 text-sm text-gray-400">Generazione domande…</p>;
   }
   if (error || questions === null) {
     return (
       <p className="mt-8 text-sm text-red-600">
-        Generazione non riuscita{' '}
+        Generazione non riuscita{" "}
         <button
           type="button"
           onClick={() => load(getCheckFn)}
@@ -72,7 +70,7 @@ export function ComprehensionCheck({ textId }: { textId: number }) {
           Riprova
         </button>
       </p>
-    )
+    );
   }
 
   return (
@@ -96,16 +94,16 @@ export function ComprehensionCheck({ textId }: { textId: number }) {
             </p>
             <div className="mt-2 space-y-2">
               {q.choices.map((choice, ci) => {
-                const picked = answers[qi] === ci
+                const picked = answers[qi] === ci;
                 const cls = !graded
                   ? picked
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-300 hover:bg-gray-50'
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-300 hover:bg-gray-50"
                   : ci === q.correctIndex
-                    ? 'border-green-500 bg-green-50'
+                    ? "border-green-500 bg-green-50"
                     : picked
-                      ? 'border-red-500 bg-red-50'
-                      : 'border-gray-200 opacity-60'
+                      ? "border-red-500 bg-red-50"
+                      : "border-gray-200 opacity-60";
                 return (
                   <button
                     key={ci}
@@ -116,7 +114,7 @@ export function ComprehensionCheck({ textId }: { textId: number }) {
                   >
                     {choice}
                   </button>
-                )
+                );
               })}
             </div>
           </li>
@@ -140,5 +138,5 @@ export function ComprehensionCheck({ textId }: { textId: number }) {
         </div>
       )}
     </section>
-  )
+  );
 }

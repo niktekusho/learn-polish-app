@@ -31,16 +31,10 @@ function Home() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-3xl font-bold">Learn Polish</h1>
         <div className="flex flex-wrap gap-2">
-          <Link
-            to="/maintenance"
-            className="rounded border border-gray-300 px-4 py-2 font-medium"
-          >
+          <Link to="/maintenance" className="rounded border border-gray-300 px-4 py-2 font-medium">
             Maintenance
           </Link>
-          <Link
-            to="/import"
-            className="rounded border border-gray-300 px-4 py-2 font-medium"
-          >
+          <Link to="/import" className="rounded border border-gray-300 px-4 py-2 font-medium">
             Import text
           </Link>
           <Link
@@ -69,9 +63,7 @@ function Home() {
                 params={{ textId: String(t.id) }}
                 className="flex items-center justify-between py-3 hover:bg-gray-50"
               >
-                <span className="font-medium">
-                  {t.title || `Text #${t.id}`}
-                </span>
+                <span className="font-medium">{t.title || `Text #${t.id}`}</span>
                 <span className="text-sm text-gray-500">{t.tokens} tokens</span>
               </Link>
             </li>

@@ -1,31 +1,31 @@
-import { Rating } from '#/fsrs/index'
-import type { Exercise } from './types'
+import { Rating } from "#/fsrs/index";
+import type { Exercise } from "./types";
 
 /** Full item, held server-side. `lemma` IS the answer — never sent to client. */
 export interface SpokenRecallItem {
-  id: string
-  lemmaId: number
-  lemma: string // the Polish tracked unit to say
-  gloss: string // the Italian prompt
+  id: string;
+  lemmaId: number;
+  lemma: string; // the Polish tracked unit to say
+  gloss: string; // the Italian prompt
 }
 export interface SpokenRecallClientItem {
-  id: string
-  kind: 'spoken-recall'
-  gloss: string
+  id: string;
+  kind: "spoken-recall";
+  gloss: string;
 }
 /** Server-derived from the audio: ASR transcript + its /analyze lemmas. */
 export interface SpokenResponse {
-  transcriptText: string
-  transcriptLemmas: string[]
+  transcriptText: string;
+  transcriptLemmas: string[];
 }
 
 /** Lowercase, letters/digits only — punctuation and casing are ASR noise. */
 function normalize(s: string): string {
   return s
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -42,52 +42,48 @@ function normalize(s: string): string {
  */
 export function phoneticKey(s: string): string {
   return normalize(s)
-    .replace(/ch/g, 'h')
-    .replace(/rz/g, 'z')
-    .replace(/sz/g, 's')
-    .replace(/cz/g, 'c')
-    .replace(/d[żź]/g, 'z')
-    .replace(/[żź]/g, 'z')
-    .replace(/ś/g, 's')
-    .replace(/ć/g, 'c')
-    .replace(/ó/g, 'u')
-    .replace(/ł/g, 'l')
-    .replace(/ę/g, 'e')
-    .replace(/ą/g, 'a')
-    .replace(/y/g, 'i')
-    .replace(/(.)\1+/g, '$1')
+    .replace(/ch/g, "h")
+    .replace(/rz/g, "z")
+    .replace(/sz/g, "s")
+    .replace(/cz/g, "c")
+    .replace(/d[żź]/g, "z")
+    .replace(/[żź]/g, "z")
+    .replace(/ś/g, "s")
+    .replace(/ć/g, "c")
+    .replace(/ó/g, "u")
+    .replace(/ł/g, "l")
+    .replace(/ę/g, "e")
+    .replace(/ą/g, "a")
+    .replace(/y/g, "i")
+    .replace(/(.)\1+/g, "$1");
 }
 
 function levenshtein(a: string, b: string): number {
-  if (a === b) return 0
-  const prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  if (a === b) return 0;
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
   for (let i = 1; i <= a.length; i++) {
-    let diag = prev[0]
-    prev[0] = i
+    let diag = prev[0];
+    prev[0] = i;
     for (let j = 1; j <= b.length; j++) {
-      const cur = Math.min(
-        prev[j] + 1,
-        prev[j - 1] + 1,
-        diag + (a[i - 1] === b[j - 1] ? 0 : 1),
-      )
-      diag = prev[j]
-      prev[j] = cur
+      const cur = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = prev[j];
+      prev[j] = cur;
     }
   }
-  return prev[b.length]
+  return prev[b.length];
 }
 
 /** Edit-distance budget on phonetic keys, scaled by target length: short
  * words must match exactly (kot/kod stay distinct), longer ones absorb the
  * ending-garble whisper produces ('siklowac' ≈ 'sikowac'). */
 function keyBudget(keyLen: number): number {
-  if (keyLen <= 4) return 0
-  if (keyLen <= 7) return 1
-  return 2
+  if (keyLen <= 4) return 0;
+  if (keyLen <= 7) return 1;
+  return 2;
 }
 
 function keysMatch(targetKey: string, wordKey: string): boolean {
-  return levenshtein(targetKey, wordKey) <= keyBudget(targetKey.length)
+  return levenshtein(targetKey, wordKey) <= keyBudget(targetKey.length);
 }
 
 /**
@@ -96,24 +92,21 @@ function keysMatch(targetKey: string, wordKey: string): boolean {
  * inflected answers; the raw words catch garbles the lemmatizer left alone).
  * MWE targets (contain a space): substring match on the folded transcript.
  */
-export function transcriptMatches(
-  target: string,
-  response: SpokenResponse,
-): boolean {
-  const t = normalize(target)
-  if (!t) return false
-  if (t.includes(' ')) {
-    const seq = ` ${phoneticKey(response.transcriptLemmas.join(' '))} `
-    const text = ` ${phoneticKey(response.transcriptText)} `
-    const key = ` ${phoneticKey(t)} `
-    return seq.includes(key) || text.includes(key)
+export function transcriptMatches(target: string, response: SpokenResponse): boolean {
+  const t = normalize(target);
+  if (!t) return false;
+  if (t.includes(" ")) {
+    const seq = ` ${phoneticKey(response.transcriptLemmas.join(" "))} `;
+    const text = ` ${phoneticKey(response.transcriptText)} `;
+    const key = ` ${phoneticKey(t)} `;
+    return seq.includes(key) || text.includes(key);
   }
-  const targetKey = phoneticKey(t)
+  const targetKey = phoneticKey(t);
   const words = [
     ...response.transcriptLemmas.map(normalize),
-    ...normalize(response.transcriptText).split(' '),
-  ]
-  return words.some((w) => w && keysMatch(targetKey, phoneticKey(w)))
+    ...normalize(response.transcriptText).split(" "),
+  ];
+  return words.some((w) => w && keysMatch(targetKey, phoneticKey(w)));
 }
 
 /**
@@ -122,38 +115,32 @@ export function transcriptMatches(
  * (reveal + self-grade) lives in the session layer — `grade` here only maps
  * a transcript to a rating.
  */
-export const spokenRecall: Exercise<
-  SpokenRecallItem,
-  SpokenRecallClientItem,
-  SpokenResponse
-> = {
-  id: 'spoken-recall',
+export const spokenRecall: Exercise<SpokenRecallItem, SpokenRecallClientItem, SpokenResponse> = {
+  id: "spoken-recall",
   // productive from the pre-reveal attempt; pronunciation from retries after
   // the reveal (ADR-0005)
-  tracks: ['productive', 'pronunciation'],
-  modality: { prompt: 'text', answer: 'speak' },
+  tracks: ["productive", "pronunciation"],
+  modality: { prompt: "text", answer: "speak" },
 
   // PROPN excluded: producing "Ola" from "nome proprio" is name-guessing,
   // not vocabulary retrieval.
-  appliesTo: (c) =>
-    typeof c.gloss === 'string' && c.gloss.length > 0 && c.pos !== 'PROPN',
+  appliesTo: (c) => typeof c.gloss === "string" && c.gloss.length > 0 && c.pos !== "PROPN",
 
   generate(target) {
-    if (!target.gloss) return null
+    if (!target.gloss) return null;
     return {
       id: crypto.randomUUID(),
       lemmaId: target.lemmaId,
       lemma: target.lemma,
       gloss: target.gloss,
-    }
+    };
   },
 
   toClient: (item) => ({
     id: item.id,
-    kind: 'spoken-recall',
+    kind: "spoken-recall",
     gloss: item.gloss,
   }),
 
-  grade: (item, response) =>
-    transcriptMatches(item.lemma, response) ? Rating.Good : Rating.Again,
-}
+  grade: (item, response) => (transcriptMatches(item.lemma, response) ? Rating.Good : Rating.Again),
+};

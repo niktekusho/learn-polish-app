@@ -6,20 +6,20 @@ mined from real Polish text the user reads, then practiced through many exercise
 ## Language
 
 **Surface form**:
-A word exactly as it appears in a text, including its inflection. *kota*, *kotu*, and
-*kotem* are three surface forms.
+A word exactly as it appears in a text, including its inflection. _kota_, _kotu_, and
+_kotem_ are three surface forms.
 _Avoid_: token, word (when precision matters)
 
 **Lemma**:
-The dictionary/base form of a word that groups all its surface forms. *kot* is the lemma
-of *kota*, *kotu*, *kotem*. The unit at which knowledge is tracked.
+The dictionary/base form of a word that groups all its surface forms. _kot_ is the lemma
+of _kota_, _kotu_, _kotem_. The unit at which knowledge is tracked.
 _Avoid_: root, stem, base word
 
 **Multi-word expression (MWE)**:
-A fixed expression whose meaning is not derivable from its parts — *na pewno* (di sicuro),
-*dzień dobry*, *zdawać sobie sprawę* (rendersi conto). A lexical unit in its own right and
-therefore a **Tracked unit**. May be discontinuous in a sentence (*zdaję sobie z tego
-sprawę*). Compositional phrases (*ciekawe rzeczy*, *czerwone wino*) are NOT MWEs — they
+A fixed expression whose meaning is not derivable from its parts — _na pewno_ (di sicuro),
+_dzień dobry_, _zdawać sobie sprawę_ (rendersi conto). A lexical unit in its own right and
+therefore a **Tracked unit**. May be discontinuous in a sentence (_zdaję sobie z tego
+sprawę_). Compositional phrases (_ciekawe rzeczy_, _czerwone wino_) are NOT MWEs — they
 stay separate lemmas. Detected at text import by matching token runs against the **Home
 dictionary**'s multi-word headwords (contiguous only in v1; discontinuous parked).
 _Avoid_: phrase, collocation, idiom (as data terms)
@@ -50,18 +50,18 @@ than a fixed status ladder. Split into three independent tracks: **Receptive**,
 **Productive**, and **Pronunciation**.
 
 **Receptive knowledge**:
-Ability to *understand* a lemma when reading or hearing it. Fed by reading, listening,
+Ability to _understand_ a lemma when reading or hearing it. Fed by reading, listening,
 PL→IT translation, and recognition-style exercises. Not fed by **Read-aloud**: a failed
 attempt to say a word says nothing about understanding it.
 
 **Productive knowledge**:
-Ability to *produce* a lemma from memory when speaking. Fed only by exercises that require
+Ability to _produce_ a lemma from memory when speaking. Fed only by exercises that require
 retrieval — producing the lemma without seeing it (**Spoken recall**, spoken grammar
 drills). Reading a word off the screen, even aloud, never grades this track. Tracked
 separately because comprehension precedes production.
 
 **Pronunciation knowledge**:
-Ability to *say* a lemma intelligibly when it is in front of the learner. Fed only by
+Ability to _say_ a lemma intelligibly when it is in front of the learner. Fed only by
 speaking attempts made while the word is visible: every **Read-aloud** attempt, and
 **Spoken recall** attempts after the answer is revealed. Its FSRS difficulty is "how hard
 this word is to say", and its due date decides when the word is proposed again for

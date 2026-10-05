@@ -1,5 +1,5 @@
-import { Mic } from 'lucide-react'
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
+import { Mic } from "lucide-react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 
 /**
  * Mic capture for the speaking exercises (roadmap Slice 1).
@@ -8,15 +8,11 @@ import { useCallback, useEffect, useEffectEvent, useRef, useState } from 'react'
  * ogg/opus, Chrome webm/opus, Safari mp4 — and the sidecar (PyAV) decodes
  * all of them, so there is no per-browser code beyond this list.
  */
-const MIME_CANDIDATES = [
-  'audio/ogg;codecs=opus',
-  'audio/webm;codecs=opus',
-  'audio/mp4',
-]
+const MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/mp4"];
 
 function pickMimeType(): string | undefined {
-  if (typeof MediaRecorder === 'undefined') return undefined
-  return MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m))
+  if (typeof MediaRecorder === "undefined") return undefined;
+  return MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m));
 }
 
 /**
@@ -27,30 +23,30 @@ function pickMimeType(): string | undefined {
  * ponytail: calibration knob — retune against a few of YOUR good clips on YOUR
  * mic if it warns on acceptable audio (or misses genuine near-silence).
  */
-const QUIET_RMS_THRESHOLD = 0.02
+const QUIET_RMS_THRESHOLD = 0.02;
 
 // Meter display range: map RMS dBFS to a 0..1 bar. −55 dB empty, −15 dB full.
-const METER_FLOOR_DB = -55
-const METER_CEIL_DB = -15
+const METER_FLOOR_DB = -55;
+const METER_CEIL_DB = -15;
 
 export function rms(buf: Float32Array): number {
-  let sum = 0
-  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i]
-  return Math.sqrt(sum / buf.length)
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  return Math.sqrt(sum / buf.length);
 }
 
 /** Linear RMS → 0..1 meter position over METER_FLOOR_DB…METER_CEIL_DB. */
 export function meterLevel(rmsValue: number): number {
-  const db = 20 * Math.log10(rmsValue + 1e-9)
-  return Math.min(1, Math.max(0, (db - METER_FLOOR_DB) / (METER_CEIL_DB - METER_FLOOR_DB)))
+  const db = 20 * Math.log10(rmsValue + 1e-9);
+  return Math.min(1, Math.max(0, (db - METER_FLOOR_DB) / (METER_CEIL_DB - METER_FLOOR_DB)));
 }
 
 export type RecorderState =
-  | 'idle'
-  | 'recording'
-  | 'tooQuiet' // captured, but never crossed the loudness gate — not sent
-  | 'denied'
-  | 'unsupported'
+  | "idle"
+  | "recording"
+  | "tooQuiet" // captured, but never crossed the loudness gate — not sent
+  | "denied"
+  | "unsupported";
 
 /**
  * Hold-to-record. The mic stream is acquired once (on mount, so the first
@@ -59,23 +55,23 @@ export type RecorderState =
  * a too-quiet gate. Each press runs one MediaRecorder start/stop cycle.
  */
 export function useRecorder(onRecorded: (blob: Blob) => void) {
-  const [state, setState] = useState<RecorderState>('idle')
-  const streamRef = useRef<MediaStream | null>(null)
-  const recorderRef = useRef<MediaRecorder | null>(null)
-  const ctxRef = useRef<AudioContext | null>(null)
-  const analyserRef = useRef<AnalyserNode | null>(null)
-  const rafRef = useRef<number | null>(null)
-  const peakRmsRef = useRef(0) // loudest RMS frame seen this recording
-  const meterFillRef = useRef<HTMLDivElement | null>(null) // meter bar, written imperatively
+  const [state, setState] = useState<RecorderState>("idle");
+  const streamRef = useRef<MediaStream | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const ctxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const peakRmsRef = useRef(0); // loudest RMS frame seen this recording
+  const meterFillRef = useRef<HTMLDivElement | null>(null); // meter bar, written imperatively
   // Non-reactive: always the latest onRecorded, without making it a dep of the
   // callbacks below. Replaces the manual latest-callback ref idiom.
-  const emitRecorded = useEffectEvent(onRecorded)
+  const emitRecorded = useEffectEvent(onRecorded);
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     if (!navigator.mediaDevices?.getUserMedia || !pickMimeType()) {
-      setState('unsupported')
-      return
+      setState("unsupported");
+      return;
     }
     navigator.mediaDevices
       .getUserMedia({
@@ -89,102 +85,102 @@ export function useRecorder(onRecorded: (blob: Blob) => void) {
       })
       .then((stream) => {
         if (cancelled) {
-          for (const t of stream.getTracks()) t.stop()
-          return
+          for (const t of stream.getTracks()) t.stop();
+          return;
         }
-        streamRef.current = stream
+        streamRef.current = stream;
         // Tap the stream for analysis. Analyser is left unconnected to
         // destination on purpose — routing mic to speakers would feed back.
-        const ctx = new AudioContext()
-        const analyser = ctx.createAnalyser()
-        analyser.fftSize = 1024
-        ctx.createMediaStreamSource(stream).connect(analyser)
-        ctxRef.current = ctx
-        analyserRef.current = analyser
+        const ctx = new AudioContext();
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 1024;
+        ctx.createMediaStreamSource(stream).connect(analyser);
+        ctxRef.current = ctx;
+        analyserRef.current = analyser;
       })
       .catch(() => {
-        if (!cancelled) setState('denied')
-      })
+        if (!cancelled) setState("denied");
+      });
     return () => {
-      cancelled = true
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-      recorderRef.current?.stop()
-      ctxRef.current?.close()
-      if (streamRef.current) for (const t of streamRef.current.getTracks()) t.stop()
-      streamRef.current = null
-    }
-  }, [])
+      cancelled = true;
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      recorderRef.current?.stop();
+      ctxRef.current?.close();
+      if (streamRef.current) for (const t of streamRef.current.getTracks()) t.stop();
+      streamRef.current = null;
+    };
+  }, []);
 
   // rAF loop: read the analyser each frame, drive the meter, remember the
   // peak. Runs only between start() and the actual MediaRecorder stop. The
   // meter is written straight to the DOM — a per-frame setState would re-render
   // the consumer ~60×/s for a value that never feeds anything but this bar.
   const monitor = useCallback(() => {
-    const analyser = analyserRef.current
-    if (!analyser) return
-    const buf = new Float32Array(analyser.fftSize)
-    analyser.getFloatTimeDomainData(buf)
-    const r = rms(buf)
-    if (r > peakRmsRef.current) peakRmsRef.current = r
-    const el = meterFillRef.current // null on the first tick(s), before mount
+    const analyser = analyserRef.current;
+    if (!analyser) return;
+    const buf = new Float32Array(analyser.fftSize);
+    analyser.getFloatTimeDomainData(buf);
+    const r = rms(buf);
+    if (r > peakRmsRef.current) peakRmsRef.current = r;
+    const el = meterFillRef.current; // null on the first tick(s), before mount
     if (el) {
-      const lvl = meterLevel(r)
-      el.style.width = `${Math.round(lvl * 100)}%`
-      const quiet = lvl < meterLevel(QUIET_RMS_THRESHOLD)
-      el.classList.toggle('bg-red-400', quiet)
-      el.classList.toggle('bg-green-500', !quiet)
+      const lvl = meterLevel(r);
+      el.style.width = `${Math.round(lvl * 100)}%`;
+      const quiet = lvl < meterLevel(QUIET_RMS_THRESHOLD);
+      el.classList.toggle("bg-red-400", quiet);
+      el.classList.toggle("bg-green-500", !quiet);
     }
-    rafRef.current = requestAnimationFrame(monitor)
-  }, [])
+    rafRef.current = requestAnimationFrame(monitor);
+  }, []);
 
   const start = useCallback(() => {
-    const stream = streamRef.current
-    if (!stream || recorderRef.current) return
-    ctxRef.current?.resume() // may be suspended until a user gesture
-    peakRmsRef.current = 0
-    const mimeType = pickMimeType()
-    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-    const chunks: BlobPart[] = []
+    const stream = streamRef.current;
+    if (!stream || recorderRef.current) return;
+    ctxRef.current?.resume(); // may be suspended until a user gesture
+    peakRmsRef.current = 0;
+    const mimeType = pickMimeType();
+    const rec = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    const chunks: BlobPart[] = [];
     rec.ondataavailable = (e) => {
-      if (e.data.size > 0) chunks.push(e.data)
-    }
+      if (e.data.size > 0) chunks.push(e.data);
+    };
     rec.onstop = () => {
-      recorderRef.current = null
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
+      recorderRef.current = null;
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
       // Loudness gate: if even the loudest frame stayed below threshold, the
       // clip is too quiet to transcribe — surface it instead of sending.
       if (peakRmsRef.current < QUIET_RMS_THRESHOLD) {
-        setState('tooQuiet')
-        return
+        setState("tooQuiet");
+        return;
       }
-      setState('idle')
+      setState("idle");
       // Effect Event called from an imperative media callback (not an Effect) —
       // works, and there's no linter to quibble; the intent is "read latest
       // onRecorded, non-reactively".
-      emitRecorded(new Blob(chunks, { type: rec.mimeType }))
-    }
-    recorderRef.current = rec
-    rec.start()
-    setState('recording')
-    rafRef.current = requestAnimationFrame(monitor)
-  }, [monitor])
+      emitRecorded(new Blob(chunks, { type: rec.mimeType }));
+    };
+    recorderRef.current = rec;
+    rec.start();
+    setState("recording");
+    rafRef.current = requestAnimationFrame(monitor);
+  }, [monitor]);
 
   const stop = useCallback(() => {
-    const rec = recorderRef.current
-    if (rec && rec.state === 'recording') {
+    const rec = recorderRef.current;
+    if (rec && rec.state === "recording") {
       // Tail grace: the button is usually released on the last syllable;
       // stopping instantly clips the word end and tanks ASR accuracy.
       setTimeout(() => {
-        if (rec.state === 'recording') rec.stop()
-      }, 250)
+        if (rec.state === "recording") rec.stop();
+      }, 250);
     }
-  }, [])
+  }, []);
 
   /** Clear the too-quiet warning, back to a fresh idle ready to retry. */
-  const dismiss = useCallback(() => setState('idle'), [])
+  const dismiss = useCallback(() => setState("idle"), []);
 
-  return { state, meterFillRef, start, stop, dismiss }
+  return { state, meterFillRef, start, stop, dismiss };
 }
 
 /**
@@ -197,65 +193,65 @@ export function PushToTalk({
   onRecorded,
   disabled = false,
 }: {
-  onRecorded: (blob: Blob) => void
-  disabled?: boolean
+  onRecorded: (blob: Blob) => void;
+  disabled?: boolean;
 }) {
-  const { state, meterFillRef, start, stop, dismiss } = useRecorder(onRecorded)
+  const { state, meterFillRef, start, stop, dismiss } = useRecorder(onRecorded);
 
   useEffect(() => {
-    if (disabled) return
+    if (disabled) return;
     const down = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !e.repeat && e.target === document.body) {
-        e.preventDefault()
-        start()
+      if (e.code === "Space" && !e.repeat && e.target === document.body) {
+        e.preventDefault();
+        start();
       }
-    }
+    };
     const up = (e: KeyboardEvent) => {
-      if (e.code === 'Space') stop()
-    }
-    document.addEventListener('keydown', down)
-    document.addEventListener('keyup', up)
+      if (e.code === "Space") stop();
+    };
+    document.addEventListener("keydown", down);
+    document.addEventListener("keyup", up);
     return () => {
-      document.removeEventListener('keydown', down)
-      document.removeEventListener('keyup', up)
-    }
-  }, [disabled, start, stop])
+      document.removeEventListener("keydown", down);
+      document.removeEventListener("keyup", up);
+    };
+  }, [disabled, start, stop]);
 
-  if (state === 'unsupported')
-    return <p className="text-sm text-red-600">No mic support in this browser.</p>
-  if (state === 'denied')
+  if (state === "unsupported")
+    return <p className="text-sm text-red-600">No mic support in this browser.</p>;
+  if (state === "denied")
     return (
       <p className="text-sm text-red-600">
         Mic permission denied — allow it in the browser and reload.
       </p>
-    )
+    );
 
-  const recording = state === 'recording'
+  const recording = state === "recording";
   const press = {
-    type: 'button' as const,
+    type: "button" as const,
     disabled,
     onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
-      e.currentTarget.setPointerCapture(e.pointerId)
-      start()
+      e.currentTarget.setPointerCapture(e.pointerId);
+      start();
     },
     onPointerUp: stop,
     onPointerCancel: stop,
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
-  }
+  };
   const meter = recording && (
     <div className="h-2 w-48 overflow-hidden rounded-full bg-gray-200">
       {/* width + color written imperatively by the rAF loop; starts empty/red */}
       <div ref={meterFillRef} className="h-full w-0 bg-red-400" />
     </div>
-  )
-  const tooQuiet = state === 'tooQuiet' && (
+  );
+  const tooQuiet = state === "tooQuiet" && (
     <p className="text-sm text-red-600">
-      Too quiet to hear — speak up or raise your mic level, then hold again.{' '}
+      Too quiet to hear — speak up or raise your mic level, then hold again.{" "}
       <button type="button" onClick={dismiss} className="underline">
         Dismiss
       </button>
     </p>
-  )
+  );
 
   // Mobile: floats near the bottom edge, in thumb reach (the page reserves
   // room for it, see Shell in routes/practice.tsx). sm+: inline, left-aligned.
@@ -267,22 +263,22 @@ export function PushToTalk({
         )}
         <button
           {...press}
-          aria-label={recording ? 'Recording, release to send' : 'Hold to speak'}
+          aria-label={recording ? "Recording, release to send" : "Hold to speak"}
           className={`relative flex size-24 select-none touch-none items-center justify-center rounded-full text-white shadow-lg transition-transform ${
             recording
-              ? 'scale-110 bg-red-600 shadow-red-300'
-              : 'bg-blue-600 shadow-blue-300 active:scale-95 disabled:opacity-50'
+              ? "scale-110 bg-red-600 shadow-red-300"
+              : "bg-blue-600 shadow-blue-300 active:scale-95 disabled:opacity-50"
           }`}
         >
           <Mic size={40} />
         </button>
       </div>
       <span className="text-sm font-medium text-gray-600">
-        {recording ? 'Release to send' : 'Hold to speak'}
-        <span className="hidden sm:inline">{recording ? '' : ' (or hold Space)'}</span>
+        {recording ? "Release to send" : "Hold to speak"}
+        <span className="hidden sm:inline">{recording ? "" : " (or hold Space)"}</span>
       </span>
       {meter}
       {tooQuiet}
     </div>
-  )
+  );
 }

@@ -1,7 +1,7 @@
-import { and, asc, count, eq, isNotNull, notExists } from 'drizzle-orm'
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
-import * as schema from '#/db/schema'
+import { and, asc, count, eq, isNotNull, notExists } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type { SQLiteTable } from "drizzle-orm/sqlite-core";
+import * as schema from "#/db/schema";
 import {
   dictEntry,
   dictForm,
@@ -13,49 +13,41 @@ import {
   reviewLog,
   sourceText,
   token,
-} from '#/db/schema'
-import { wipeDictionary } from '#/dictionary/loader'
-import { setManualGloss } from '#/gloss/service'
+} from "#/db/schema";
+import { wipeDictionary } from "#/dictionary/loader";
+import { setManualGloss } from "#/gloss/service";
 
-type DB = BetterSQLite3Database<typeof schema>
+type DB = BetterSQLite3Database<typeof schema>;
 
 export interface MaintenanceStats {
-  texts: number
-  tokens: number
-  lemmas: number
-  glosses: number
-  stubGlosses: number
-  knowledge: number
-  reviews: number
-  dictEntries: number
-  dictSenses: number
-  dictForms: number
-  dictMwes: number
+  texts: number;
+  tokens: number;
+  lemmas: number;
+  glosses: number;
+  stubGlosses: number;
+  knowledge: number;
+  reviews: number;
+  dictEntries: number;
+  dictSenses: number;
+  dictForms: number;
+  dictMwes: number;
 }
 
 export function getStats(db: DB): MaintenanceStats {
-  const one = (t: SQLiteTable) => db.select({ n: count() }).from(t).all()[0].n
+  const one = (t: SQLiteTable) => db.select({ n: count() }).from(t).all()[0].n;
   return {
     texts: one(sourceText),
     tokens: one(token),
     lemmas: one(lemma),
     glosses: one(gloss),
-    stubGlosses: db
-      .select({ n: count() })
-      .from(gloss)
-      .where(eq(gloss.provider, 'stub'))
-      .all()[0].n,
+    stubGlosses: db.select({ n: count() }).from(gloss).where(eq(gloss.provider, "stub")).all()[0].n,
     knowledge: one(knowledge),
     reviews: one(reviewLog),
     dictEntries: one(dictEntry),
     dictSenses: one(dictSense),
     dictForms: one(dictForm),
-    dictMwes: db
-      .select({ n: count() })
-      .from(dictEntry)
-      .where(eq(dictEntry.isMwe, true))
-      .all()[0].n,
-  }
+    dictMwes: db.select({ n: count() }).from(dictEntry).where(eq(dictEntry.isMwe, true)).all()[0].n,
+  };
 }
 
 /**
@@ -63,7 +55,7 @@ export function getStats(db: DB): MaintenanceStats {
  * review history are untouched — translations and FSRS progress survive.
  */
 export function clearSourceTexts(db: DB): number {
-  return db.delete(sourceText).run().changes
+  return db.delete(sourceText).run().changes;
 }
 
 /**
@@ -81,37 +73,30 @@ export function pruneOrphanLemmas(db: DB): number {
       and(
         notExists(db.select().from(token).where(eq(token.lemmaId, lemma.id))),
         notExists(db.select().from(gloss).where(eq(gloss.lemmaId, lemma.id))),
-        notExists(
-          db.select().from(reviewLog).where(eq(reviewLog.lemmaId, lemma.id)),
-        ),
-        notExists(
-          db
-            .select()
-            .from(mweOccurrence)
-            .where(eq(mweOccurrence.lemmaId, lemma.id)),
-        ),
+        notExists(db.select().from(reviewLog).where(eq(reviewLog.lemmaId, lemma.id))),
+        notExists(db.select().from(mweOccurrence).where(eq(mweOccurrence.lemmaId, lemma.id))),
       ),
     )
-    .run().changes
+    .run().changes;
 }
 
 /** Delete glosses written by the dev stub provider so real ones regenerate. */
 export function purgeStubGlosses(db: DB): number {
-  return db.delete(gloss).where(eq(gloss.provider, 'stub')).run().changes
+  return db.delete(gloss).where(eq(gloss.provider, "stub")).run().changes;
 }
 
 /** Delete the whole home dictionary (entries, senses, forms). */
 export function clearDictionary(db: DB): number {
-  return wipeDictionary(db)
+  return wipeDictionary(db);
 }
 
 export interface FlaggedLemma {
-  lemmaId: number
-  lemma: string
-  pos: string
-  gloss: string | null
-  note: string | null
-  flaggedAt: Date
+  lemmaId: number;
+  lemma: string;
+  pos: string;
+  gloss: string | null;
+  note: string | null;
+  flaggedAt: Date;
 }
 
 /** Lemmas reported from Practice ("requires attention"), oldest first. */
@@ -126,10 +111,10 @@ export function listFlagged(db: DB): FlaggedLemma[] {
       flaggedAt: lemma.flaggedAt,
     })
     .from(lemma)
-    .leftJoin(gloss, and(eq(gloss.lemmaId, lemma.id), eq(gloss.sense, '')))
+    .leftJoin(gloss, and(eq(gloss.lemmaId, lemma.id), eq(gloss.sense, "")))
     .where(isNotNull(lemma.flaggedAt))
     .orderBy(asc(lemma.flaggedAt))
-    .all() as FlaggedLemma[]
+    .all() as FlaggedLemma[];
 }
 
 /**
@@ -137,9 +122,6 @@ export function listFlagged(db: DB): FlaggedLemma[] {
  * The lemma rejoins practice with its FSRS state untouched.
  */
 export function resolveFlag(db: DB, lemmaId: number, italian?: string): void {
-  if (italian !== undefined) setManualGloss(db, lemmaId, italian)
-  db.update(lemma)
-    .set({ flaggedAt: null, flagNote: null })
-    .where(eq(lemma.id, lemmaId))
-    .run()
+  if (italian !== undefined) setManualGloss(db, lemmaId, italian);
+  db.update(lemma).set({ flaggedAt: null, flagNote: null }).where(eq(lemma.id, lemmaId)).run();
 }

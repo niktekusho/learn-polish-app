@@ -6,16 +6,16 @@ import type {
   ProviderName,
   SenseGlossRequest,
   SenseGlossResult,
-} from './provider'
+} from "./provider";
 
 // Deterministic, offline stand-in for a real LLM. Produces a unique, stable
 // string per lemma so the whole pipeline — caching, the word panel, and the
 // MCQ distractors (#9) — works without any network or API key.
 export class StubGlossProvider implements GlossProvider {
-  readonly name: ProviderName = 'stub'
+  readonly name: ProviderName = "stub";
 
   async gloss(req: GlossRequest): Promise<string> {
-    return `«${req.lemma}» — glossa stub (${req.pos})`
+    return `«${req.lemma}» — glossa stub (${req.pos})`;
   }
 
   async glossSenses(req: SenseGlossRequest): Promise<SenseGlossResult> {
@@ -25,7 +25,7 @@ export class StubGlossProvider implements GlossProvider {
         italian: `IT:${s.gloss}`,
       })),
       bestIndex: 0,
-    }
+    };
   }
 
   async comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {
@@ -33,10 +33,10 @@ export class StubGlossProvider implements GlossProvider {
       questions: [
         {
           question: `Domanda stub sul testo (${req.text.length} caratteri)?`,
-          choices: ['Risposta giusta (stub)', 'Distrattore A', 'Distrattore B'],
+          choices: ["Risposta giusta (stub)", "Distrattore A", "Distrattore B"],
           correctIndex: 0,
         },
       ],
-    }
+    };
   }
 }

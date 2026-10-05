@@ -1,27 +1,27 @@
-import { asc, eq, inArray } from 'drizzle-orm'
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import * as schema from '#/db/schema'
-import { dictEntry, dictForm, dictSense, gloss } from '#/db/schema'
+import { asc, eq, inArray } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import * as schema from "#/db/schema";
+import { dictEntry, dictForm, dictSense, gloss } from "#/db/schema";
 
-type DB = BetterSQLite3Database<typeof schema>
+type DB = BetterSQLite3Database<typeof schema>;
 
 // spaCy UPOS -> kaikki pos codes, in lookup-preference order.
 export const UPOS_TO_KAIKKI: Record<string, string[]> = {
-  NOUN: ['noun'],
-  PROPN: ['name', 'noun'],
-  VERB: ['verb'],
-  AUX: ['verb'],
-  ADJ: ['adj'],
-  ADV: ['adv'],
-  PRON: ['pron'],
-  ADP: ['prep', 'postp'],
-  CCONJ: ['conj'],
-  SCONJ: ['conj'],
-  NUM: ['num'],
-  PART: ['particle'],
-  INTJ: ['intj'],
-  DET: ['det', 'pron'],
-}
+  NOUN: ["noun"],
+  PROPN: ["name", "noun"],
+  VERB: ["verb"],
+  AUX: ["verb"],
+  ADJ: ["adj"],
+  ADV: ["adv"],
+  PRON: ["pron"],
+  ADP: ["prep", "postp"],
+  CCONJ: ["conj"],
+  SCONJ: ["conj"],
+  NUM: ["num"],
+  PART: ["particle"],
+  INTJ: ["intj"],
+  DET: ["det", "pron"],
+};
 
 /**
  * Cache key for a per-sense gloss row: the English Wiktionary sense text,
@@ -30,29 +30,29 @@ export const UPOS_TO_KAIKKI: Record<string, string[]> = {
  * Lives here (not gloss/service) to keep the import graph acyclic.
  */
 export function senseKey(englishGloss: string): string {
-  return englishGloss.slice(0, 200)
+  return englishGloss.slice(0, 200);
 }
 
 export interface DictSenseView {
-  gloss: string
-  rawGloss: string | null
-  tags: string[]
-  italian: string | null // learner's cached per-sense gloss, if any
+  gloss: string;
+  rawGloss: string | null;
+  tags: string[];
+  italian: string | null; // learner's cached per-sense gloss, if any
 }
 
 export interface DictEntryView {
-  id: number
-  word: string
-  pos: string
-  ipa: string | null
-  etymology: string | null
-  senses: DictSenseView[]
-  forms: { form: string; tags: string[] }[]
+  id: number;
+  word: string;
+  pos: string;
+  ipa: string | null;
+  etymology: string | null;
+  senses: DictSenseView[];
+  forms: { form: string; tags: string[] }[];
 }
 
 export interface DictLookupResult {
-  matchedBy: 'lemma+pos' | 'lemma' | null // null = not in dictionary
-  entries: DictEntryView[]
+  matchedBy: "lemma+pos" | "lemma" | null; // null = not in dictionary
+  entries: DictEntryView[];
 }
 
 /**
@@ -70,7 +70,7 @@ export function lookupDictionary(
   upos: string,
   lemmaId?: number,
 ): DictLookupResult {
-  const mapped = UPOS_TO_KAIKKI[upos] ?? []
+  const mapped = UPOS_TO_KAIKKI[upos] ?? [];
 
   for (const word of [lemma, lemma.toLowerCase()]) {
     if (mapped.length > 0) {
@@ -79,16 +79,14 @@ export function lookupDictionary(
         .from(dictEntry)
         .where(eq(dictEntry.word, word))
         .all()
-        .filter((r) => mapped.includes(r.pos))
-      if (rows.length > 0)
-        return { matchedBy: 'lemma+pos', entries: hydrate(db, rows, lemmaId) }
+        .filter((r) => mapped.includes(r.pos));
+      if (rows.length > 0) return { matchedBy: "lemma+pos", entries: hydrate(db, rows, lemmaId) };
     }
-    const rows = db.select().from(dictEntry).where(eq(dictEntry.word, word)).all()
-    if (rows.length > 0)
-      return { matchedBy: 'lemma', entries: hydrate(db, rows, lemmaId) }
-    if (word === lemma.toLowerCase()) break // no second iteration needed
+    const rows = db.select().from(dictEntry).where(eq(dictEntry.word, word)).all();
+    if (rows.length > 0) return { matchedBy: "lemma", entries: hydrate(db, rows, lemmaId) };
+    if (word === lemma.toLowerCase()) break; // no second iteration needed
   }
-  return { matchedBy: null, entries: [] }
+  return { matchedBy: null, entries: [] };
 }
 
 function hydrate(
@@ -96,27 +94,19 @@ function hydrate(
   rows: (typeof dictEntry.$inferSelect)[],
   lemmaId?: number,
 ): DictEntryView[] {
-  const ids = rows.map((r) => r.id)
+  const ids = rows.map((r) => r.id);
   const senses = db
     .select()
     .from(dictSense)
     .where(inArray(dictSense.entryId, ids))
     .orderBy(asc(dictSense.senseIndex))
-    .all()
-  const forms = db
-    .select()
-    .from(dictForm)
-    .where(inArray(dictForm.entryId, ids))
-    .all()
+    .all();
+  const forms = db.select().from(dictForm).where(inArray(dictForm.entryId, ids)).all();
   // Learner's cached per-sense Italian glosses, keyed by senseKey.
-  const italianBySense = new Map<string, string>()
+  const italianBySense = new Map<string, string>();
   if (lemmaId !== undefined) {
-    for (const g of db
-      .select()
-      .from(gloss)
-      .where(eq(gloss.lemmaId, lemmaId))
-      .all()) {
-      if (g.sense !== '') italianBySense.set(g.sense, g.italian)
+    for (const g of db.select().from(gloss).where(eq(gloss.lemmaId, lemmaId)).all()) {
+      if (g.sense !== "") italianBySense.set(g.sense, g.italian);
     }
   }
   return rows.map((r) => ({
@@ -133,8 +123,6 @@ function hydrate(
         tags: s.tags,
         italian: italianBySense.get(senseKey(s.gloss)) ?? null,
       })),
-    forms: forms
-      .filter((f) => f.entryId === r.id)
-      .map((f) => ({ form: f.form, tags: f.tags })),
-  }))
+    forms: forms.filter((f) => f.entryId === r.id).map((f) => ({ form: f.form, tags: f.tags })),
+  }));
 }

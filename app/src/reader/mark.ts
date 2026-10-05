@@ -1,12 +1,12 @@
-import { and, eq } from 'drizzle-orm'
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import * as schema from '#/db/schema'
-import { knowledge, token } from '#/db/schema'
-import { Rating, gradeLemma } from '#/fsrs/index'
+import { and, eq } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import * as schema from "#/db/schema";
+import { knowledge, token } from "#/db/schema";
+import { Rating, gradeLemma } from "#/fsrs/index";
 
-type DB = BetterSQLite3Database<typeof schema>
+type DB = BetterSQLite3Database<typeof schema>;
 
-const STATE_NEW = 0
+const STATE_NEW = 0;
 
 /**
  * Batch-mark every still-New word in a text as known (grade Easy), in ONE
@@ -21,20 +21,17 @@ export function markNewKnown(db: DB, textId: number): number[] {
     .from(token)
     .innerJoin(
       knowledge,
-      and(
-        eq(knowledge.lemmaId, token.lemmaId),
-        eq(knowledge.track, 'receptive'),
-      ),
+      and(eq(knowledge.lemmaId, token.lemmaId), eq(knowledge.track, "receptive")),
     )
     .where(and(eq(token.textId, textId), eq(knowledge.state, STATE_NEW)))
     .groupBy(knowledge.lemmaId)
     .all()
-    .map((r) => r.lemmaId)
+    .map((r) => r.lemmaId);
 
   db.transaction((tx) => {
     for (const lemmaId of eligible) {
-      gradeLemma(tx, lemmaId, 'receptive', Rating.Easy)
+      gradeLemma(tx, lemmaId, "receptive", Rating.Easy);
     }
-  })
-  return eligible
+  });
+  return eligible;
 }

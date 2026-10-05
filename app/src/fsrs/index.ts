@@ -1,5 +1,5 @@
-import { and, asc, eq, isNull, lte, ne } from 'drizzle-orm'
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
+import { and, asc, eq, isNull, lte, ne } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   type Card,
   type Grade,
@@ -7,39 +7,39 @@ import {
   createEmptyCard,
   fsrs,
   generatorParameters,
-} from 'ts-fsrs'
-import * as schema from '#/db/schema'
-import { knowledge, lemma, reviewLog } from '#/db/schema'
+} from "ts-fsrs";
+import * as schema from "#/db/schema";
+import { knowledge, lemma, reviewLog } from "#/db/schema";
 
-export { Rating } from 'ts-fsrs'
-export type { Grade } from 'ts-fsrs'
+export { Rating } from "ts-fsrs";
+export type { Grade } from "ts-fsrs";
 
-export type Track = 'receptive' | 'productive' | 'pronunciation'
-type DB = BetterSQLite3Database<typeof schema>
-type KnowledgeRow = typeof knowledge.$inferSelect
+export type Track = "receptive" | "productive" | "pronunciation";
+type DB = BetterSQLite3Database<typeof schema>;
+type KnowledgeRow = typeof knowledge.$inferSelect;
 /** The FSRS columns of a knowledge row — enough to build a ts-fsrs Card. */
 type CardFields = Pick<
   KnowledgeRow,
-  | 'stability'
-  | 'difficulty'
-  | 'due'
-  | 'lastReview'
-  | 'state'
-  | 'reps'
-  | 'lapses'
-  | 'elapsedDays'
-  | 'scheduledDays'
-  | 'learningSteps'
->
+  | "stability"
+  | "difficulty"
+  | "due"
+  | "lastReview"
+  | "state"
+  | "reps"
+  | "lapses"
+  | "elapsedDays"
+  | "scheduledDays"
+  | "learningSteps"
+>;
 
 // FSRS State enum values we branch on.
-const STATE_NEW = 0
+const STATE_NEW = 0;
 
 // Default cap on brand-new cards introduced per session (see dueLemmas).
-export const DEFAULT_NEW_CARD_LIMIT = 10
+export const DEFAULT_NEW_CARD_LIMIT = 10;
 
 // One scheduler for the app. ADR-0003: FSRS drives selection + scheduling.
-const scheduler = fsrs(generatorParameters())
+const scheduler = fsrs(generatorParameters());
 
 function rowToCard(k: CardFields): Card {
   return {
@@ -53,7 +53,7 @@ function rowToCard(k: CardFields): Card {
     learning_steps: k.learningSteps,
     state: k.state as State,
     last_review: k.lastReview ?? undefined,
-  }
+  };
 }
 
 function cardToRow(c: Card): CardFields {
@@ -68,22 +68,18 @@ function cardToRow(c: Card): CardFields {
     elapsedDays: c.elapsed_days,
     scheduledDays: c.scheduled_days,
     learningSteps: c.learning_steps,
-  }
+  };
 }
 
 /** FSRS column defaults for a brand-new ("unknown") knowledge row. #4 uses this. */
 export function initialKnowledgeFields(now = new Date()): CardFields {
-  return cardToRow(createEmptyCard(now))
+  return cardToRow(createEmptyCard(now));
 }
 
 /** Pure: given a track state + rating, return the next FSRS column values. */
-export function schedule(
-  state: CardFields,
-  rating: Grade,
-  now = new Date(),
-): CardFields {
-  const { card } = scheduler.next(rowToCard(state), now, rating)
-  return cardToRow(card)
+export function schedule(state: CardFields, rating: Grade, now = new Date()): CardFields {
+  const { card } = scheduler.next(rowToCard(state), now, rating);
+  return cardToRow(card);
 }
 
 /**
@@ -103,16 +99,18 @@ export function gradeLemma(
       .select()
       .from(knowledge)
       .where(and(eq(knowledge.lemmaId, lemmaId), eq(knowledge.track, track)))
-      .all()
+      .all();
 
-    const base: CardFields = existing ?? initialKnowledgeFields(now)
-    const stateBefore = base.state
-    const next = schedule(base, rating, now)
+    const base: CardFields = existing ?? initialKnowledgeFields(now);
+    const stateBefore = base.state;
+    const next = schedule(base, rating, now);
 
     if (existing) {
-      tx.update(knowledge).set(next).where(eq(knowledge.id, existing.id)).run()
+      tx.update(knowledge).set(next).where(eq(knowledge.id, existing.id)).run();
     } else {
-      tx.insert(knowledge).values({ lemmaId, track, ...next }).run()
+      tx.insert(knowledge)
+        .values({ lemmaId, track, ...next })
+        .run();
     }
 
     tx.insert(reviewLog)
@@ -124,20 +122,20 @@ export function gradeLemma(
         stateAfter: next.state,
         reviewedAt: now,
       })
-      .run()
+      .run();
 
-    return next
-  })
+    return next;
+  });
 }
 
 export interface DueLemma {
-  lemmaId: number
-  lemma: string
-  pos: string
-  track: Track
-  due: Date
-  stability: number
-  state: number
+  lemmaId: number;
+  lemma: string;
+  pos: string;
+  track: Track;
+  due: Date;
+  stability: number;
+  state: number;
 }
 
 /**
@@ -164,7 +162,7 @@ export function dueLemmas(
     due: knowledge.due,
     stability: knowledge.stability,
     state: knowledge.state,
-  }
+  };
 
   const reviews = db
     .select(cols)
@@ -180,9 +178,9 @@ export function dueLemmas(
     )
     .orderBy(asc(knowledge.stability), asc(knowledge.due))
     .limit(limit)
-    .all()
+    .all();
 
-  const newBudget = Math.min(newCardLimit, Math.max(0, limit - reviews.length))
+  const newBudget = Math.min(newCardLimit, Math.max(0, limit - reviews.length));
   const news = newBudget
     ? db
         .select(cols)
@@ -199,7 +197,7 @@ export function dueLemmas(
         .orderBy(asc(knowledge.due))
         .limit(newBudget)
         .all()
-    : []
+    : [];
 
-  return [...reviews, ...news] as DueLemma[]
+  return [...reviews, ...news] as DueLemma[];
 }

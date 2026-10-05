@@ -1,24 +1,24 @@
-import { and, eq } from 'drizzle-orm'
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import * as schema from '#/db/schema'
-import { knowledge, lemma, mweOccurrence, sourceText, token } from '#/db/schema'
-import { detectMwes, loadMweHeadwords, type MweToken } from '#/dictionary/mwe'
-import { initialKnowledgeFields } from '#/fsrs/index'
-import type { AnalyzeResponse, AnalyzedToken } from './sidecar'
+import { and, eq } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import * as schema from "#/db/schema";
+import { knowledge, lemma, mweOccurrence, sourceText, token } from "#/db/schema";
+import { detectMwes, loadMweHeadwords, type MweToken } from "#/dictionary/mwe";
+import { initialKnowledgeFields } from "#/fsrs/index";
+import type { AnalyzeResponse, AnalyzedToken } from "./sidecar";
 
-type DB = BetterSQLite3Database<typeof schema>
+type DB = BetterSQLite3Database<typeof schema>;
 
 // UPOS tags that are layout/noise, not vocabulary worth tracking.
-const SKIP_POS = new Set(['PUNCT', 'SYM', 'SPACE', 'X'])
+const SKIP_POS = new Set(["PUNCT", "SYM", "SPACE", "X"]);
 function isVocab(t: AnalyzedToken): boolean {
-  return !t.is_space && !SKIP_POS.has(t.pos) && t.lemma.trim() !== ''
+  return !t.is_space && !SKIP_POS.has(t.pos) && t.lemma.trim() !== "";
 }
 
 export interface ImportResult {
-  textId: number
-  tokenCount: number
-  lemmaCount: number // distinct lemmas in this text
-  mweCount: number // MWE occurrences detected in this text
+  textId: number;
+  tokenCount: number;
+  lemmaCount: number; // distinct lemmas in this text
+  mweCount: number; // MWE occurrences detected in this text
 }
 
 /**
@@ -44,19 +44,19 @@ export function persistAnalysis(
       .insert(sourceText)
       .values({ title: input.title ?? null, content: input.content })
       .returning({ id: sourceText.id })
-      .all()
+      .all();
 
-    const seen = new Set<number>()
-    const collected: MweToken[] = []
-    let position = 0
+    const seen = new Set<number>();
+    const collected: MweToken[] = [];
+    let position = 0;
     for (let s = 0; s < analysis.sentences.length; s++) {
       for (const tok of analysis.sentences[s].tokens) {
-        let lemmaId: number | null = null
+        let lemmaId: number | null = null;
         if (isVocab(tok)) {
-          lemmaId = upsertLemma(tx, tok.lemma, tok.pos)
+          lemmaId = upsertLemma(tx, tok.lemma, tok.pos);
           if (!seen.has(lemmaId)) {
-            seen.add(lemmaId)
-            ensureReceptiveKnowledge(tx, lemmaId, now)
+            seen.add(lemmaId);
+            ensureReceptiveKnowledge(tx, lemmaId, now);
           }
         }
         tx.insert(token)
@@ -68,7 +68,7 @@ export function persistAnalysis(
             sentenceIndex: s,
             isSpace: tok.is_space,
           })
-          .run()
+          .run();
         if (!tok.is_space) {
           collected.push({
             surface: tok.surface,
@@ -76,20 +76,20 @@ export function persistAnalysis(
             position,
             sentenceIndex: s,
             isSpace: false,
-          })
+          });
         }
-        position++
+        position++;
       }
     }
 
     // Contiguous MWE detection against the home dictionary's multi-word
     // headwords. Each match becomes a pos='MWE' tracked unit + occurrence.
-    const matches = detectMwes(collected, mweHeadwords ?? loadMweHeadwords(tx))
+    const matches = detectMwes(collected, mweHeadwords ?? loadMweHeadwords(tx));
     for (const m of matches) {
-      const mweLemmaId = upsertLemma(tx, m.headword, 'MWE')
+      const mweLemmaId = upsertLemma(tx, m.headword, "MWE");
       if (!seen.has(mweLemmaId)) {
-        seen.add(mweLemmaId)
-        ensureReceptiveKnowledge(tx, mweLemmaId, now)
+        seen.add(mweLemmaId);
+        ensureReceptiveKnowledge(tx, mweLemmaId, now);
       }
       tx.insert(mweOccurrence)
         .values({
@@ -99,7 +99,7 @@ export function persistAnalysis(
           endPosition: m.endPosition,
           sentenceIndex: m.sentenceIndex,
         })
-        .run()
+        .run();
     }
 
     return {
@@ -107,25 +107,25 @@ export function persistAnalysis(
       tokenCount: position,
       lemmaCount: seen.size,
       mweCount: matches.length,
-    }
-  })
+    };
+  });
 }
 
 /** Insert-or-get a lemma by its (base form, POS) identity. */
 function upsertLemma(db: DB, lemmaText: string, pos: string): number {
-  db.insert(lemma).values({ lemma: lemmaText, pos }).onConflictDoNothing().run()
+  db.insert(lemma).values({ lemma: lemmaText, pos }).onConflictDoNothing().run();
   const [row] = db
     .select({ id: lemma.id })
     .from(lemma)
     .where(and(eq(lemma.lemma, lemmaText), eq(lemma.pos, pos)))
-    .all()
-  return row.id
+    .all();
+  return row.id;
 }
 
 /** Create the receptive knowledge row if the lemma doesn't have one yet. */
 function ensureReceptiveKnowledge(db: DB, lemmaId: number, now: Date): void {
   db.insert(knowledge)
-    .values({ lemmaId, track: 'receptive', ...initialKnowledgeFields(now) })
+    .values({ lemmaId, track: "receptive", ...initialKnowledgeFields(now) })
     .onConflictDoNothing()
-    .run()
+    .run();
 }

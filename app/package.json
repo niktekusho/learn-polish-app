@@ -10,6 +10,7 @@
     "generate-routes": "tsr generate",
     "purge-stub": "node scripts/purge-stub.mjs",
     "build": "vite build",
+    "start": "SIDECAR_URL=http://localhost:10001 DATABASE_PATH=$PWD/data/app.db MIGRATIONS_DIR=$PWD/drizzle GLOSS_PROVIDER=claude-cli VITE_ALLOWED_HOSTS=mb14.local,macbook-pro.tail1ced86.ts.net vite preview --port 10000 --host 0.0.0.0",
     "preview": "vite preview",
     "test": "vitest run",
     "db:generate": "drizzle-kit generate",

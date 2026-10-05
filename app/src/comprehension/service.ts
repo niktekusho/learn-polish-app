@@ -1,14 +1,14 @@
-import { asc, eq } from 'drizzle-orm'
-import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
-import * as schema from '#/db/schema'
-import { comprehensionQuestion, sourceText } from '#/db/schema'
-import { type GlossProvider, getGlossProvider } from '#/llm/provider'
+import { asc, eq } from "drizzle-orm";
+import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import * as schema from "#/db/schema";
+import { comprehensionQuestion, sourceText } from "#/db/schema";
+import { type GlossProvider, getGlossProvider } from "#/llm/provider";
 
-type DB = BetterSQLite3Database<typeof schema>
+type DB = BetterSQLite3Database<typeof schema>;
 
 export interface ComprehensionCheck {
-  questions: { question: string; choices: string[]; correctIndex: number }[]
-  cached: boolean // true = served from cache (no provider call)
+  questions: { question: string; choices: string[]; correctIndex: number }[];
+  cached: boolean; // true = served from cache (no provider call)
 }
 
 /**
@@ -31,7 +31,7 @@ export async function getComprehensionCheck(
     .from(comprehensionQuestion)
     .where(eq(comprehensionQuestion.textId, textId))
     .orderBy(asc(comprehensionQuestion.questionIndex))
-    .all()
+    .all();
   if (existing.length > 0) {
     return {
       questions: existing.map((q) => ({
@@ -40,32 +40,25 @@ export async function getComprehensionCheck(
         correctIndex: q.correctIndex,
       })),
       cached: true,
-    }
+    };
   }
 
-  const [text] = db
-    .select()
-    .from(sourceText)
-    .where(eq(sourceText.id, textId))
-    .all()
-  if (!text) throw new Error(`text ${textId} not found`)
+  const [text] = db.select().from(sourceText).where(eq(sourceText.id, textId)).all();
+  if (!text) throw new Error(`text ${textId} not found`);
 
   if (!provider.comprehension) {
-    throw new Error(`provider "${provider.name}" does not support comprehension checks`)
+    throw new Error(`provider "${provider.name}" does not support comprehension checks`);
   }
 
-  let result: Awaited<ReturnType<NonNullable<GlossProvider['comprehension']>>>
+  let result: Awaited<ReturnType<NonNullable<GlossProvider["comprehension"]>>>;
   try {
-    result = await provider.comprehension({ text: text.content })
+    result = await provider.comprehension({ text: text.content });
   } catch (err) {
     // Log server-side (the pnpm dev terminal) — the error otherwise only
     // surfaces as the UI's generic "failed" state, hiding the real cause
     // (e.g. `claude exited 1: 401 Invalid authentication credentials`).
-    console.error(
-      `[comprehension] provider "${provider.name}" failed for text ${textId}:`,
-      err,
-    )
-    throw err
+    console.error(`[comprehension] provider "${provider.name}" failed for text ${textId}:`, err);
+    throw err;
   }
 
   // onConflictDoNothing: concurrent first clicks (e.g. React StrictMode's
@@ -83,9 +76,9 @@ export async function getComprehensionCheck(
           provider: provider.name,
         })
         .onConflictDoNothing()
-        .run()
-    })
-  })
+        .run();
+    });
+  });
 
   // Re-read so a racing insert's value wins deterministically.
   const rows = db
@@ -93,7 +86,7 @@ export async function getComprehensionCheck(
     .from(comprehensionQuestion)
     .where(eq(comprehensionQuestion.textId, textId))
     .orderBy(asc(comprehensionQuestion.questionIndex))
-    .all()
+    .all();
   return {
     questions: rows.map((q) => ({
       question: q.question,
@@ -101,7 +94,7 @@ export async function getComprehensionCheck(
       correctIndex: q.correctIndex,
     })),
     cached: false,
-  }
+  };
 }
 
 /**
@@ -114,8 +107,6 @@ export async function regenerateComprehensionCheck(
   textId: number,
   provider: GlossProvider = getGlossProvider(),
 ): Promise<ComprehensionCheck> {
-  db.delete(comprehensionQuestion)
-    .where(eq(comprehensionQuestion.textId, textId))
-    .run()
-  return getComprehensionCheck(db, textId, provider)
+  db.delete(comprehensionQuestion).where(eq(comprehensionQuestion.textId, textId)).run();
+  return getComprehensionCheck(db, textId, provider);
 }
