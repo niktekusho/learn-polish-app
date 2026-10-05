@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.niktekusho.learn-polish</string>
+  <!-- Symlink to the live release; launchd resolves it on each (re)start. -->
+  <key>WorkingDirectory</key>
+  <string>/Users/niktekusho/apps/learn-polish/current</string>
+  <!-- caffeinate -s: no system sleep while on AC power, for as long as pnpm start runs -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/caffeinate</string>
+    <string>-s</string>
+    <string>/Users/niktekusho/Library/pnpm/pnpm</string>
+    <string>start</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/Users/niktekusho/.nvm/versions/node/v24.14.1/bin:/Users/niktekusho/Library/pnpm:/Users/niktekusho/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/niktekusho</string>
+    <key>DATABASE_PATH</key>
+    <string>/Users/niktekusho/Library/Application Support/learn-polish/app.db</string>
+    <key>DEPLOY_FAILED_FILE</key>
+    <string>/Users/niktekusho/Library/Application Support/learn-polish/deploy-failed.json</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/niktekusho/Library/Logs/learn-polish.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/niktekusho/Library/Logs/learn-polish.log</string>
+</dict>
+</plist>

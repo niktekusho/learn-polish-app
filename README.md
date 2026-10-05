@@ -38,7 +38,8 @@ Run them separately if you prefer: `pnpm dev:app` and `pnpm dev:sidecar`.
 
 ### Database
 
-SQLite lives at `app/data/app.db` (gitignored, WAL). Schema is defined with Drizzle
+In dev, SQLite lives at `app/data/app.db` (gitignored, WAL). The prod DB lives elsewhere: see
+[docs/operations.md](./docs/operations.md). Schema is defined with Drizzle
 in [`app/src/db/schema.ts`](app/src/db/schema.ts); migrations are applied automatically on
 app startup.
 
@@ -57,6 +58,7 @@ sidecar/   Python FastAPI morphology service (uv-managed)
 ## Documentation
 
 - [CONTEXT.md](./CONTEXT.md) — the project's shared vocabulary.
+- [docs/operations.md](./docs/operations.md) — prod: where the DB lives, deploys, rollback.
 - [docs/adr/](./docs/adr/) — architecture decisions and the reasoning behind them.
 - [docs/mvp-backlog.md](./docs/mvp-backlog.md) — the first slice, broken into issues (done).
 - [docs/roadmap.md](./docs/roadmap.md) — post-MVP roadmap.

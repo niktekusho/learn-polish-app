@@ -9,7 +9,6 @@
     "db:migrate": "pnpm --filter app db:migrate",
     "start": "concurrently -k -n app,sidecar -c blue,green \"pnpm --filter app start\" \"pnpm start:sidecar\"",
     "start:sidecar": "cd sidecar && uv run uvicorn main:app --port 10001",
-    "deploy": "pnpm --filter app build && launchctl kickstart -k gui/$(id -u)/com.niktekusho.learn-polish",
     "prepare": "vp config",
     "fmt": "vp fmt",
     "fmt:check": "vp fmt --check"
