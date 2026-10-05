@@ -3,13 +3,32 @@ import { createServerFn } from '@tanstack/react-start'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import type { DictImportStatus } from '#/dictionary/import-job'
-import type { MaintenanceStats } from '#/maintenance/ops'
+import type { FlaggedLemma, MaintenanceStats } from '#/maintenance/ops'
 
 const loadStats = createServerFn().handler(async (): Promise<MaintenanceStats> => {
   const { db } = await import('#/db/index')
   const { getStats } = await import('#/maintenance/ops')
   return getStats(db)
 })
+
+const loadFlagged = createServerFn().handler(async (): Promise<FlaggedLemma[]> => {
+  const { db } = await import('#/db/index')
+  const { listFlagged } = await import('#/maintenance/ops')
+  return listFlagged(db)
+})
+
+// Clear a practice report; with `italian`, save it as the manual gloss first.
+const resolveFlagFn = createServerFn({ method: 'POST' })
+  .validator((d: unknown) =>
+    z
+      .object({ lemmaId: z.number().int(), italian: z.string().min(1).optional() })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { db } = await import('#/db/index')
+    const { resolveFlag } = await import('#/maintenance/ops')
+    resolveFlag(db, data.lemmaId, data.italian)
+  })
 
 const actionInput = z.object({
   action: z.enum([
@@ -54,13 +73,16 @@ const getDictImportStatus = createServerFn().handler(
 
 export const Route = createFileRoute('/maintenance')({
   component: Maintenance,
-  loader: () => loadStats(),
+  loader: async () => {
+    const [stats, flagged] = await Promise.all([loadStats(), loadFlagged()])
+    return { stats, flagged }
+  },
 })
 
 type Action = z.infer<typeof actionInput>['action']
 
 function Maintenance() {
-  const stats = Route.useLoaderData()
+  const { stats, flagged } = Route.useLoaderData()
   const router = useRouter()
   const [pending, setPending] = useState<Action | null>(null)
   const [message, setMessage] = useState<string | null>(null)
@@ -134,6 +156,21 @@ function Maintenance() {
         Housekeeping for the vocab store. Glosses (translations) and FSRS
         progress are never touched by "Clear imported texts".
       </p>
+
+      {flagged.length > 0 && (
+        <div className="mt-8 rounded border border-amber-300 bg-amber-50 p-4">
+          <h2 className="font-semibold">Requires attention ({flagged.length})</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Reported from Practice — out of practice until resolved. Fix the
+            gloss (saved as manual) or just clear the flag.
+          </p>
+          <ul className="mt-3 space-y-3">
+            {flagged.map((f) => (
+              <FlaggedRow key={f.lemmaId} f={f} onDone={() => router.invalidate()} />
+            ))}
+          </ul>
+        </div>
+      )}
 
       <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-1 text-sm sm:grid-cols-3">
         <Stat label="Texts" value={stats.texts} />
@@ -257,6 +294,59 @@ function Maintenance() {
         <p className="mt-6 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>
       )}
     </div>
+  )
+}
+
+function FlaggedRow({ f, onDone }: { f: FlaggedLemma; onDone: () => void }) {
+  const [italian, setItalian] = useState(f.gloss ?? '')
+  const [busy, setBusy] = useState(false)
+  const changed = italian.trim() !== '' && italian.trim() !== (f.gloss ?? '')
+
+  async function resolve(withGloss: boolean) {
+    setBusy(true)
+    try {
+      await resolveFlagFn({
+        data: { lemmaId: f.lemmaId, italian: withGloss ? italian.trim() : undefined },
+      })
+      onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <li className="rounded border border-amber-200 bg-white p-3 text-sm">
+      <div>
+        <span className="text-base font-semibold">{f.lemma}</span>{' '}
+        <span className="text-gray-500">{f.pos}</span>
+      </div>
+      {f.note && <p className="mt-1 text-gray-700">“{f.note}”</p>}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <input
+          type="text"
+          value={italian}
+          onChange={(e) => setItalian(e.target.value)}
+          aria-label={`Italian gloss for ${f.lemma}`}
+          className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1.5"
+        />
+        <button
+          type="button"
+          onClick={() => resolve(true)}
+          disabled={busy || !changed}
+          className="rounded border border-blue-300 px-3 py-1.5 font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+        >
+          Save & clear
+        </button>
+        <button
+          type="button"
+          onClick={() => resolve(false)}
+          disabled={busy}
+          className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Clear flag
+        </button>
+      </div>
+    </li>
   )
 }
 

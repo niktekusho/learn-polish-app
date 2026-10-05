@@ -35,6 +35,10 @@ export const lemma = sqliteTable(
     // UPOS: NOUN, VERB, ADP, ... — or 'MWE' for multi-word tracked units
     // (dictionary headwords detected at import, see mweOccurrence).
     pos: text("pos").notNull(),
+    // Learner reported a bad exercise (wrong gloss, useless without context).
+    // Non-null = "requires attention": kept out of practice until cleared.
+    flaggedAt: integer("flagged_at", { mode: "timestamp" }),
+    flagNote: text("flag_note"),
   },
   (t) => [
     // A lemma is identified by its base form + POS (kot/NOUN vs homographs).

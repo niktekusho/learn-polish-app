@@ -133,6 +133,7 @@ function glossedCandidates(db: DB): ExerciseCandidate[] {
     })
     .from(lemma)
     .innerJoin(gloss, and(eq(gloss.lemmaId, lemma.id), eq(gloss.sense, '')))
+    .where(isNull(lemma.flaggedAt)) // a reported gloss mustn't leak in as a distractor
     .all()
 }
 
@@ -501,4 +502,24 @@ export function selfGradeItem(
   }
   s.answered.set(itemId, saidIt)
   return { alreadyAnswered: false, hint }
+}
+
+/**
+ * Learner reports the item as broken (wrong gloss, meaningless without
+ * context). Flags the lemma — dueLemmas skips it until cleared in
+ * Maintenance — and closes the item. No FSRS write: a broken item says
+ * nothing about memory. Works after an answer too (the grade then stands).
+ */
+export function reportItem(
+  db: DB,
+  sessionId: string,
+  itemId: string,
+  note: string,
+): void {
+  const { s, stored } = heldItem(sessionId, itemId)
+  db.update(lemma)
+    .set({ flaggedAt: new Date(), flagNote: note.trim() || null })
+    .where(eq(lemma.id, stored.item.lemmaId))
+    .run()
+  if (!s.answered.has(itemId)) s.answered.set(itemId, false)
 }

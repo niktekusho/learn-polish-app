@@ -1,4 +1,4 @@
-import { and, asc, eq, lte, ne } from 'drizzle-orm'
+import { and, asc, eq, isNull, lte, ne } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import {
   type Card,
@@ -175,6 +175,7 @@ export function dueLemmas(
         eq(knowledge.track, track),
         lte(knowledge.due, now),
         ne(knowledge.state, STATE_NEW),
+        isNull(lemma.flaggedAt),
       ),
     )
     .orderBy(asc(knowledge.stability), asc(knowledge.due))
@@ -192,7 +193,8 @@ export function dueLemmas(
             eq(knowledge.track, track),
             lte(knowledge.due, now),
             eq(knowledge.state, STATE_NEW),
-              ),
+            isNull(lemma.flaggedAt),
+          ),
         )
         .orderBy(asc(knowledge.due))
         .limit(newBudget)

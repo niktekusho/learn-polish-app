@@ -50,6 +50,13 @@
       "when": 1783855552557,
       "tag": "0006_wealthy_nomad",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1791206276557,
+      "tag": "0007_slimy_vapor",
+      "breakpoints": true
     }
   ]
 }

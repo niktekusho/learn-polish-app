@@ -4,7 +4,8 @@ import { migrate } from 'drizzle-orm/better-sqlite3/migrator'
 import { expect, test } from 'vitest'
 import * as schema from '#/db/schema'
 import { initialKnowledgeFields } from '#/fsrs/index'
-import { answerItem, buildSession, resumeSession } from './session'
+import { listFlagged, resolveFlag } from '#/maintenance/ops'
+import { answerItem, buildSession, reportItem, resumeSession } from './session'
 
 function freshDb() {
   const sqlite = new Database(':memory:')
@@ -100,4 +101,43 @@ test('resumeSession returns the held items and answered progress', () => {
   expect(resumed?.items).toHaveLength(session.items.length)
   expect(resumed?.answered).toHaveLength(1)
   expect(resumeSession('nope')).toBeNull()
+})
+
+test('report flags the lemma out of practice without grading; resolve brings it back', () => {
+  const db = freshDb()
+  for (const [w, g] of [
+    ['kot', 'gatto'],
+    ['pies', 'cane'],
+    ['dom', 'casa'],
+    ['woda', 'acqua'],
+    ['tylko', 'ma anche'],
+  ] as const) {
+    seed(db, w, g)
+  }
+  const session = buildSession(db, { limit: 20 })
+  const bad = session.items.find(
+    (i) => i.kind === 'recognition-mcq' && i.prompt === 'tylko',
+  )!
+  reportItem(db, session.sessionId, bad.id, '  wrong gloss  ')
+
+  expect(db.select().from(schema.reviewLog).all()).toHaveLength(0) // no FSRS write
+  expect(resumeSession(session.sessionId)!.answered).toEqual([
+    { itemId: bad.id, correct: false },
+  ])
+  const [flag] = listFlagged(db)
+  expect(flag).toMatchObject({ lemma: 'tylko', gloss: 'ma anche', note: 'wrong gloss' })
+
+  // Flagged: neither a target nor a distractor.
+  const next = buildSession(db, { limit: 20 })
+  expect(next.items).toHaveLength(4)
+  for (const i of next.items) {
+    if (i.kind !== 'recognition-mcq') continue
+    expect(i.prompt).not.toBe('tylko')
+    expect(i.choices).not.toContain('ma anche')
+  }
+  resolveFlag(db, flag.lemmaId, 'solo')
+  expect(listFlagged(db)).toHaveLength(0)
+  const after = buildSession(db, { limit: 20 })
+  const fixed = after.items.find((i) => i.kind === 'recognition-mcq' && i.prompt === 'tylko')
+  expect(fixed?.kind === 'recognition-mcq' && fixed.choices).toContain('solo')
 })

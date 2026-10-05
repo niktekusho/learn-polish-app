@@ -1,4 +1,4 @@
-import { and, count, eq, notExists } from 'drizzle-orm'
+import { and, asc, count, eq, isNotNull, notExists } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core'
 import * as schema from '#/db/schema'
@@ -15,6 +15,7 @@ import {
   token,
 } from '#/db/schema'
 import { wipeDictionary } from '#/dictionary/loader'
+import { setManualGloss } from '#/gloss/service'
 
 type DB = BetterSQLite3Database<typeof schema>
 
@@ -102,4 +103,43 @@ export function purgeStubGlosses(db: DB): number {
 /** Delete the whole home dictionary (entries, senses, forms). */
 export function clearDictionary(db: DB): number {
   return wipeDictionary(db)
+}
+
+export interface FlaggedLemma {
+  lemmaId: number
+  lemma: string
+  pos: string
+  gloss: string | null
+  note: string | null
+  flaggedAt: Date
+}
+
+/** Lemmas reported from Practice ("requires attention"), oldest first. */
+export function listFlagged(db: DB): FlaggedLemma[] {
+  return db
+    .select({
+      lemmaId: lemma.id,
+      lemma: lemma.lemma,
+      pos: lemma.pos,
+      gloss: gloss.italian,
+      note: lemma.flagNote,
+      flaggedAt: lemma.flaggedAt,
+    })
+    .from(lemma)
+    .leftJoin(gloss, and(eq(gloss.lemmaId, lemma.id), eq(gloss.sense, '')))
+    .where(isNotNull(lemma.flaggedAt))
+    .orderBy(asc(lemma.flaggedAt))
+    .all() as FlaggedLemma[]
+}
+
+/**
+ * Clear a flag, optionally writing a corrected gloss first (manual tier).
+ * The lemma rejoins practice with its FSRS state untouched.
+ */
+export function resolveFlag(db: DB, lemmaId: number, italian?: string): void {
+  if (italian !== undefined) setManualGloss(db, lemmaId, italian)
+  db.update(lemma)
+    .set({ flaggedAt: null, flagNote: null })
+    .where(eq(lemma.id, lemmaId))
+    .run()
 }

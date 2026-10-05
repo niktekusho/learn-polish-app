@@ -1,6 +1,6 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { Mic, MicOff, Volume2 } from 'lucide-react'
+import { Flag, Mic, MicOff, Volume2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { PushToTalk } from '#/audio/recorder'
@@ -79,6 +79,19 @@ const submitSelfGrade = createServerFn({ method: 'POST' })
     const { db } = await import('#/db/index')
     const { selfGradeItem } = await import('#/practice/session')
     return selfGradeItem(db, data.sessionId, data.itemId, data.saidIt)
+  })
+
+// Flag the item's lemma as "requires attention" (fixed in Maintenance).
+const submitReport = createServerFn({ method: 'POST' })
+  .validator((d: unknown) =>
+    z
+      .object({ sessionId: z.string(), itemId: z.string(), note: z.string().max(500) })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { db } = await import('#/db/index')
+    const { reportItem } = await import('#/practice/session')
+    reportItem(db, data.sessionId, data.itemId, data.note)
   })
 
 export const Route = createFileRoute('/practice')({
@@ -286,6 +299,23 @@ function PracticeSession() {
     }
   }
 
+  async function report() {
+    if (busy) return
+    const note = window.prompt(
+      'Report this exercise — what is wrong? (optional)\nIt leaves practice until fixed in Maintenance.',
+    )
+    if (note === null) return
+    setBusy(true)
+    try {
+      await submitReport({ data: { sessionId: data.sessionId, itemId: item.id, note } })
+      setAnswered((prev) => ({ ...prev, [item.id]: prev[item.id] ?? false }))
+      setReveal(null)
+      setSpeech(null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function speechNext() {
     setAnswered((prev) => ({ ...prev, [item.id]: true }))
     setSpeech(null)
@@ -293,8 +323,19 @@ function PracticeSession() {
 
   return (
     <Shell toolbar={micToggle}>
-      <div className="text-sm text-gray-500">
-        {answeredCount + 1} / {total}
+      <div className="flex items-center justify-between text-sm text-gray-500">
+        <span>
+          {answeredCount + 1} / {total}
+        </span>
+        <button
+          type="button"
+          onClick={report}
+          disabled={busy}
+          className="flex items-center gap-1 hover:text-red-600"
+          title="Report a problem with this exercise"
+        >
+          <Flag size={14} /> Report
+        </button>
       </div>
       {hint && <p className="mt-1 text-sm text-gray-500">{hintText(hint)}</p>}
 
