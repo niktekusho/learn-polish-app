@@ -3,7 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
-import { Rating, dueLemmas, gradeLemma, initialKnowledgeFields } from "./index";
+import { Rating, dueLemmas, gradeLemma, initialKnowledgeFields, nextPracticeDue } from "./index";
 
 function freshDb() {
   const sqlite = new Database(":memory:");
@@ -105,4 +105,26 @@ test("dueLemmas returns reviews before New cards and caps New cards", () => {
   const newCount = due.filter((d) => d.state === 0).length;
   expect(newCount).toBe(10);
   expect(due).toHaveLength(12);
+});
+
+test("a card graded today is not due again until tomorrow", () => {
+  const db = freshDb();
+  const morning = new Date(2026, 0, 1, 8, 0);
+  for (const word of ["zle", "dobrze"]) {
+    const lemmaId = addLemma(db, word);
+    db.insert(schema.knowledge)
+      .values({ lemmaId, track: "receptive", ...initialKnowledgeFields(morning) })
+      .run();
+    gradeLemma(db, lemmaId, "receptive", word === "zle" ? Rating.Again : Rating.Good, morning);
+  }
+
+  const evening = new Date(2026, 0, 1, 20, 0);
+  expect(dueLemmas(db, "receptive", { now: evening })).toEqual([]);
+  const tomorrow = new Date(2026, 0, 2, 7, 0);
+  expect(
+    dueLemmas(db, "receptive", { now: tomorrow })
+      .map((d) => d.lemma)
+      .sort(),
+  ).toEqual(["dobrze", "zle"]);
+  expect(nextPracticeDue(new Date(2026, 0, 1, 8, 10), morning)).toEqual(new Date(2026, 0, 2));
 });

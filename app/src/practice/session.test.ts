@@ -81,16 +81,8 @@ test("answering grades exactly once; a repeat submit is rejected", () => {
 
 test("resumeSession returns the held items and answered progress", () => {
   const db = freshDb();
-  for (const [w, g] of [
-    ["kot", "gatto"],
-    ["pies", "cane"],
-    ["dom", "casa"],
-    ["woda", "acqua"],
-  ] as const) {
-    seed(db, w, g);
-  }
-  const session = buildSession(db, { limit: 20 });
-  answerItem(db, session.sessionId, session.items[0].id, 0);
+  const { session, first, right } = seedFourAndBuild(db);
+  answerItem(db, session.sessionId, first.id, right);
 
   const resumed = resumeSession(session.sessionId);
   expect(resumed).not.toBeNull();
@@ -132,4 +124,57 @@ test("report flags the lemma out of practice without grading; resolve brings it 
   const after = buildSession(db, { limit: 20 });
   const fixed = after.items.find((i) => i.kind === "recognition-mcq" && i.prompt === "tylko");
   expect(fixed?.kind === "recognition-mcq" && fixed.choices).toContain("solo");
+});
+
+const GLOSS: Record<string, string> = { kot: "gatto", pies: "cane", dom: "casa", woda: "acqua" };
+
+function seedFourAndBuild(db: ReturnType<typeof freshDb>) {
+  for (const [w, g] of Object.entries(GLOSS)) seed(db, w, g);
+  const session = buildSession(db, { limit: 20 });
+  const first = session.items[0];
+  if (first.kind !== "recognition-mcq") throw new Error("expected an MCQ");
+  const wrong = first.choices.findIndex((c) => c !== GLOSS[first.prompt]);
+  const right = first.choices.indexOf(GLOSS[first.prompt]);
+  return { session, first, wrong, right };
+}
+
+test("a missed MCQ queues one Retry at the end; the Retry grades nothing and is never retried", () => {
+  const db = freshDb();
+  const { session, first, wrong } = seedFourAndBuild(db);
+
+  const res = answerItem(db, session.sessionId, first.id, wrong);
+  expect(res.correct).toBe(false);
+  expect(res.retry).toMatchObject({ kind: "recognition-mcq", prompt: first.prompt, retry: true });
+  expect(res.retry?.id).not.toBe(first.id);
+  const held = resumeSession(session.sessionId)!;
+  expect(held.items).toHaveLength(session.items.length + 1);
+  expect(held.items.at(-1)?.id).toBe(res.retry?.id);
+
+  const knowledgeBefore = db.select().from(schema.knowledge).all();
+  const retry = res.retry!;
+  if (retry.kind !== "recognition-mcq") throw new Error("expected an MCQ retry");
+  const retryWrong = retry.choices.findIndex((c) => c !== GLOSS[retry.prompt]);
+  const again = answerItem(db, session.sessionId, retry.id, retryWrong);
+  expect(again.correct).toBe(false);
+  expect(again.retry).toBeUndefined();
+  expect(db.select().from(schema.reviewLog).all()).toHaveLength(1);
+  expect(db.select().from(schema.knowledge).all()).toEqual(knowledgeBefore);
+});
+
+test("a correct MCQ answer queues no Retry", () => {
+  const db = freshDb();
+  const { session, first, right } = seedFourAndBuild(db);
+  expect(answerItem(db, session.sessionId, first.id, right).retry).toBeUndefined();
+  expect(resumeSession(session.sessionId)!.items).toHaveLength(session.items.length);
+});
+
+test("reporting a missed item drops its pending Retry", () => {
+  const db = freshDb();
+  const { session, first, wrong } = seedFourAndBuild(db);
+  const { retry } = answerItem(db, session.sessionId, first.id, wrong);
+
+  expect(reportItem(db, session.sessionId, first.id, "wrong gloss")).toEqual({
+    dropped: [retry?.id],
+  });
+  expect(resumeSession(session.sessionId)!.items).toHaveLength(session.items.length);
 });

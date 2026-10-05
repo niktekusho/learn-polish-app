@@ -14,6 +14,7 @@ import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReadTextIdRouteImport } from './routes/read.$textId'
+import { Route as ApiDeployStatusRouteImport } from './routes/api/deploy-status'
 
 const PracticeRoute = PracticeRouteImport.update({
   id: '/practice',
@@ -40,12 +41,18 @@ const ReadTextIdRoute = ReadTextIdRouteImport.update({
   path: '/read/$textId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDeployStatusRoute = ApiDeployStatusRouteImport.update({
+  id: '/api/deploy-status',
+  path: '/api/deploy-status',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/import': typeof ImportRoute
   '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
+  '/api/deploy-status': typeof ApiDeployStatusRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRoutesByTo {
@@ -53,6 +60,7 @@ export interface FileRoutesByTo {
   '/import': typeof ImportRoute
   '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
+  '/api/deploy-status': typeof ApiDeployStatusRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRoutesById {
@@ -61,19 +69,33 @@ export interface FileRoutesById {
   '/import': typeof ImportRoute
   '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
+  '/api/deploy-status': typeof ApiDeployStatusRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/import' | '/maintenance' | '/practice' | '/read/$textId'
+  fullPaths:
+    | '/'
+    | '/import'
+    | '/maintenance'
+    | '/practice'
+    | '/api/deploy-status'
+    | '/read/$textId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/import' | '/maintenance' | '/practice' | '/read/$textId'
+  to:
+    | '/'
+    | '/import'
+    | '/maintenance'
+    | '/practice'
+    | '/api/deploy-status'
+    | '/read/$textId'
   id:
     | '__root__'
     | '/'
     | '/import'
     | '/maintenance'
     | '/practice'
+    | '/api/deploy-status'
     | '/read/$textId'
   fileRoutesById: FileRoutesById
 }
@@ -82,6 +104,7 @@ export interface RootRouteChildren {
   ImportRoute: typeof ImportRoute
   MaintenanceRoute: typeof MaintenanceRoute
   PracticeRoute: typeof PracticeRoute
+  ApiDeployStatusRoute: typeof ApiDeployStatusRoute
   ReadTextIdRoute: typeof ReadTextIdRoute
 }
 
@@ -122,6 +145,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReadTextIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/deploy-status': {
+      id: '/api/deploy-status'
+      path: '/api/deploy-status'
+      fullPath: '/api/deploy-status'
+      preLoaderRoute: typeof ApiDeployStatusRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -130,6 +160,7 @@ const rootRouteChildren: RootRouteChildren = {
   ImportRoute: ImportRoute,
   MaintenanceRoute: MaintenanceRoute,
   PracticeRoute: PracticeRoute,
+  ApiDeployStatusRoute: ApiDeployStatusRoute,
   ReadTextIdRoute: ReadTextIdRoute,
 }
 export const routeTree = rootRouteImport

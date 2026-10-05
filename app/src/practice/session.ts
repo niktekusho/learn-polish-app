@@ -21,16 +21,21 @@ import {
   dueLemmas,
   gradeLemma,
   initialKnowledgeFields,
+  nextPracticeDue,
 } from "#/fsrs/index";
 import { analyze, transcribe } from "#/import/sidecar";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
-/** Server-held item, tagged with the exercise that generated (and grades) it. */
-type StoredItem =
+/**
+ * Server-held item, tagged with the exercise that generated (and grades) it.
+ * `retry`: a **Retry** (CONTEXT.md), which never grades a knowledge track.
+ */
+type StoredItem = (
   | { exercise: "recognition-mcq"; item: McqItem }
   | { exercise: "spoken-recall"; item: SpokenRecallItem }
-  | { exercise: "read-aloud"; item: ReadAloudItem };
+  | { exercise: "read-aloud"; item: ReadAloudItem }
+) & { retry?: boolean };
 
 /** The speak-answer exercises share the audio answer/reveal/self-grade flow. */
 const speechExercises = {
@@ -39,10 +44,11 @@ const speechExercises = {
 } as const;
 type SpeechStored = Extract<StoredItem, { exercise: keyof typeof speechExercises }>;
 
-export type ClientPracticeItem =
+export type ClientPracticeItem = (
   | ({ kind: "recognition-mcq" } & McqClientItem)
   | SpokenRecallClientItem
-  | ReadAloudClientItem;
+  | ReadAloudClientItem
+) & { retry?: boolean };
 
 /**
  * Per speech item: what happened so far. Spoken recall's first attempt is
@@ -75,14 +81,40 @@ export interface ClientSession {
 }
 
 function toClientItem(s: StoredItem): ClientPracticeItem {
+  const retry = s.retry ? { retry: true } : {};
   switch (s.exercise) {
     case "recognition-mcq":
-      return { kind: "recognition-mcq", ...recognitionMcq.toClient(s.item) };
+      return { kind: "recognition-mcq", ...recognitionMcq.toClient(s.item), ...retry };
     case "spoken-recall":
-      return spokenRecall.toClient(s.item);
+      return { ...spokenRecall.toClient(s.item), ...retry };
     case "read-aloud":
-      return readAloud.toClient(s.item);
+      return { ...readAloud.toClient(s.item), ...retry };
   }
+}
+
+/**
+ * A first answer graded Again earns one Retry at the end of the session. MCQ
+ * gets fresh distractors: the old ones would let position or elimination
+ * answer it. undefined for a Retry itself, or when no item can be built.
+ */
+function queueRetry(db: DB, s: StoredSession, stored: StoredItem): ClientPracticeItem | undefined {
+  if (stored.retry) return undefined;
+  let retry: StoredItem | null;
+  if (stored.exercise === "recognition-mcq") {
+    const pool = glossedCandidates(db);
+    const target = pool.find((c) => c.lemmaId === stored.item.lemmaId);
+    const item = target && recognitionMcq.generate(target, pool);
+    retry = item ? { exercise: "recognition-mcq", item, retry: true } : null;
+  } else {
+    retry = {
+      ...stored,
+      item: { ...stored.item, id: crypto.randomUUID() },
+      retry: true,
+    } as StoredItem;
+  }
+  if (!retry) return undefined;
+  s.items.push(retry);
+  return toClientItem(retry);
 }
 
 /**
@@ -302,6 +334,7 @@ export interface AnswerResult {
   correct: boolean;
   correctIndex: number;
   alreadyAnswered: boolean; // true = this item was already graded; FSRS untouched
+  retry?: ClientPracticeItem; // a miss: appended to the end of the session
 }
 
 /**
@@ -328,10 +361,14 @@ export function answerItem(
   }
 
   const rating = recognitionMcq.grade(item, { choiceIndex });
-  gradeLemma(db, item.lemmaId, "receptive", rating);
-  const correct = choiceIndex === item.correctIndex;
-  s.answered.set(itemId, correct);
-  return { correct, correctIndex: item.correctIndex, alreadyAnswered: false };
+  if (!stored.retry) gradeLemma(db, item.lemmaId, "receptive", rating);
+  s.answered.set(itemId, rating !== Rating.Again);
+  return {
+    correct: rating !== Rating.Again,
+    correctIndex: item.correctIndex,
+    alreadyAnswered: false,
+    retry: rating === Rating.Again ? queueRetry(db, s, stored) : undefined,
+  };
 }
 
 /** Shown after a Pronunciation grade: how hard the word is to say, when it's back. */
@@ -380,7 +417,7 @@ export function pronunciationRating(a: Pick<SpeechAttempts, "misses" | "hit">): 
 
 function gradePronunciation(db: DB, item: SpeechStored["item"], rating: Grade): PronunciationHint {
   const next = gradeLemma(db, item.lemmaId, "pronunciation", rating);
-  return { lemma: item.lemma, difficulty: next.difficulty, due: next.due };
+  return { lemma: item.lemma, difficulty: next.difficulty, due: nextPracticeDue(next.due) };
 }
 
 /**
@@ -417,7 +454,7 @@ export async function answerSpeechItem(
 
   if (isRecall && !a.revealed) {
     if (hit) {
-      gradeLemma(db, speech.item.lemmaId, "productive", Rating.Good);
+      if (!speech.retry) gradeLemma(db, speech.item.lemmaId, "productive", Rating.Good);
       s.answered.set(itemId, true);
       return { status: "correct", transcript: text, answer };
     }
@@ -431,7 +468,9 @@ export async function answerSpeechItem(
   }
   a.hit = true;
   if (isRecall) return { status: "heard", transcript: text, answer };
-  const hint = gradePronunciation(db, speech.item, pronunciationRating(a) as Grade);
+  const hint = speech.retry
+    ? undefined
+    : gradePronunciation(db, speech.item, pronunciationRating(a) as Grade);
   s.answered.set(itemId, true);
   return { status: "correct", transcript: text, answer, hint };
 }
@@ -467,10 +506,14 @@ export function selfGradeItem(
   sessionId: string,
   itemId: string,
   saidIt: boolean,
-): { alreadyAnswered: boolean; hint?: PronunciationHint } {
+): { alreadyAnswered: boolean; hint?: PronunciationHint; retry?: ClientPracticeItem } {
   const { s, stored } = heldItem(sessionId, itemId);
   const speech = asSpeechItem(stored);
   if (s.answered.has(itemId)) return { alreadyAnswered: true };
+  if (speech.retry) {
+    s.answered.set(itemId, saidIt);
+    return { alreadyAnswered: false };
+  }
   const a = attemptsFor(s, itemId);
 
   let hint: PronunciationHint | undefined;
@@ -482,7 +525,7 @@ export function selfGradeItem(
     if (rating !== null) hint = gradePronunciation(db, speech.item, rating);
   }
   s.answered.set(itemId, saidIt);
-  return { alreadyAnswered: false, hint };
+  return { alreadyAnswered: false, hint, retry: saidIt ? undefined : queueRetry(db, s, stored) };
 }
 
 /**
@@ -490,12 +533,24 @@ export function selfGradeItem(
  * context). Flags the lemma — dueLemmas skips it until cleared in
  * Maintenance — and closes the item. No FSRS write: a broken item says
  * nothing about memory. Works after an answer too (the grade then stands).
+ * Drops the lemma's pending Retry, returning its ids: a wrong gloss is the
+ * usual reason for both the miss and the report.
  */
-export function reportItem(db: DB, sessionId: string, itemId: string, note: string): void {
+export function reportItem(
+  db: DB,
+  sessionId: string,
+  itemId: string,
+  note: string,
+): { dropped: string[] } {
   const { s, stored } = heldItem(sessionId, itemId);
   db.update(lemma)
     .set({ flaggedAt: new Date(), flagNote: note.trim() || null })
     .where(eq(lemma.id, stored.item.lemmaId))
     .run();
   if (!s.answered.has(itemId)) s.answered.set(itemId, false);
+  const pending = (i: StoredItem) =>
+    i.retry && i.item.lemmaId === stored.item.lemmaId && !s.answered.has(i.item.id);
+  const dropped = s.items.filter(pending).map((i) => i.item.id);
+  s.items = s.items.filter((i) => !pending(i));
+  return { dropped };
 }

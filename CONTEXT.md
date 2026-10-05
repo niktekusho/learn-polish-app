@@ -89,8 +89,16 @@ The default daily session: an SRS-driven **mixed queue** where the scheduler pul
 lemmas, balanced across the **Knowledge state** tracks (equal shares; a track with too few
 dues yields its share to the others; weakest first within each track), and renders each
 through an applicable **Exercise**, interleaved rather than grouped by track. Without a
-mic, only tracks that need no speaking take part.
+mic, only tracks that need no speaking take part. A lemma graded on a track today is not
+drawn for that track again until tomorrow: same-day repetition is the **Retry**'s job.
 _Avoid_: lesson, review session
+
+**Retry**:
+A missed item (first answer wrong or not produced, never merely hesitant) shown again at
+the end of the same **Practice**, after the learner has seen the answer. Once only: a
+missed Retry is not retried again. Practice only: it never grades a **Knowledge state**, since the first answer is
+the evidence and the retry only proves the learner remembers what they saw seconds ago.
+_Avoid_: redo, relearning step (FSRS term for a same-day scheduled review)
 
 **Spoken recall**:
 The **Exercise** that proves **Productive knowledge**: given the Italian meaning, say the

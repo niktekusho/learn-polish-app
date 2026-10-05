@@ -85,7 +85,7 @@ const submitReport = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { db } = await import("#/db/index");
     const { reportItem } = await import("#/practice/session");
-    reportItem(db, data.sessionId, data.itemId, data.note);
+    return reportItem(db, data.sessionId, data.itemId, data.note);
   });
 
 export const Route = createFileRoute("/practice")({
@@ -141,7 +141,8 @@ function PracticeSession() {
   const navigate = useNavigate();
   const mic = search.mic ?? true;
 
-  const items = data.items;
+  // Grows by one Retry per miss (appended by the server on the miss).
+  const [items, setItems] = useState(data.items);
   const [answered, setAnswered] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(data.answered.map((a) => [a.itemId, a.correct])),
   );
@@ -180,15 +181,16 @@ function PracticeSession() {
 
   const total = items.length;
   const answeredCount = Object.keys(answered).length;
-  const correctCount = Object.values(answered).filter(Boolean).length;
   const index = items.findIndex((it) => !(it.id in answered));
 
   if (index === -1) {
+    const firsts = items.filter((it) => !it.retry);
+    const correctCount = firsts.filter((it) => answered[it.id]).length;
     return (
       <Shell toolbar={micToggle}>
         <h2 className="text-xl font-bold">Session complete</h2>
         <p className="mt-2 text-gray-700">
-          Reviewed {total} — {correctCount} correct.
+          Reviewed {firsts.length} — {correctCount} correct.
         </p>
       </Shell>
     );
@@ -204,9 +206,14 @@ function PracticeSession() {
         data: { sessionId: data.sessionId, itemId: item.id, choiceIndex },
       });
       setReveal({ itemId: item.id, correctIndex: res.correctIndex, picked: choiceIndex });
+      appendRetry(res.retry);
     } finally {
       setBusy(false);
     }
+  }
+
+  function appendRetry(retry: (typeof items)[number] | undefined) {
+    if (retry) setItems((prev) => [...prev, retry]);
   }
 
   function next() {
@@ -283,6 +290,7 @@ function PracticeSession() {
         data: { sessionId: data.sessionId, itemId: item.id, saidIt },
       });
       if (res.hint) setHint(res.hint);
+      appendRetry(res.retry);
       setAnswered((prev) => ({ ...prev, [item.id]: saidIt }));
       setSpeech(null);
     } finally {
@@ -298,7 +306,10 @@ function PracticeSession() {
     if (note === null) return;
     setBusy(true);
     try {
-      await submitReport({ data: { sessionId: data.sessionId, itemId: item.id, note } });
+      const { dropped } = await submitReport({
+        data: { sessionId: data.sessionId, itemId: item.id, note },
+      });
+      setItems((prev) => prev.filter((it) => !dropped.includes(it.id)));
       setAnswered((prev) => ({ ...prev, [item.id]: prev[item.id] ?? false }));
       setReveal(null);
       setSpeech(null);
@@ -317,6 +328,7 @@ function PracticeSession() {
       <div className="flex items-center justify-between text-sm text-gray-500">
         <span>
           {answeredCount + 1} / {total}
+          {item.retry && <span className="ml-2 text-amber-700">Retry</span>}
         </span>
         <button
           type="button"
@@ -467,7 +479,7 @@ function PracticeSession() {
 }
 
 /**
- * "🗣 kot: hard to say · back in 6 min". Bands over FSRS difficulty (1..10):
+ * "🗣 kot: hard to say · back in 9 h". Bands over FSRS difficulty (1..10):
  * one Good lands ≈2.1, one Hard ≈5.1, one Again ≈6.4, repeated Agains ≥8.8.
  * ponytail: calibration knob — retune the 4/7 cut-offs if the bands feel off.
  */

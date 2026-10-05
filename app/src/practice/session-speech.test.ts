@@ -374,3 +374,28 @@ test("reveal (give-up) grades nothing until self-grade", () => {
   expect(logs).toHaveLength(1);
   expect(logs[0].rating).toBe(1); // Again
 });
+
+test('spoken recall "I didn\'t" queues a Retry that grades nothing; "I said it" queues none', async () => {
+  const db = freshDb();
+  seedFour(db);
+  const session = buildSession(db, { limit: 20, mic: true });
+  const [first, second] = session.items.filter((i) => i.kind === "spoken-recall");
+  if (first?.kind !== "spoken-recall" || second?.kind !== "spoken-recall") {
+    throw new Error("expected two spoken items");
+  }
+
+  revealItem(session.sessionId, first.id);
+  const missed = selfGradeItem(db, session.sessionId, first.id, false);
+  expect(missed.retry).toMatchObject({ kind: "spoken-recall", gloss: first.gloss, retry: true });
+  expect(db.select().from(schema.reviewLog).all()).toHaveLength(1);
+
+  const target = { gatto: "kot", cane: "pies", casa: "dom", acqua: "woda" }[first.gloss] as string;
+  mockTranscript(target, [target]);
+  const res = await answerSpeechItem(db, session.sessionId, missed.retry!.id, asAudio());
+  expect(res.status).toBe("correct");
+  expect(res.hint).toBeUndefined();
+  expect(db.select().from(schema.reviewLog).all()).toHaveLength(1);
+
+  revealItem(session.sessionId, second.id);
+  expect(selfGradeItem(db, session.sessionId, second.id, true).retry).toBeUndefined();
+});

@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, lte, ne } from "drizzle-orm";
+import { and, asc, eq, isNull, lt, lte, ne, or } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   type Card,
@@ -128,6 +128,22 @@ export function gradeLemma(
   });
 }
 
+function startOfDay(d: Date): Date {
+  const s = new Date(d);
+  s.setHours(0, 0, 0, 0);
+  return s;
+}
+
+/**
+ * When Practice next draws a card graded at `now`: its FSRS due, but never
+ * before tomorrow (see dueLemmas).
+ */
+export function nextPracticeDue(due: Date, now = new Date()): Date {
+  const tomorrow = startOfDay(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return due > tomorrow ? due : tomorrow;
+}
+
 export interface DueLemma {
   lemmaId: number;
   lemma: string;
@@ -144,6 +160,12 @@ export interface DueLemma {
  * one pasted article bury genuine reviews forever. Rule (#8): actual reviews
  * (state != New) come first, weakest first; then at most `newCardLimit` New
  * cards, within the overall `limit` budget.
+ *
+ * A card graded today is not due until tomorrow, whatever FSRS says: practice
+ * slots are hours apart, so the 1m/10m learning steps would only mean "same
+ * words again next slot". Same-day repetition is the Retry's job. The steps
+ * stay on because Learning vs Review is what the reader's "still learning"
+ * vs "known" reads.
  */
 export function dueLemmas(
   db: DB,
@@ -172,6 +194,7 @@ export function dueLemmas(
       and(
         eq(knowledge.track, track),
         lte(knowledge.due, now),
+        or(isNull(knowledge.lastReview), lt(knowledge.lastReview, startOfDay(now))),
         ne(knowledge.state, STATE_NEW),
         isNull(lemma.flaggedAt),
       ),
