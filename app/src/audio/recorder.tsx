@@ -231,43 +231,58 @@ export function PushToTalk({
     )
 
   const recording = state === 'recording'
-  return (
-    <div className="flex flex-col items-start gap-2">
-      <button
-        type="button"
-        disabled={disabled}
-        onPointerDown={(e) => {
-          e.currentTarget.setPointerCapture(e.pointerId)
-          start()
-        }}
-        onPointerUp={stop}
-        onPointerCancel={stop}
-        onContextMenu={(e) => e.preventDefault()}
-        className={`flex select-none items-center gap-2 rounded-full border px-6 py-3 font-medium touch-none ${
-          recording
-            ? 'border-red-500 bg-red-50 text-red-700'
-            : 'border-gray-300 hover:bg-gray-50 disabled:opacity-50'
-        }`}
-      >
-        <Mic size={18} className={recording ? 'animate-pulse' : ''} />
-        {recording ? 'Recording… release to send' : 'Hold to speak (or hold Space)'}
+  const press = {
+    type: 'button' as const,
+    disabled,
+    onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
+      e.currentTarget.setPointerCapture(e.pointerId)
+      start()
+    },
+    onPointerUp: stop,
+    onPointerCancel: stop,
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  }
+  const meter = recording && (
+    <div className="h-2 w-48 overflow-hidden rounded-full bg-gray-200">
+      {/* width + color written imperatively by the rAF loop; starts empty/red */}
+      <div ref={meterFillRef} className="h-full w-0 bg-red-400" />
+    </div>
+  )
+  const tooQuiet = state === 'tooQuiet' && (
+    <p className="text-sm text-red-600">
+      Too quiet to hear — speak up or raise your mic level, then hold again.{' '}
+      <button type="button" onClick={dismiss} className="underline">
+        Dismiss
       </button>
+    </p>
+  )
 
-      {recording && (
-        <div className="h-2 w-48 overflow-hidden rounded-full bg-gray-200">
-          {/* width + color written imperatively by the rAF loop; starts empty/red */}
-          <div ref={meterFillRef} className="h-full w-0 bg-red-400" />
-        </div>
-      )}
-
-      {state === 'tooQuiet' && (
-        <p className="text-sm text-red-600">
-          Too quiet to hear — speak up or raise your mic level, then hold again.{' '}
-          <button type="button" onClick={dismiss} className="underline">
-            Dismiss
-          </button>
-        </p>
-      )}
+  // Mobile: floats near the bottom edge, in thumb reach (the page reserves
+  // room for it, see Shell in routes/practice.tsx). sm+: inline, left-aligned.
+  return (
+    <div className="fixed inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex flex-col items-center gap-3 sm:static sm:items-start">
+      <div className="relative">
+        {recording && (
+          <span className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-60" />
+        )}
+        <button
+          {...press}
+          aria-label={recording ? 'Recording, release to send' : 'Hold to speak'}
+          className={`relative flex size-24 select-none touch-none items-center justify-center rounded-full text-white shadow-lg transition-transform ${
+            recording
+              ? 'scale-110 bg-red-600 shadow-red-300'
+              : 'bg-blue-600 shadow-blue-300 active:scale-95 disabled:opacity-50'
+          }`}
+        >
+          <Mic size={40} />
+        </button>
+      </div>
+      <span className="text-sm font-medium text-gray-600">
+        {recording ? 'Release to send' : 'Hold to speak'}
+        <span className="hidden sm:inline">{recording ? '' : ' (or hold Space)'}</span>
+      </span>
+      {meter}
+      {tooQuiet}
     </div>
   )
 }

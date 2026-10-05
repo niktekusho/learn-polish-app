@@ -10,7 +10,8 @@ gender, conjugation, translation, speaking) over a shared vocab store, and must 
 
 **Selection is SRS-driven.** The default daily loop, **Practice**, is a mixed queue: the
 FSRS scheduler pulls **due lemmas** (weakest track first — see the receptive/productive
-split in CONTEXT.md) and renders each through an applicable exercise. Variety emerges from
+split in CONTEXT.md; superseded by equal per-track shares across three tracks in
+ADR-0005) and renders each through an applicable exercise. Variety emerges from
 the mix; the learner reviews what is actually decaying, not a menu they picked. A secondary
 **Focused drill** mode lets the learner select one exercise type explicitly, using the same
 components with a different selection query.

@@ -74,7 +74,8 @@ export const knowledge = sqliteTable(
     lemmaId: integer("lemma_id")
       .notNull()
       .references(() => lemma.id, { onDelete: "cascade" }),
-    track: text("track", { enum: ["receptive", "productive"] }).notNull(),
+    // No CHECK constraint in SQLite: a new track is a TS-only change (ADR-0005).
+    track: text("track", { enum: ["receptive", "productive", "pronunciation"] }).notNull(),
     // ts-fsrs Card fields (learning_steps added in #8).
     stability: real("stability").notNull().default(0),
     difficulty: real("difficulty").notNull().default(0),
@@ -109,7 +110,8 @@ export const reviewLog = sqliteTable(
     lemmaId: integer("lemma_id")
       .notNull()
       .references(() => lemma.id, { onDelete: "cascade" }),
-    track: text("track", { enum: ["receptive", "productive"] }).notNull(),
+    // No CHECK constraint in SQLite: a new track is a TS-only change (ADR-0005).
+    track: text("track", { enum: ["receptive", "productive", "pronunciation"] }).notNull(),
     rating: integer("rating").notNull(), // ts-fsrs Rating (1 Again .. 4 Easy)
     stateBefore: integer("state_before").notNull(), // FSRS State before grade
     stateAfter: integer("state_after").notNull(), // FSRS State after grade

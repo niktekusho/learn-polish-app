@@ -1,6 +1,6 @@
 import { Link, createFileRoute, useNavigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
-import { Mic, MicOff } from 'lucide-react'
+import { Mic, MicOff, Volume2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { z } from 'zod'
 import { PushToTalk } from '#/audio/recorder'
@@ -99,8 +99,16 @@ export const Route = createFileRoute('/practice')({
 
 type SpeechPhase =
   | { itemId: string; phase: 'busy' }
-  | { itemId: string; phase: 'correct'; transcript: string }
-  | { itemId: string; phase: 'revealed'; answer: string; transcript: string }
+  | { itemId: string; phase: 'correct'; answer: string; transcript: string }
+  | {
+      itemId: string
+      phase: 'revealed'
+      answer: string
+      transcript: string
+      heard: boolean // spoken recall: a retry after the reveal was heard
+    }
+
+type Hint = { lemma: string; difficulty: number; due: Date }
 
 function Practice() {
   const data = Route.useLoaderData()
@@ -140,6 +148,8 @@ function PracticeSession() {
   } | null>(null)
   const [speech, setSpeech] = useState<SpeechPhase | null>(null)
   const [busy, setBusy] = useState(false)
+  // Last Pronunciation grade; stays up (it names its word) until the next one.
+  const [hint, setHint] = useState<Hint | null>(null)
 
   const micToggle = (
     <button
@@ -204,8 +214,11 @@ function PracticeSession() {
     setReveal(null)
   }
 
+  // Also the retry path: re-recording after a miss/reveal is allowed (the
+  // server leaves the item ungraded until a hit or a self-grade).
   async function sendAudio(blob: Blob) {
-    if (speech || busy) return
+    if (busy || speech?.phase === 'correct') return
+    const prev = speech
     setBusy(true)
     setSpeech({ itemId: item.id, phase: 'busy' })
     try {
@@ -215,19 +228,26 @@ function PracticeSession() {
       form.set('audio', blob, 'clip')
       const res = await submitSpeech({ data: form })
       if (res.status === 'correct') {
-        setSpeech({ itemId: item.id, phase: 'correct', transcript: res.transcript })
-      } else if (res.status === 'miss') {
+        setSpeech({
+          itemId: item.id,
+          phase: 'correct',
+          answer: res.answer ?? '',
+          transcript: res.transcript,
+        })
+        if (res.hint) setHint(res.hint)
+      } else if (res.status === 'miss' || res.status === 'heard') {
         setSpeech({
           itemId: item.id,
           phase: 'revealed',
           answer: res.answer ?? '',
           transcript: res.transcript,
+          heard: res.status === 'heard',
         })
       } else {
         setSpeech(null) // alreadyAnswered — stale click, just move on
       }
     } catch {
-      setSpeech(null) // sidecar hiccup: let the learner retry the same item
+      setSpeech(prev) // sidecar hiccup: let the learner retry the same item
     } finally {
       setBusy(false)
     }
@@ -240,7 +260,13 @@ function PracticeSession() {
       const res = await revealSpeech({
         data: { sessionId: data.sessionId, itemId: item.id },
       })
-      setSpeech({ itemId: item.id, phase: 'revealed', answer: res.answer, transcript: '' })
+      setSpeech({
+        itemId: item.id,
+        phase: 'revealed',
+        answer: res.answer,
+        transcript: '',
+        heard: false,
+      })
     } finally {
       setBusy(false)
     }
@@ -249,9 +275,10 @@ function PracticeSession() {
   async function selfGrade(saidIt: boolean) {
     setBusy(true)
     try {
-      await submitSelfGrade({
+      const res = await submitSelfGrade({
         data: { sessionId: data.sessionId, itemId: item.id, saidIt },
       })
+      if (res.hint) setHint(res.hint)
       setAnswered((prev) => ({ ...prev, [item.id]: saidIt }))
       setSpeech(null)
     } finally {
@@ -269,6 +296,7 @@ function PracticeSession() {
       <div className="text-sm text-gray-500">
         {answeredCount + 1} / {total}
       </div>
+      {hint && <p className="mt-1 text-sm text-gray-500">{hintText(hint)}</p>}
 
       {item.kind === 'recognition-mcq' && (
         <>
@@ -327,7 +355,7 @@ function PracticeSession() {
           )}
 
           {(!speech || speech.itemId !== item.id) && (
-            <div className="mt-6 flex flex-col items-start gap-3">
+            <div className="mt-6 flex flex-col items-center gap-8 sm:items-start sm:gap-3">
               <PushToTalk onRecorded={sendAudio} disabled={busy} />
               <button
                 type="button"
@@ -349,6 +377,9 @@ function PracticeSession() {
               <div className="rounded border border-green-500 bg-green-50 px-4 py-3">
                 ✓ Correct — heard “{speech.transcript}”
               </div>
+              <ListenButton
+                text={item.kind === 'read-aloud' ? item.sentence : speech.answer}
+              />
               <button
                 type="button"
                 onClick={speechNext}
@@ -364,11 +395,27 @@ function PracticeSession() {
               <div className="rounded border border-gray-300 bg-gray-50 px-4 py-3">
                 <div className="text-2xl font-bold">{speech.answer}</div>
                 {speech.transcript ? (
-                  <div className="mt-1 text-sm text-gray-500">
-                    Heard: “{speech.transcript}”
+                  <div
+                    className={`mt-1 text-sm ${speech.heard ? 'text-green-700' : 'text-gray-500'}`}
+                  >
+                    {speech.heard ? '✓ ' : ''}Heard: “{speech.transcript}”
                   </div>
                 ) : null}
               </div>
+              <ListenButton
+                text={item.kind === 'read-aloud' ? item.sentence : speech.answer}
+              />
+              {!speech.heard && (
+                <div className="mt-4 flex justify-center sm:justify-start">
+                  <PushToTalk onRecorded={sendAudio} disabled={busy} />
+                </div>
+              )}
+              {item.kind === 'spoken-recall' && (
+                // the verdict grades recall; retries above only grade pronunciation
+                <p className="mt-4 text-sm text-gray-600">
+                  Before the answer showed, had you said it?
+                </p>
+              )}
               <div className="mt-4 flex gap-2">
                 <button
                   type="button"
@@ -395,6 +442,44 @@ function PracticeSession() {
   )
 }
 
+/**
+ * "🗣 kot: hard to say · back in 6 min". Bands over FSRS difficulty (1..10):
+ * one Good lands ≈2.1, one Hard ≈5.1, one Again ≈6.4, repeated Agains ≥8.8.
+ * ponytail: calibration knob — retune the 4/7 cut-offs if the bands feel off.
+ */
+function hintText(h: Hint): string {
+  const band = h.difficulty < 4 ? 'easy' : h.difficulty < 7 ? 'medium' : 'hard'
+  const min = Math.max(1, Math.round((new Date(h.due).getTime() - Date.now()) / 60000))
+  const when =
+    min < 60 ? `${min} min` : min < 1440 ? `${Math.round(min / 60)} h` : `${Math.round(min / 1440)} days`
+  return `🗣 ${h.lemma}: ${band} to say · back in ${when}`
+}
+
+/** Hear the target via the browser's own TTS (pl-PL voice from the OS). */
+function speak(text: string) {
+  speechSynthesis.cancel()
+  const u = new SpeechSynthesisUtterance(text)
+  u.lang = 'pl-PL'
+  // ponytail: first Polish voice the OS offers; no voice picker. If none is
+  // installed the browser falls back to its default voice (wrong accent).
+  const voice = speechSynthesis.getVoices().find((v) => v.lang.startsWith('pl'))
+  if (voice) u.voice = voice
+  speechSynthesis.speak(u)
+}
+
+function ListenButton({ text }: { text: string }) {
+  if (typeof speechSynthesis === 'undefined') return null
+  return (
+    <button
+      type="button"
+      onClick={() => speak(text)}
+      className="mt-3 flex items-center gap-1 rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
+    >
+      <Volume2 size={16} /> Listen
+    </button>
+  )
+}
+
 function Shell({
   children,
   toolbar,
@@ -403,7 +488,8 @@ function Shell({
   toolbar?: React.ReactNode
 }) {
   return (
-    <div className="mx-auto max-w-xl p-8">
+    // pb-48: room for the bottom-floating mic button on mobile
+    <div className="mx-auto max-w-xl p-8 pb-48 sm:pb-8">
       <div className="flex items-center justify-between">
         <Link to="/" className="text-sm text-blue-600 underline">
           ← Home

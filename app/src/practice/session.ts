@@ -1,5 +1,6 @@
-import { and, asc, eq, isNull, ne } from 'drizzle-orm'
+import { and, asc, eq, exists, isNull, ne, notExists } from 'drizzle-orm'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
+import { alias } from 'drizzle-orm/sqlite-core'
 import * as schema from '#/db/schema'
 import { gloss, knowledge, lemma, token } from '#/db/schema'
 import type {
@@ -19,7 +20,14 @@ import type {
 } from '#/exercises/spoken-recall'
 import { spokenRecall } from '#/exercises/spoken-recall'
 import type { ExerciseCandidate } from '#/exercises/types'
-import { Rating, dueLemmas, gradeLemma, initialKnowledgeFields } from '#/fsrs/index'
+import {
+  type DueLemma,
+  type Grade,
+  Rating,
+  dueLemmas,
+  gradeLemma,
+  initialKnowledgeFields,
+} from '#/fsrs/index'
 import { analyze, transcribe } from '#/import/sidecar'
 
 type DB = BetterSQLite3Database<typeof schema>
@@ -42,10 +50,23 @@ export type ClientPracticeItem =
   | SpokenRecallClientItem
   | ReadAloudClientItem
 
+/**
+ * Per speech item: what happened so far. Spoken recall's first attempt is
+ * blind (retrieval); once `revealed`, every attempt is a **Visible attempt**
+ * (CONTEXT.md). Read-aloud attempts are always visible. `misses`/`hit` count
+ * visible attempts only — they become the Pronunciation rating (ADR-0005).
+ */
+interface SpeechAttempts {
+  revealed: boolean
+  misses: number
+  hit: boolean
+}
+
 interface StoredSession {
   id: string
   items: StoredItem[] // full items, held server-side (carry the answer)
   answered: Map<string, boolean> // itemId -> was correct
+  attempts: Map<string, SpeechAttempts> // speech items only
 }
 
 // ponytail: in-memory, single-user. A reload resumes via the session id; a
@@ -72,16 +93,19 @@ function toClientItem(s: StoredItem): ClientPracticeItem {
 
 /**
  * Shortest imported sentence containing the lemma — read-aloud fuel. Checks a
- * handful of occurrences; shortest wins (least ASR noise). undefined when the
- * lemma has no token occurrence (e.g. MWEs, whose occurrences live elsewhere).
+ * handful of occurrences; shortest wins (least ASR noise), but one not in
+ * `avoid` beats any in it (no reading the same sentence 4× a session).
+ * undefined when the lemma has no token occurrence (e.g. MWEs, whose
+ * occurrences live elsewhere).
  */
-function sentenceFor(db: DB, lemmaId: number): string | undefined {
+function sentenceFor(db: DB, lemmaId: number, avoid = new Set<string>()): string | undefined {
   const occs = db
     .selectDistinct({ textId: token.textId, sentenceIndex: token.sentenceIndex })
     .from(token)
     .where(eq(token.lemmaId, lemmaId))
     .limit(5)
     .all()
+  const score = (x: string) => (avoid.has(x) ? 1e6 : 0) + x.length // lower wins
   let best: string | undefined
   for (const o of occs) {
     const parts = db
@@ -93,7 +117,7 @@ function sentenceFor(db: DB, lemmaId: number): string | undefined {
       .orderBy(asc(token.position))
       .all()
     const s = parts.map((p) => p.surface).join('').trim()
-    if (s && (!best || s.length < best.length)) best = s
+    if (s && (!best || score(s) < score(best))) best = s
   }
   return best
 }
@@ -141,10 +165,57 @@ function seedProductiveCards(db: DB, now = new Date()) {
 }
 
 /**
+ * Backfill pronunciation rows (ADR-0005): a lemma joins the track after its
+ * first receptive review (understand, then say, then recall), and only if it
+ * has a token occurrence — read-aloud, the track's renderer, needs a sentence;
+ * without one the card would sit due forever.
+ */
+function seedPronunciationCards(db: DB, now = new Date()) {
+  const pron = alias(knowledge, 'pron')
+  const missing = db
+    .select({ lemmaId: knowledge.lemmaId })
+    .from(knowledge)
+    .where(
+      and(
+        eq(knowledge.track, 'receptive'),
+        ne(knowledge.state, 0), // left New: reviewed at least once
+        exists(
+          db.select({ id: token.id }).from(token).where(eq(token.lemmaId, knowledge.lemmaId)),
+        ),
+        notExists(
+          db
+            .select({ id: pron.id })
+            .from(pron)
+            .where(and(eq(pron.lemmaId, knowledge.lemmaId), eq(pron.track, 'pronunciation'))),
+        ),
+      ),
+    )
+    .all()
+  if (missing.length === 0) return
+  const fields = initialKnowledgeFields(now)
+  db.insert(knowledge)
+    .values(
+      missing.map(({ lemmaId }) => ({ lemmaId, track: 'pronunciation' as const, ...fields })),
+    )
+    .run()
+}
+
+/** Render a track's dues (weakest first) into items; unrenderable dues drop out. */
+function renderDues(
+  dues: DueLemma[],
+  render: (d: DueLemma) => StoredItem | null,
+): StoredItem[] {
+  return dues.map(render).filter((i): i is StoredItem => i !== null)
+}
+
+/**
  * Build a Practice session (#10): due lemmas rendered through the applicable
- * exercise, held server-side under a fresh id. With `mic` on, the productive
- * track joins the mix (weakest-track-first: productive dues lead — the track
- * is younger); mic off skips everything that needs speaking.
+ * exercise, held server-side under a fresh id. Mix (CONTEXT.md "Practice"):
+ * one queue per active track — productive → spoken recall, receptive → MCQ,
+ * pronunciation → read-aloud — drawn round-robin, so tracks get equal shares,
+ * an empty queue yields its turn, and items come interleaved. A lemma appears
+ * once per session (a read-aloud would give away a later spoken recall).
+ * Mic off: receptive only.
  *
  * NO gloss generation here: Practice has no sentence context (#6), so lemmas
  * without a cached gloss are simply skipped. Zero provider/LLM calls.
@@ -155,61 +226,72 @@ export function buildSession(
     limit = 20,
     newCardLimit,
     mic = false,
-    rng = Math.random,
   }: {
     limit?: number
     newCardLimit?: number
     mic?: boolean
-    rng?: () => number
   } = {},
 ): ClientSession {
   const pool = glossedCandidates(db)
   const byId = new Map(pool.map((c) => [c.lemmaId, c]))
-  const items: StoredItem[] = []
+  const due = (track: 'receptive' | 'productive' | 'pronunciation') =>
+    dueLemmas(db, track, { limit, newCardLimit })
 
+  const queues: StoredItem[][] = []
   if (mic) {
     seedProductiveCards(db)
-    for (const d of dueLemmas(db, 'productive', { limit, newCardLimit })) {
+    queues.push(
+      renderDues(due('productive'), (d) => {
+        const target = byId.get(d.lemmaId)
+        if (!target || !spokenRecall.appliesTo(target)) return null
+        const item = spokenRecall.generate(target, pool)
+        return item && { exercise: 'spoken-recall', item }
+      }),
+    )
+  }
+  queues.push(
+    renderDues(due('receptive'), (d) => {
       const target = byId.get(d.lemmaId)
-      if (!target || !spokenRecall.appliesTo(target)) continue
-      const item = spokenRecall.generate(target, pool)
-      if (item) items.push({ exercise: 'spoken-recall', item })
-    }
+      if (!target) return null // no cached gloss -> skip, never generate
+      const item = recognitionMcq.generate(target, pool)
+      return item && { exercise: 'recognition-mcq', item }
+    }),
+  )
+  if (mic) {
+    seedPronunciationCards(db)
+    const usedSentences = new Set<string>()
+    queues.push(
+      renderDues(due('pronunciation'), (d) => {
+        // read-aloud needs no gloss: build the candidate from the due row
+        const sentence = sentenceFor(db, d.lemmaId, usedSentences)
+        const target = { lemmaId: d.lemmaId, lemma: d.lemma, pos: d.pos, sentence }
+        if (!readAloud.appliesTo(target)) return null
+        usedSentences.add(sentence as string)
+        const item = readAloud.generate(target, pool)
+        return item && { exercise: 'read-aloud', item }
+      }),
+    )
   }
 
-  const remaining = Math.max(0, limit - items.length)
-  for (const d of dueLemmas(db, 'receptive', { limit: remaining, newCardLimit })) {
-    const target = byId.get(d.lemmaId)
-    if (!target) continue // no cached gloss -> skip, never generate
-
-    // With the mic on, a receptive due renders as read-aloud half the time
-    // (ADR-0003 variety); MCQ is the fallback either way, and vice versa.
-    const tryReadAloudFirst = mic && rng() < 0.5
-    if (mic) target.sentence ??= sentenceFor(db, d.lemmaId)
-
-    let pushed = false
-    if (tryReadAloudFirst && readAloud.appliesTo(target)) {
-      const item = readAloud.generate(target, pool)
-      if (item) {
-        items.push({ exercise: 'read-aloud', item })
-        pushed = true
-      }
-    }
-    if (!pushed) {
-      const item = recognitionMcq.generate(target, pool)
-      if (item) {
-        items.push({ exercise: 'recognition-mcq', item })
-        pushed = true
-      }
-    }
-    if (!pushed && mic && readAloud.appliesTo(target)) {
-      const item = readAloud.generate(target, pool)
-      if (item) items.push({ exercise: 'read-aloud', item })
-    }
+  // Round-robin: each turn every queue gives its next not-yet-used lemma.
+  const items: StoredItem[] = []
+  const used = new Set<number>()
+  const cursors = queues.map(() => 0)
+  for (let took = true; took && items.length < limit; ) {
+    took = false
+    queues.forEach((q, t) => {
+      while (cursors[t] < q.length && used.has(q[cursors[t]].item.lemmaId)) cursors[t]++
+      const next = q[cursors[t]]
+      if (!next || items.length >= limit) return
+      cursors[t]++
+      used.add(next.item.lemmaId)
+      items.push(next)
+      took = true
+    })
   }
 
   const id = crypto.randomUUID()
-  sessions.set(id, { id, items, answered: new Map() })
+  sessions.set(id, { id, items, answered: new Map(), attempts: new Map() })
   return { sessionId: id, items: items.map(toClientItem), answered: [] }
 }
 
@@ -268,24 +350,63 @@ export function answerItem(
   return { correct, correctIndex: item.correctIndex, alreadyAnswered: false }
 }
 
-export interface SpeechAnswerResult {
-  status: 'correct' | 'miss' | 'alreadyAnswered'
-  transcript: string
-  /** The target, revealed on miss so the learner can self-grade. */
-  answer?: string
+/** Shown after a Pronunciation grade: how hard the word is to say, when it's back. */
+export interface PronunciationHint {
+  lemma: string
+  difficulty: number // FSRS difficulty, 1..10
+  due: Date
 }
 
-/**
- * Grade a speaking answer. ASR hit writes FSRS (Good) immediately; a miss
- * writes NOTHING — whisper misfires on short non-native words, so the learner
- * sees the reveal + transcript and self-grades (selfGradeItem), which does the
- * write. The item stays unanswered until then.
- */
+export interface SpeechAnswerResult {
+  /**
+   * correct — item done. miss — not heard; answer revealed, retry or
+   * self-grade. heard — spoken recall retry after the reveal was heard; the
+   * pre-reveal attempt still needs its self-grade.
+   */
+  status: 'correct' | 'miss' | 'heard' | 'alreadyAnswered'
+  transcript: string
+  /** The target: on miss so the learner can self-grade, on hit for listen-back. */
+  answer?: string
+  hint?: PronunciationHint
+}
+
 function asSpeechItem(stored: StoredItem): SpeechStored {
   if (!(stored.exercise in speechExercises)) throw new Error('not a speech item')
   return stored as SpeechStored
 }
 
+function attemptsFor(s: StoredSession, itemId: string): SpeechAttempts {
+  let a = s.attempts.get(itemId)
+  if (!a) {
+    a = { revealed: false, misses: 0, hit: false }
+    s.attempts.set(itemId, a)
+  }
+  return a
+}
+
+/**
+ * Visible attempts → Pronunciation rating (ADR-0005): clean first hit Good,
+ * hit after misses Hard, misses only Again, no visible attempt → no write.
+ * Easy never: one clean take doesn't make a word easy to say.
+ */
+export function pronunciationRating(a: Pick<SpeechAttempts, 'misses' | 'hit'>): Grade | null {
+  if (a.hit) return a.misses === 0 ? Rating.Good : Rating.Hard
+  return a.misses > 0 ? Rating.Again : null
+}
+
+function gradePronunciation(db: DB, item: SpeechStored['item'], rating: Grade): PronunciationHint {
+  const next = gradeLemma(db, item.lemmaId, 'pronunciation', rating)
+  return { lemma: item.lemma, difficulty: next.difficulty, due: next.due }
+}
+
+/**
+ * Grade one spoken attempt. Spoken recall's first attempt is retrieval: a hit
+ * grades productive Good and closes the item; a miss reveals the answer and
+ * writes nothing (whisper misfires on short non-native words — the learner
+ * self-grades instead). Every later attempt, and every read-aloud attempt, is
+ * a visible attempt: misses are counted, a read-aloud hit closes the item with
+ * its Pronunciation grade, a recall retry hit waits for the self-grade.
+ */
 export async function answerSpeechItem(
   db: DB,
   sessionId: string,
@@ -295,25 +416,40 @@ export async function answerSpeechItem(
   const { s, stored } = heldItem(sessionId, itemId)
   const speech = asSpeechItem(stored)
   if (s.answered.has(itemId)) return { status: 'alreadyAnswered', transcript: '' }
+  const a = attemptsFor(s, itemId)
+  const answer = speech.item.lemma
+  const isRecall = speech.exercise === 'spoken-recall'
+  if (a.hit) return { status: 'heard', transcript: '', answer } // already heard, awaiting self-grade
 
   const text = (await transcribe(audio)).trim()
   const response: SpokenResponse = {
     transcriptText: text,
     transcriptLemmas: text ? await transcriptLemmas(text) : [],
   }
-
-  const rating =
-    speech.exercise === 'spoken-recall'
+  const hit =
+    (isRecall
       ? spokenRecall.grade(speech.item, response)
-      : readAloud.grade(speech.item, response)
-  if (rating === Rating.Good) {
-    for (const track of speechExercises[speech.exercise].tracks) {
-      gradeLemma(db, speech.item.lemmaId, track, Rating.Good)
+      : readAloud.grade(speech.item, response)) === Rating.Good
+
+  if (isRecall && !a.revealed) {
+    if (hit) {
+      gradeLemma(db, speech.item.lemmaId, 'productive', Rating.Good)
+      s.answered.set(itemId, true)
+      return { status: 'correct', transcript: text, answer }
     }
-    s.answered.set(itemId, true)
-    return { status: 'correct', transcript: text }
+    a.revealed = true
+    return { status: 'miss', transcript: text, answer }
   }
-  return { status: 'miss', transcript: text, answer: speech.item.lemma }
+
+  if (!hit) {
+    a.misses++
+    return { status: 'miss', transcript: text, answer }
+  }
+  a.hit = true
+  if (isRecall) return { status: 'heard', transcript: text, answer }
+  const hint = gradePronunciation(db, speech.item, pronunciationRating(a) as Grade)
+  s.answered.set(itemId, true)
+  return { status: 'correct', transcript: text, answer, hint }
 }
 
 /** Lemmatize an ASR transcript via the sidecar (words only, no punctuation). */
@@ -328,31 +464,41 @@ async function transcriptLemmas(text: string): Promise<string[]> {
 
 /**
  * Reveal a speech item's answer without grading — the give-up / no-mic path.
- * The learner then self-grades, same as after an ASR miss.
+ * The learner then self-grades, same as after an ASR miss; spoken-recall
+ * attempts from here on are visible attempts.
  */
 export function revealItem(sessionId: string, itemId: string): { answer: string } {
-  const { stored } = heldItem(sessionId, itemId)
+  const { s, stored } = heldItem(sessionId, itemId)
+  attemptsFor(s, itemId).revealed = true
   return { answer: asSpeechItem(stored).item.lemma }
 }
 
 /**
- * Self-grade after a reveal ("said it" / "didn't"). This is where the FSRS
- * write for an ASR miss (or give-up) happens — exactly once, same guard as
- * answerItem.
+ * Self-grade after a reveal ("said it" / "didn't"), exactly once, closing the
+ * item. Spoken recall: the verdict is about the pre-reveal attempt →
+ * productive; retries after the reveal, if any, → pronunciation. Read-aloud:
+ * the verdict is about saying it → pronunciation ("said it" is Hard: an ASR
+ * miss can't tell mishearing from mispronouncing).
  */
 export function selfGradeItem(
   db: DB,
   sessionId: string,
   itemId: string,
   saidIt: boolean,
-): { alreadyAnswered: boolean } {
+): { alreadyAnswered: boolean; hint?: PronunciationHint } {
   const { s, stored } = heldItem(sessionId, itemId)
   const speech = asSpeechItem(stored)
   if (s.answered.has(itemId)) return { alreadyAnswered: true }
+  const a = attemptsFor(s, itemId)
 
-  for (const track of speechExercises[speech.exercise].tracks) {
-    gradeLemma(db, speech.item.lemmaId, track, saidIt ? Rating.Good : Rating.Again)
+  let hint: PronunciationHint | undefined
+  if (speech.exercise === 'read-aloud') {
+    hint = gradePronunciation(db, speech.item, saidIt ? Rating.Hard : Rating.Again)
+  } else {
+    gradeLemma(db, speech.item.lemmaId, 'productive', saidIt ? Rating.Good : Rating.Again)
+    const rating = pronunciationRating(a)
+    if (rating !== null) hint = gradePronunciation(db, speech.item, rating)
   }
   s.answered.set(itemId, saidIt)
-  return { alreadyAnswered: false }
+  return { alreadyAnswered: false, hint }
 }

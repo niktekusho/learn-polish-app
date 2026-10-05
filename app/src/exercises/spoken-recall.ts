@@ -128,7 +128,9 @@ export const spokenRecall: Exercise<
   SpokenResponse
 > = {
   id: 'spoken-recall',
-  tracks: ['productive'],
+  // productive from the pre-reveal attempt; pronunciation from retries after
+  // the reveal (ADR-0005)
+  tracks: ['productive', 'pronunciation'],
   modality: { prompt: 'text', answer: 'speak' },
 
   // PROPN excluded: producing "Ola" from "nome proprio" is name-guessing,

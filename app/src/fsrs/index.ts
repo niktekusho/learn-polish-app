@@ -14,7 +14,7 @@ import { knowledge, lemma, reviewLog } from '#/db/schema'
 export { Rating } from 'ts-fsrs'
 export type { Grade } from 'ts-fsrs'
 
-export type Track = 'receptive' | 'productive'
+export type Track = 'receptive' | 'productive' | 'pronunciation'
 type DB = BetterSQLite3Database<typeof schema>
 type KnowledgeRow = typeof knowledge.$inferSelect
 /** The FSRS columns of a knowledge row — enough to build a ts-fsrs Card. */
@@ -192,7 +192,7 @@ export function dueLemmas(
             eq(knowledge.track, track),
             lte(knowledge.due, now),
             eq(knowledge.state, STATE_NEW),
-          ),
+              ),
         )
         .orderBy(asc(knowledge.due))
         .limit(newBudget)
