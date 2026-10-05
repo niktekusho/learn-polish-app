@@ -22,6 +22,32 @@ for the text's unknown lemmas *with their sentence context* in the background at
 time. That respects the mandatory-context rule from MVP issue #6 and permanently kills
 top-5k seeding (which has no sentence context and contradicts that rule).
 
+### Slice 0 restart — Dailies habit (decided 2026-10-05)
+
+Slice 0 never really ran: 70 reviews total, last on 2026-07-24, then building replaced
+using. Root causes (learner-ranked): no trigger > weak motivation > laptop-only access.
+Restart starts **2026-10-06**, before any new feature.
+
+- **Slot**: morning coffee, before Genshin dailies — weekdays before 8:00, weekends
+  ~9:30. Rule: Polish dailies first, Genshin is the reward. Phone alarms set. Duolingo
+  in bed stays (social time with partner, not competing).
+- **Dailies**: 3 slots/day, any mix — Review (10 items) / Read (1 chunk) / Speak
+  (5 items), each sized ~3 min. Done = 3 slots. Running ~2× long → shrink slot size.
+  Sunday chapter import counts as that day's dailies.
+- **Content**: *Impariamo il polacco 1 – Testi* is the backbone (vol 2 commentary stays
+  on paper). Bilingual Dickens / Sherlock readers = graduation reward after vol 1.
+  Import = Sunday ritual: photograph a chapter → macOS Live Text → paste into Import.
+- **Lapse plan**: never miss twice → next day is a 1-slot minimum day. External trigger
+  = phone alarms (in-app check-ins die with the habit).
+- **Access**: phone over Tailscale serve HTTPS (mic works), Mac always awake on power,
+  app server auto-started.
+- **Build rule**: dailies UI (slot picker + done screen + streak counter) only after
+  3 days of real use, timeboxed.
+- **Parked, dogfood signal needed**: Duolingo-style varied quests (if bored after 2–3
+  weeks) · Mac-side lapse alarm via ntfy if phone alarms get ignored · photo-OCR import
+  if Live Text errors hurt · pre-gloss on import (watch item above) · practice
+  conversation with partner.
+
 ## Slice 1 — Speaking (opens the productive track; designed 2026-07-12)
 
 Sidecar gains a **faster-whisper** ASR endpoint (audio in → transcript out). See
