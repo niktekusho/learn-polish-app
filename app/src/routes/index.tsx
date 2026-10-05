@@ -1,10 +1,10 @@
-import { Link, createFileRoute } from '@tanstack/react-router'
-import { createServerFn } from '@tanstack/react-start'
+import { Link, createFileRoute } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
 
 // List imported texts, newest first, with their token counts.
 const listTexts = createServerFn().handler(async () => {
-  const { db, schema } = await import('#/db/index')
-  const { count, desc, eq } = await import('drizzle-orm')
+  const { db, schema } = await import("#/db/index");
+  const { count, desc, eq } = await import("drizzle-orm");
   return db
     .select({
       id: schema.sourceText.id,
@@ -16,16 +16,16 @@ const listTexts = createServerFn().handler(async () => {
     .leftJoin(schema.token, eq(schema.token.textId, schema.sourceText.id))
     .groupBy(schema.sourceText.id)
     .orderBy(desc(schema.sourceText.createdAt))
-    .all()
-})
+    .all();
+});
 
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute("/")({
   component: Home,
   loader: () => listTexts(),
-})
+});
 
 function Home() {
-  const texts = Route.useLoaderData()
+  const texts = Route.useLoaderData();
   return (
     <div className="mx-auto max-w-2xl p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -38,26 +38,26 @@ function Home() {
             Maintenance
           </Link>
           <Link
-            to="/practice"
+            to="/import"
             className="rounded border border-gray-300 px-4 py-2 font-medium"
           >
-            Practice
+            Import text
           </Link>
           <Link
-            to="/import"
-            className="rounded bg-blue-600 px-4 py-2 font-medium text-white"
+            to="/practice"
+            className="rounded bg-blue-600 border border-gray-300 px-4 py-2 font-medium text-white"
           >
-            Import text
+            Practice
           </Link>
         </div>
       </div>
 
       {texts.length === 0 ? (
         <p className="mt-8 text-gray-600">
-          No texts yet.{' '}
+          No texts yet.{" "}
           <Link to="/import" className="text-blue-600 underline">
             Import one
-          </Link>{' '}
+          </Link>{" "}
           to start reading.
         </p>
       ) : (
@@ -69,7 +69,9 @@ function Home() {
                 params={{ textId: String(t.id) }}
                 className="flex items-center justify-between py-3 hover:bg-gray-50"
               >
-                <span className="font-medium">{t.title || `Text #${t.id}`}</span>
+                <span className="font-medium">
+                  {t.title || `Text #${t.id}`}
+                </span>
                 <span className="text-sm text-gray-500">{t.tokens} tokens</span>
               </Link>
             </li>
@@ -77,5 +79,5 @@ function Home() {
         </ul>
       )}
     </div>
-  )
+  );
 }
