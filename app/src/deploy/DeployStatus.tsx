@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DeployStatus as Status } from "#/routes/api/deploy-status";
 
-export const CLIENT_SHA: string = import.meta.env.VITE_GIT_SHA ?? "dev";
+const CLIENT_SHA: string = import.meta.env.VITE_GIT_SHA ?? "dev";
 
 export function DeployStatus() {
   const [status, setStatus] = useState<Status | null>(null);

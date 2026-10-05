@@ -26,12 +26,14 @@ URLs (tailnet only):
 
 ## Is my phone on the latest version?
 
-The footer shows the commit the page was built from. Coming back to the app checks the
-server: a blue **New version available** bar means the server moved on, so tap it. A red
-**Deploy of … failed** box means the newest `main` did not build; prod keeps serving the
-previous commit, and the box holds the end of the build log. Push a fix: a failed commit is
-never retried. To retry it anyway (say, a network blip during `pnpm install`), delete
+Coming back to the app checks the server: a blue **New version available** bar means the
+server moved on, so tap it. A red **Deploy of … failed** box means the newest `main` did
+not build; prod keeps serving the previous commit, and the box holds the end of the build
+log. Push a fix: a failed commit is never retried. To retry it anyway (say, a network blip during `pnpm install`), delete
 `deploy-failed.json`.
+
+The live commit: `curl -s localhost:10000/api/deploy-status`, or open `/api/deploy-status`
+on the phone.
 
 ## Everyday
 
@@ -87,8 +89,8 @@ launchctl bootstrap gui/$UID ~/Library/LaunchAgents/com.niktekusho.learn-polish-
 tailscale serve --bg --https=8443 http://127.0.0.1:3000
 ```
 
-Check: `tail ~/Library/Logs/learn-polish-deploy.log` ends with `live: <sha>`, and the phone
-footer shows the same SHA as `git rev-parse --short origin/main`.
+Check: `tail ~/Library/Logs/learn-polish-deploy.log` ends with `live: <sha>`, and
+`curl -s localhost:10000/api/deploy-status` reports the same SHA as `git rev-parse origin/main`.
 
 After editing a plist in `ops/`, copy it to `~/Library/LaunchAgents/` and run `bootout` +
 `bootstrap` for that job: launchd does not pick up plist changes on its own.

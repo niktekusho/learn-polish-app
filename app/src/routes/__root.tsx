@@ -2,7 +2,7 @@ import { HeadContent, Scripts, createRootRoute } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import { TanStackDevtools } from "@tanstack/react-devtools";
 
-import { CLIENT_SHA, DeployStatus } from "#/deploy/DeployStatus";
+import { DeployStatus } from "#/deploy/DeployStatus";
 import appCss from "../styles.css?url";
 
 export const Route = createRootRoute({
@@ -54,7 +54,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <DeployStatus />
         {children}
-        <p className="py-4 text-center text-xs text-gray-400">{CLIENT_SHA.slice(0, 7)}</p>
         <TanStackDevtools
           config={{
             position: "bottom-right",
