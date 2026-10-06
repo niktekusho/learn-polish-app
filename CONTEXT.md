@@ -102,6 +102,15 @@ missed Retry is not retried again. Practice only: it never grades a **Knowledge 
 the evidence and the retry only proves the learner remembers what they saw seconds ago.
 _Avoid_: redo, relearning step (FSRS term for a same-day scheduled review)
 
+**Context-bound lemma**:
+A lemma whose Italian meaning cannot be given without a sentence: _do_ is "a", "fino a",
+"in" or "per" depending on the sentence, and "per" alone points just as well to _dla_.
+Marked by the learner, one lemma at a time, never by word type: _też_ and _podczas_ are
+function words that translate fine alone. Never asked as a single word (recognition,
+**Spoken recall**); still practised through **Read-aloud**, where the sentence carries
+the meaning.
+_Avoid_: function word (as a data term), ambiguous word
+
 **Spoken recall**:
 The **Exercise** that proves **Productive knowledge**: given the Italian meaning, say the
 Polish lemma; the spoken answer is checked against the target. Only the attempt made

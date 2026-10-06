@@ -57,6 +57,13 @@
       "when": 1791206276557,
       "tag": "0007_slimy_vapor",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1791270660657,
+      "tag": "0008_bored_doctor_doom",
+      "breakpoints": true
     }
   ]
 }

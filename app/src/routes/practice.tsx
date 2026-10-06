@@ -78,15 +78,25 @@ const submitSelfGrade = createServerFn({ method: "POST" })
     return selfGradeItem(db, data.sessionId, data.itemId, data.saidIt);
   });
 
-// Flag the item's lemma as "requires attention" (fixed in Maintenance).
+// "wrong": flag the lemma as "requires attention" (fixed in Maintenance).
+// "context": mark it context-bound (no more single-word exercises).
 const submitReport = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
-    z.object({ sessionId: z.string(), itemId: z.string(), note: z.string().max(500) }).parse(d),
+    z
+      .object({
+        sessionId: z.string(),
+        itemId: z.string(),
+        kind: z.enum(["wrong", "context"]),
+        note: z.string().max(500),
+      })
+      .parse(d),
   )
   .handler(async ({ data }) => {
     const { db } = await import("#/db/index");
-    const { reportItem } = await import("#/practice/session");
-    return reportItem(db, data.sessionId, data.itemId, data.note);
+    const { markContextBound, reportItem } = await import("#/practice/session");
+    return data.kind === "context"
+      ? markContextBound(db, data.sessionId, data.itemId)
+      : reportItem(db, data.sessionId, data.itemId, data.note);
   });
 
 export const Route = createFileRoute("/practice")({
@@ -154,6 +164,7 @@ function PracticeSession() {
   } | null>(null);
   const [speech, setSpeech] = useState<SpeechPhase | null>(null);
   const [busy, setBusy] = useState(false);
+  const [reportFor, setReportFor] = useState<string | null>(null);
   // Last Pronunciation grade; stays up (it names its word) until the next one.
   const [hint, setHint] = useState<Hint | null>(null);
 
@@ -299,16 +310,21 @@ function PracticeSession() {
     }
   }
 
-  async function report() {
+  async function report(kind: "wrong" | "context") {
     if (busy) return;
-    const note = window.prompt(
-      "Report this exercise — what is wrong? (optional)\nIt leaves practice until fixed in Maintenance.",
-    );
-    if (note === null) return;
+    let note = "";
+    if (kind === "wrong") {
+      const input = window.prompt(
+        "What is wrong? (optional)\nIt leaves practice until fixed in Maintenance.",
+      );
+      if (input === null) return;
+      note = input;
+    }
+    setReportFor(null);
     setBusy(true);
     try {
       const { dropped } = await submitReport({
-        data: { sessionId: data.sessionId, itemId: item.id, note },
+        data: { sessionId: data.sessionId, itemId: item.id, kind, note },
       });
       setItems((prev) => prev.filter((it) => !dropped.includes(it.id)));
       setAnswered((prev) => ({ ...prev, [item.id]: prev[item.id] ?? false }));
@@ -333,14 +349,36 @@ function PracticeSession() {
         </span>
         <button
           type="button"
-          onClick={report}
+          onClick={() => setReportFor(reportFor === item.id ? null : item.id)}
           disabled={busy}
+          aria-expanded={reportFor === item.id}
           className="flex items-center gap-1 hover:text-red-600"
           title="Report a problem with this exercise"
         >
           <Flag size={14} /> Report
         </button>
       </div>
+      {reportFor === item.id && (
+        <div className="mt-2 flex flex-wrap justify-end gap-2 text-sm">
+          <button
+            type="button"
+            onClick={() => report("wrong")}
+            disabled={busy}
+            className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50"
+          >
+            Meaning is wrong
+          </button>
+          <button
+            type="button"
+            onClick={() => report("context")}
+            disabled={busy}
+            className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50"
+            title="Only makes sense in a sentence: stop asking it as a single word"
+          >
+            Needs context
+          </button>
+        </div>
+      )}
       {hint && <p className="mt-1 text-sm text-gray-500">{hintText(hint)}</p>}
 
       {item.kind === "recognition-mcq" && (

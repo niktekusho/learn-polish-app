@@ -3,9 +3,9 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
-import { initialKnowledgeFields } from "#/fsrs/index";
-import { listFlagged, resolveFlag } from "#/maintenance/ops";
-import { answerItem, buildSession, reportItem, resumeSession } from "./session";
+import { dueLemmas, initialKnowledgeFields } from "#/fsrs/index";
+import { listContextBound, listFlagged, resolveFlag, unmarkContextBound } from "#/maintenance/ops";
+import { answerItem, buildSession, markContextBound, reportItem, resumeSession } from "./session";
 
 function freshDb() {
   const sqlite = new Database(":memory:");
@@ -124,6 +124,44 @@ test("report flags the lemma out of practice without grading; resolve brings it 
   const after = buildSession(db, { limit: 20 });
   const fixed = after.items.find((i) => i.kind === "recognition-mcq" && i.prompt === "tylko");
   expect(fixed?.kind === "recognition-mcq" && fixed.choices).toContain("solo");
+});
+
+test("needs context drops the lemma from single-word exercises but keeps read-aloud; unmark restores it", () => {
+  const db = freshDb();
+  for (const [w, g] of [
+    ["kot", "gatto"],
+    ["pies", "cane"],
+    ["dom", "casa"],
+    ["woda", "acqua"],
+    ["do", "per"],
+  ] as const) {
+    seed(db, w, g);
+  }
+  const doId = db
+    .select()
+    .from(schema.lemma)
+    .all()
+    .find((l) => l.lemma === "do")!.id;
+  db.insert(schema.knowledge)
+    .values({
+      lemmaId: doId,
+      track: "pronunciation",
+      ...initialKnowledgeFields(new Date("2026-01-01")),
+    })
+    .run();
+  const session = buildSession(db, { limit: 20 });
+  const item = session.items.find((i) => i.kind === "recognition-mcq" && i.prompt === "do")!;
+  markContextBound(db, session.sessionId, item.id);
+
+  expect(db.select().from(schema.reviewLog).all()).toHaveLength(0);
+  expect(listFlagged(db)).toHaveLength(0);
+  expect(listContextBound(db)).toMatchObject([{ lemma: "do" }]);
+  expect(dueLemmas(db, "receptive").map((d) => d.lemma)).not.toContain("do");
+  expect(dueLemmas(db, "productive").map((d) => d.lemma)).not.toContain("do");
+  expect(dueLemmas(db, "pronunciation").map((d) => d.lemma)).toContain("do");
+
+  unmarkContextBound(db, doId);
+  expect(dueLemmas(db, "receptive").map((d) => d.lemma)).toContain("do");
 });
 
 const GLOSS: Record<string, string> = { kot: "gatto", pies: "cane", dom: "casa", woda: "acqua" };

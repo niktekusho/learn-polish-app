@@ -125,3 +125,24 @@ export function resolveFlag(db: DB, lemmaId: number, italian?: string): void {
   if (italian !== undefined) setManualGloss(db, lemmaId, italian);
   db.update(lemma).set({ flaggedAt: null, flagNote: null }).where(eq(lemma.id, lemmaId)).run();
 }
+
+export interface ContextBoundLemma {
+  lemmaId: number;
+  lemma: string;
+  pos: string;
+}
+
+/** Lemmas marked "needs context" from Practice, alphabetical. */
+export function listContextBound(db: DB): ContextBoundLemma[] {
+  return db
+    .select({ lemmaId: lemma.id, lemma: lemma.lemma, pos: lemma.pos })
+    .from(lemma)
+    .where(eq(lemma.contextBound, true))
+    .orderBy(asc(lemma.lemma))
+    .all();
+}
+
+/** Undo a "needs context" mark: the lemma rejoins the single-word exercises. */
+export function unmarkContextBound(db: DB, lemmaId: number): void {
+  db.update(lemma).set({ contextBound: false }).where(eq(lemma.id, lemmaId)).run();
+}

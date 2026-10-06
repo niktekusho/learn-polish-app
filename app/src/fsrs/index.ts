@@ -186,6 +186,10 @@ export function dueLemmas(
     state: knowledge.state,
   };
 
+  // Receptive and productive render the lemma alone; a context-bound lemma
+  // has no meaning there. Filtered here, not at render, so it can't take a slot.
+  const singleWordOk = track === "pronunciation" ? undefined : eq(lemma.contextBound, false);
+
   const reviews = db
     .select(cols)
     .from(knowledge)
@@ -197,6 +201,7 @@ export function dueLemmas(
         or(isNull(knowledge.lastReview), lt(knowledge.lastReview, startOfDay(now))),
         ne(knowledge.state, STATE_NEW),
         isNull(lemma.flaggedAt),
+        singleWordOk,
       ),
     )
     .orderBy(asc(knowledge.stability), asc(knowledge.due))
@@ -215,6 +220,7 @@ export function dueLemmas(
             lte(knowledge.due, now),
             eq(knowledge.state, STATE_NEW),
             isNull(lemma.flaggedAt),
+            singleWordOk,
           ),
         )
         .orderBy(asc(knowledge.due))

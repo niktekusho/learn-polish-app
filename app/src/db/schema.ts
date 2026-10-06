@@ -32,6 +32,9 @@ export const lemma = sqliteTable(
     // Non-null = "requires attention": kept out of practice until cleared.
     flaggedAt: integer("flagged_at", { mode: "timestamp" }),
     flagNote: text("flag_note"),
+    // Meaning only exists in a sentence (CONTEXT.md "Context-bound lemma"):
+    // never asked as a single word, still read aloud.
+    contextBound: integer("context_bound", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [
     // A lemma is identified by its base form + POS (kot/NOUN vs homographs).

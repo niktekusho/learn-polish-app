@@ -1,0 +1,1 @@
+ALTER TABLE `lemma` ADD `context_bound` integer DEFAULT false NOT NULL;

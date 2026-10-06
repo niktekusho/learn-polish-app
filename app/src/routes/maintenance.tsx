@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import type { DictImportStatus } from "#/dictionary/import-job";
-import type { FlaggedLemma, MaintenanceStats } from "#/maintenance/ops";
+import type { ContextBoundLemma, FlaggedLemma, MaintenanceStats } from "#/maintenance/ops";
 
 const loadStats = createServerFn().handler(async (): Promise<MaintenanceStats> => {
   const { db } = await import("#/db/index");
@@ -26,6 +26,20 @@ const resolveFlagFn = createServerFn({ method: "POST" })
     const { db } = await import("#/db/index");
     const { resolveFlag } = await import("#/maintenance/ops");
     resolveFlag(db, data.lemmaId, data.italian);
+  });
+
+const loadContextBound = createServerFn().handler(async (): Promise<ContextBoundLemma[]> => {
+  const { db } = await import("#/db/index");
+  const { listContextBound } = await import("#/maintenance/ops");
+  return listContextBound(db);
+});
+
+const unmarkContextBoundFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ lemmaId: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db } = await import("#/db/index");
+    const { unmarkContextBound } = await import("#/maintenance/ops");
+    unmarkContextBound(db, data.lemmaId);
   });
 
 const actionInput = z.object({
@@ -65,15 +79,19 @@ const getDictImportStatus = createServerFn().handler(async (): Promise<DictImpor
 export const Route = createFileRoute("/maintenance")({
   component: Maintenance,
   loader: async () => {
-    const [stats, flagged] = await Promise.all([loadStats(), loadFlagged()]);
-    return { stats, flagged };
+    const [stats, flagged, contextBound] = await Promise.all([
+      loadStats(),
+      loadFlagged(),
+      loadContextBound(),
+    ]);
+    return { stats, flagged, contextBound };
   },
 });
 
 type Action = z.infer<typeof actionInput>["action"];
 
 function Maintenance() {
-  const { stats, flagged } = Route.useLoaderData();
+  const { stats, flagged, contextBound } = Route.useLoaderData();
   const router = useRouter();
   const [pending, setPending] = useState<Action | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -158,6 +176,35 @@ function Maintenance() {
           <ul className="mt-3 space-y-3">
             {flagged.map((f) => (
               <FlaggedRow key={f.lemmaId} f={f} onDone={() => router.invalidate()} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {contextBound.length > 0 && (
+        <div className="mt-8 rounded border border-gray-200 p-4">
+          <h2 className="font-semibold">Needs context ({contextBound.length})</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Never asked as a single word in Practice; still read aloud. Unmark to bring a word back.
+          </p>
+          <ul className="mt-3 divide-y divide-gray-100 text-sm">
+            {contextBound.map((c) => (
+              <li key={c.lemmaId} className="flex items-center justify-between py-1.5">
+                <span>
+                  <span className="font-semibold">{c.lemma}</span>{" "}
+                  <span className="text-gray-500">{c.pos}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await unmarkContextBoundFn({ data: { lemmaId: c.lemmaId } });
+                    await router.invalidate();
+                  }}
+                  className="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50"
+                >
+                  Unmark
+                </button>
+              </li>
             ))}
           </ul>
         </div>
