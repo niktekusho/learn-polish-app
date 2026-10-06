@@ -62,15 +62,17 @@ export function detectMwes(tokens: MweToken[], headwords: Map<string, string[]>)
     else sentences.set(t.sentenceIndex, [t]);
   }
 
+  // Token surfaces keep their trailing whitespace ("sobie ") for text reassembly.
+  const surfaceKey = (t: MweToken) => t.surface.trim().toLowerCase();
   const tokenMatches = (t: MweToken, word: string) =>
-    t.surface.toLowerCase() === word || t.lemma?.toLowerCase() === word;
+    surfaceKey(t) === word || t.lemma?.toLowerCase() === word;
 
   for (const [sentenceIndex, sent] of sentences) {
     let i = 0;
     while (i < sent.length) {
       const t = sent[i];
       const candidates = new Set<string>([
-        ...(headwords.get(t.surface.toLowerCase()) ?? []),
+        ...(headwords.get(surfaceKey(t)) ?? []),
         ...(t.lemma ? (headwords.get(t.lemma.toLowerCase()) ?? []) : []),
       ]);
       let bestLen = 0;

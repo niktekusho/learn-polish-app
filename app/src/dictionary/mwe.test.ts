@@ -31,6 +31,22 @@ test("lemma-based match covers inflected components", () => {
   expect(matches[0].endPosition).toBe(2);
 });
 
+test("mixed lemma/surface headword matches whitespace-carrying sidecar tokens", () => {
+  const tokens = [
+    tok("Na ", "na", 0),
+    tok("pewno ", "pewno", 1),
+    tok("zdaję ", "zdawać", 2),
+    tok("sobie ", "siebie", 3),
+    tok("sprawę ", "sprawa", 4),
+    tok("z ", "z", 5),
+  ];
+  const matches = detectMwes(tokens, headwords("na pewno", "zdawać sobie sprawę"));
+  expect(matches).toEqual([
+    { headword: "na pewno", startPosition: 0, endPosition: 1, sentenceIndex: 0 },
+    { headword: "zdawać sobie sprawę", startPosition: 2, endPosition: 4, sentenceIndex: 0 },
+  ]);
+});
+
 test("longest match wins at the same start", () => {
   const tokens = [tok("na", "na", 0), tok("pewno", "pewno", 1), tok("nie", "nie", 2)];
   const matches = detectMwes(tokens, headwords("na pewno", "na pewno nie"));
