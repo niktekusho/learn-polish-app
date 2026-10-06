@@ -204,7 +204,8 @@ export function WordPanel({
     try {
       const flags = await markLemma({ data: { lemmaId: token.lemmaId, rating } });
       onGraded(token.lemmaId, flags);
-      if (flags.known) onClose();
+      // On a phone the panel covers the text: closing is the only visible confirmation.
+      onClose();
     } finally {
       setMarking(false);
     }
