@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   buildComprehensionPrompt,
   buildGlossPrompt,
@@ -22,6 +25,30 @@ import {
 
 const TIMEOUT_MS = 60_000;
 const MAX_GLOSS_LEN = 60;
+// Without --model the CLI uses the plan's default (a large model). Glosses are short.
+const MODEL = process.env.GLOSS_MODEL || "claude-haiku-4-5-20251001";
+
+// Strips everything a gloss call does not need (tools, MCP, settings/hooks,
+// skills, Chrome, session files) so each call sends a minimal prompt. --bare is
+// not usable: it drops OAuth, so it would bill an API key instead of the subscription.
+const LEAN_ARGS = [
+  "--model",
+  MODEL,
+  "--effort",
+  "medium",
+  "--tools",
+  "",
+  "--system-prompt",
+  "Reply with only what the prompt asks.",
+  "--setting-sources",
+  "",
+  "--strict-mcp-config",
+  "--no-chrome",
+  "--disable-slash-commands",
+  "--no-session-persistence",
+];
+// Empty cwd: no CLAUDE.md or .claude/ discovery.
+const EMPTY_CWD = mkdtempSync(join(tmpdir(), "gloss-"));
 
 // Run `claude -p <prompt>` with stdin closed. spawn (not execFile) so we can set
 // stdin to 'ignore' (= /dev/null): claude -p otherwise treats the non-TTY pipe
@@ -30,7 +57,8 @@ const MAX_GLOSS_LEN = 60;
 // prompt is a single argv element, so the pasted sentence can't shell-inject.
 function runClaude(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn("claude", ["-p", prompt], {
+    const child = spawn("claude", [...LEAN_ARGS, "-p", prompt], {
+      cwd: EMPTY_CWD,
       stdio: ["ignore", "pipe", "pipe"],
       timeout: TIMEOUT_MS,
     });
