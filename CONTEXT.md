@@ -52,7 +52,9 @@ than a fixed status ladder. Split into three independent tracks: **Receptive**,
 **Receptive knowledge**:
 Ability to _understand_ a lemma when reading or hearing it. Fed by reading, listening,
 PL→IT translation, and recognition-style exercises. Not fed by **Read-aloud**: a failed
-attempt to say a word says nothing about understanding it.
+attempt to say a word says nothing about understanding it. Listening here means listening
+**Exercises**: hearing a word or sentence played back on request while reading grades
+nothing, since the learner asks for it precisely because they don't know the sound.
 
 **Productive knowledge**:
 Ability to _produce_ a lemma from memory when speaking. Fed only by exercises that require

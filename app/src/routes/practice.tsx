@@ -1,9 +1,10 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { Flag, Mic, MicOff, Volume2 } from "lucide-react";
+import { Flag, Mic, MicOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { PushToTalk } from "#/audio/recorder";
+import { ListenButton } from "#/audio/speak";
 
 // Build a new session, or resume the held one by id (reload/refocus). No LLM
 // calls: buildSession only reads cached glosses.
@@ -493,31 +494,6 @@ function hintText(h: Hint): string {
         ? `${Math.round(min / 60)} h`
         : `${Math.round(min / 1440)} days`;
   return `🗣 ${h.lemma}: ${band} to say · back in ${when}`;
-}
-
-/** Hear the target via the browser's own TTS (pl-PL voice from the OS). */
-function speak(text: string) {
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = "pl-PL";
-  // ponytail: first Polish voice the OS offers; no voice picker. If none is
-  // installed the browser falls back to its default voice (wrong accent).
-  const voice = speechSynthesis.getVoices().find((v) => v.lang.startsWith("pl"));
-  if (voice) u.voice = voice;
-  speechSynthesis.speak(u);
-}
-
-function ListenButton({ text }: { text: string }) {
-  if (typeof speechSynthesis === "undefined") return null;
-  return (
-    <button
-      type="button"
-      onClick={() => speak(text)}
-      className="mt-3 flex items-center gap-1 rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50"
-    >
-      <Volume2 size={16} /> Listen
-    </button>
-  );
 }
 
 function Shell({ children, toolbar }: { children: React.ReactNode; toolbar?: React.ReactNode }) {

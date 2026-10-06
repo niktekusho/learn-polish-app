@@ -212,8 +212,15 @@ function Reader() {
           onSelectMwe={(m) => {
             const occ = mweAt.get(selected.position);
             // Swap the panel to a synthetic token for the MWE tracked unit.
+            // Surface is the span as written in the text, which can differ from the headword.
             setSelected({
-              surface: m.headword,
+              surface: occ
+                ? tokens
+                    .filter((t) => t.position >= occ.startPosition && t.position <= occ.endPosition)
+                    .map((t) => t.surface)
+                    .join("")
+                    .trim()
+                : m.headword,
               isSpace: false,
               position: occ?.startPosition ?? selected.position,
               sentenceIndex: selected.sentenceIndex,

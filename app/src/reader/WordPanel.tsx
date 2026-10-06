@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { useCallback, useEffect, useState } from "react";
 import { z } from "zod";
+import { ListenButton } from "#/audio/speak";
 import type { DictLookupResult } from "#/dictionary/service";
 import type { KnowledgeFlags, ReaderToken } from "./types";
 
@@ -231,6 +232,10 @@ export function WordPanel({
         {dict?.entries[0]?.ipa && (
           <span className="ml-2 text-sm font-normal text-gray-400">{dict.entries[0].ipa}</span>
         )}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <ListenButton text={token.surface} className="" />
+        <ListenButton text={sentence} label="Sentence" className="" />
       </div>
       <dl className="mt-4 space-y-2 text-sm">
         <div>

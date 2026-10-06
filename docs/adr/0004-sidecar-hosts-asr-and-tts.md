@@ -25,3 +25,12 @@ morphology-only.
 - Swap cost stays contained: browser only records/plays audio; ASR and TTS sit behind
   HTTP endpoints.
 - README's original "Whisper (JS)" note is superseded by this decision.
+
+## Amendment (2026-10-06): on-demand playback uses browser TTS
+
+On-demand playback (Practice's Listen button, Reader word and sentence playback) uses
+the browser's `speechSynthesis` with the OS Polish voice, contrary to the rejection
+above: on the daily phone the voice proved good enough, and it costs no sidecar
+endpoint, no audio cache and no network round trip. Piper stays the plan for Slice 2
+listening dictation, where the audio is the test itself and per-device voice variance
+would skew grading.
