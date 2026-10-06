@@ -11,6 +11,7 @@ import {
   type GlossProvider,
   type GlossRequest,
   parseComprehensionJson,
+  parseGloss,
   parseSenseGlossJson,
   type ProviderName,
   type SenseGlossRequest,
@@ -24,7 +25,6 @@ import {
 // batch decision. This is the click-path provider only.
 
 const TIMEOUT_MS = 60_000;
-const MAX_GLOSS_LEN = 60;
 // Without --model the CLI uses the plan's default (a large model). Glosses are short.
 const MODEL = process.env.GLOSS_MODEL || "claude-haiku-4-5-20251001";
 
@@ -76,16 +76,6 @@ function runClaude(prompt: string): Promise<string> {
       else reject(new Error(`claude exited ${code}: ${stderr.trim() || stdout.trim()}`));
     });
   });
-}
-
-// Validate the raw CLI output. Throws on junk so getGloss() bubbles and nothing
-// is cached — a bad gloss written to the cache becomes permanent (#6).
-export function parseGloss(stdout: string): string {
-  const out = stdout.trim();
-  if (!out || out.length > MAX_GLOSS_LEN) {
-    throw new Error(`unexpected gloss output: ${JSON.stringify(out.slice(0, 80))}`);
-  }
-  return out;
 }
 
 // The shell-out is injectable so tests exercise parseGloss without spawning a

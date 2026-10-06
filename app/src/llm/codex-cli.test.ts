@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import { buildCodexArgs, CodexCliGlossProvider, parseGloss } from "./codex-cli";
+import { parseGloss } from "./provider";
+import { buildCodexArgs, CodexCliGlossProvider } from "./codex-cli";
 
 const req = { lemma: "robić", pos: "VERB", sentence: "Robię obiad w kuchni." };
 

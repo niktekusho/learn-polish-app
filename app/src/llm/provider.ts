@@ -23,10 +23,24 @@ export function buildGlossPrompt(req: GlossRequest): string {
     "scegliere il senso giusto. Fornisci la glossa italiana del SOLO lemma " +
     "indicato, nella sua forma base di dizionario. NON tradurre la frase " +
     "intera né le parole vicine (aggettivi, articoli): glossa solo il lemma. " +
-    "Rispondi SOLO con la glossa (1-4 parole), senza spiegazioni né " +
-    "punteggiatura finale.\n\n" +
+    "Rispondi SOLO con la glossa italiana (1-4 parole), senza ripetere la " +
+    "parola polacca, senza frecce, spiegazioni né punteggiatura finale.\n\n" +
     `Lemma: ${req.lemma}\nPOS: ${req.pos}\nFrase: ${req.sentence}`
   );
+}
+
+const MAX_GLOSS_LEN = 60;
+
+// Validate the raw CLI output. Throws on junk so getGloss() bubbles and nothing
+// is cached: a bad gloss written to the cache becomes permanent (#6). The model
+// sometimes echoes the sentence's surface form as "swoich → proprio", so only
+// the text after the last arrow is the gloss.
+export function parseGloss(stdout: string): string {
+  const out = stdout.trim().replace(/^.*(?:→|->|=>)\s*/, "");
+  if (!out || out.length > MAX_GLOSS_LEN) {
+    throw new Error(`unexpected gloss output: ${JSON.stringify(out.slice(0, 80))}`);
+  }
+  return out;
 }
 
 // --- Per-sense glossing (ADR-0002, kaikki home dictionary) ------------------

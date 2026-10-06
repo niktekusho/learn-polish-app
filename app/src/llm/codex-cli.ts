@@ -11,6 +11,7 @@ import {
   type GlossProvider,
   type GlossRequest,
   parseComprehensionJson,
+  parseGloss,
   parseSenseGlossJson,
   type ProviderName,
   type SenseGlossRequest,
@@ -22,7 +23,6 @@ import {
 // --output-last-message and parsed from that file.
 
 const TIMEOUT_MS = 60_000;
-const MAX_GLOSS_LEN = 60;
 
 async function runCodex(prompt: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "learn-polish-codex-"));
@@ -54,14 +54,6 @@ async function runCodex(prompt: string): Promise<string> {
 
 export function buildCodexArgs(prompt: string, outputPath: string): string[] {
   return ["exec", "--color", "never", "--output-last-message", outputPath, prompt];
-}
-
-export function parseGloss(stdout: string): string {
-  const out = stdout.trim();
-  if (!out || out.length > MAX_GLOSS_LEN) {
-    throw new Error(`unexpected gloss output: ${JSON.stringify(out.slice(0, 80))}`);
-  }
-  return out;
 }
 
 export class CodexCliGlossProvider implements GlossProvider {

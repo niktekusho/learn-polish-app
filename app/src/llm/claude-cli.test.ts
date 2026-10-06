@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import { ClaudeCliGlossProvider, parseGloss } from "./claude-cli";
+import { parseGloss } from "./provider";
+import { ClaudeCliGlossProvider } from "./claude-cli";
 
 const req = { lemma: "robić", pos: "VERB", sentence: "Robię obiad w kuchni." };
 
@@ -25,4 +26,10 @@ test("provider bubbles a CLI failure so nothing gets cached", async () => {
     throw new Error("claude exited 1");
   });
   await expect(provider.gloss(req)).rejects.toThrow();
+});
+
+test("provider drops an echoed surface form before the arrow", async () => {
+  const provider = new ClaudeCliGlossProvider(async () => "swoich → proprio\n");
+  const swoj = { lemma: "swój", pos: "DET", sentence: "Mają swoich przyjaciół." };
+  expect(await provider.gloss(swoj)).toBe("proprio");
 });
