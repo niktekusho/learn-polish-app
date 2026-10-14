@@ -68,7 +68,8 @@ function occurrences(db: DB, lemmaId: number): Occurrence[] {
         .map((t) => t.surface)
         .join(""),
     }));
-  return [...words, ...mwes];
+  // Surfaces can carry their trailing whitespace.
+  return [...words, ...mwes].map((o) => ({ ...o, target: o.target.trim() }));
 }
 
 /**

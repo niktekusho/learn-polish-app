@@ -99,6 +99,9 @@ const submitReport = createServerFn({ method: "POST" })
       : reportItem(db, data.sessionId, data.itemId, data.note);
   });
 
+// Sessions whose passage prep already ran: the end screen may ask twice.
+const prepTriggered = new Set<string>();
+
 // End-of-session note (slot line). Null while the session isn't finished.
 const getSummary = createServerFn()
   .validator((d: unknown) => z.object({ sessionId: z.string() }).parse(d))
@@ -106,7 +109,8 @@ const getSummary = createServerFn()
     const { db } = await import("#/db/index");
     const { sessionSummary } = await import("#/practice/session");
     const summary = sessionSummary(db, data.sessionId);
-    if (summary) {
+    if (summary && !prepTriggered.has(data.sessionId)) {
+      prepTriggered.add(data.sessionId);
       // Prepare passage questions for the coming days, off the request path.
       const { prepareUpcomingPassages } = await import("#/passage/service");
       const { getGlossProvider } = await import("#/llm/provider");
