@@ -1,4 +1,4 @@
-import { Link, createFileRoute, notFound } from "@tanstack/react-router";
+import { Link, createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -65,7 +65,23 @@ const getText = createServerFn()
       .where(eq(schema.mweOccurrence.textId, textId))
       .all();
 
-    return { text, tokens, mwes };
+    const [story] = text.storyId
+      ? db
+          .select({ title: schema.story.title, total: schema.story.plannedEpisodes })
+          .from(schema.story)
+          .where(eq(schema.story.id, text.storyId))
+          .all()
+      : [];
+
+    return { text, tokens, mwes, story: story ?? null };
+  });
+
+// An Episode is read: counts for the day and starts the next episode's generation.
+const markEpisodeReadFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ textId: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { appStoryService } = await import("#/story/server");
+    return appStoryService().markEpisodeRead(data.textId);
   });
 
 // Batch-mark every still-New word in a text as known (grade Easy) in ONE
@@ -93,7 +109,13 @@ type MweInfo = {
 };
 
 function Reader() {
-  const { text, tokens, mwes } = Route.useLoaderData();
+  const { text, tokens, mwes, story } = Route.useLoaderData();
+  const navigate = useNavigate();
+  const [readResult, setReadResult] = useState<{
+    line: string;
+    storyFinished: boolean;
+    dayCompleted: boolean;
+  } | null>(null);
   const [selected, setSelected] = useState<ReaderToken | null>(null);
   // End-of-text comprehension check; the click is the "I read this" signal.
   const [checking, setChecking] = useState(false);
@@ -131,6 +153,14 @@ function Reader() {
     setOverrides((prev) => ({ ...prev, [lemmaId]: flags }));
   }
 
+  async function markRead() {
+    if (!story || readResult) return;
+    const res = await markEpisodeReadFn({ data: { textId: text.id } });
+    setReadResult(res);
+    // The finished-story screen comes first; the recap stays reachable from home.
+    if (res.dayCompleted && !res.storyFinished) navigate({ to: "/recap" });
+  }
+
   async function markAllNewKnown() {
     if (batchEligible.size === 0) return;
     const { lemmaIds } = await batchMarkKnown({ data: { textId: text.id } });
@@ -146,6 +176,11 @@ function Reader() {
       <Link to="/" className="text-sm text-blue-600 underline">
         ← All texts
       </Link>
+      {story && (
+        <p className="mt-2 text-sm text-gray-600">
+          {story.title} · episodio {text.episodeNumber} di {story.total}
+        </p>
+      )}
       <div className="mt-2 flex items-center justify-between">
         <h1 className="text-2xl font-bold">{text.title || `Text #${text.id}`}</h1>
         <button
@@ -194,7 +229,31 @@ function Reader() {
           Verifica comprensione
         </button>
       ) : (
-        <ComprehensionCheck textId={text.id} />
+        <ComprehensionCheck textId={text.id} onGraded={story ? markRead : undefined} />
+      )}
+
+      {story && !readResult && !text.readAt && (
+        <button
+          type="button"
+          onClick={markRead}
+          className="mt-4 block rounded bg-blue-600 px-4 py-2 font-medium text-white"
+        >
+          Segna come letto
+        </button>
+      )}
+      {readResult && <p className="mt-4 font-medium text-green-700">{readResult.line}</p>}
+      {readResult?.storyFinished && (
+        <div className="mt-6 rounded border border-green-500 bg-green-50 p-4">
+          <p className="text-lg font-bold">Storia completata! 🎉</p>
+          <Link to="/story" className="mt-2 inline-block text-blue-600 underline">
+            Scegli la prossima storia →
+          </Link>
+          {readResult.dayCompleted && (
+            <Link to="/recap" className="ml-4 inline-block text-blue-600 underline">
+              Giornata completa: riepilogo →
+            </Link>
+          )}
+        </div>
       )}
 
       {selected && (

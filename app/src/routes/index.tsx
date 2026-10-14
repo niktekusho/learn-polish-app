@@ -46,6 +46,9 @@ function Home() {
           <Link to="/import" className="rounded border border-gray-300 px-4 py-2 font-medium">
             Import text
           </Link>
+          <Link to="/story" className="rounded border border-gray-300 px-4 py-2 font-medium">
+            Leggi
+          </Link>
           <Link
             to="/practice"
             className="rounded bg-blue-600 border border-gray-300 px-4 py-2 font-medium text-white"

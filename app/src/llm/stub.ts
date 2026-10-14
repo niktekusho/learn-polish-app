@@ -1,11 +1,14 @@
 import type {
   ComprehensionRequest,
   ComprehensionResult,
+  EpisodeRequest,
   GlossProvider,
   GlossRequest,
   ProviderName,
   SenseGlossRequest,
   SenseGlossResult,
+  StoryOutline,
+  StoryPremise,
 } from "./provider";
 
 // Deterministic, offline stand-in for a real LLM. Produces a unique, stable
@@ -38,5 +41,21 @@ export class StubGlossProvider implements GlossProvider {
         },
       ],
     };
+  }
+
+  async storyPremises(): Promise<StoryPremise[]> {
+    return ["giallo", "avventura", "commedia"].map((genre, i) => ({
+      title: `Storia stub ${i + 1}`,
+      genre,
+      hook: `Una storia ${genre} di prova.`,
+    }));
+  }
+
+  async storyOutline(premise: StoryPremise): Promise<StoryOutline> {
+    return { plot: premise.hook, characters: ["Ala"], beats: ["inizio", "svolta", "fine"] };
+  }
+
+  async storyEpisode(req: EpisodeRequest): Promise<string> {
+    return `Ala ma kota. To jest odcinek ${req.episodeNumber}. Kot jest mały.`;
   }
 }

@@ -181,6 +181,130 @@ export function parseComprehensionJson(stdout: string): ComprehensionResult {
   return parsed;
 }
 
+// --- Story + Episodes (Slice 0.5) ------------------------------------------
+// Premises and outline are Italian (UI copy); episodes are Polish at the
+// learner's level. The service checks the level after the fact via /analyze.
+
+export interface StoryPremise {
+  title: string;
+  genre: string;
+  hook: string; // one line
+}
+
+export interface StoryOutline {
+  plot: string;
+  characters: string[];
+  beats: string[]; // one per episode: the count is the planned episode count
+}
+
+export interface EpisodeRequest {
+  premise: StoryPremise;
+  outline: StoryOutline;
+  previous: string[]; // earlier episode texts, in order
+  episodeNumber: number;
+  totalEpisodes: number;
+  knownLemmas: string[];
+}
+
+function stripFences(stdout: string): string {
+  return stdout
+    .trim()
+    .replace(/^```(?:json|text)?\s*/i, "")
+    .replace(/\s*```$/, "");
+}
+
+function parseJsonOutput<T>(stdout: string, what: string, schema: z.ZodType<T>): T {
+  const raw = stripFences(stdout);
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw new Error(`${what} output is not JSON: ${JSON.stringify(raw.slice(0, 120))}`);
+  }
+  return schema.parse(json);
+}
+
+export function buildPremisesPrompt(): string {
+  return (
+    "Proponi 3 idee per una storia a puntate da leggere in polacco, per uno " +
+    "studente italiano principiante. Generi diversi tra loro (giallo, avventura, " +
+    "commedia, fantasy, quotidiano...). Per ognuna: titolo, genere e un'unica " +
+    "frase di aggancio, tutto IN ITALIANO. Rispondi SOLO con JSON valido, senza " +
+    'testo attorno, nel formato: {"premises":[{"title":"...","genre":"...","hook":"..."}]}'
+  );
+}
+
+const premiseSchema = z.object({
+  title: z.string().trim().min(1).max(80),
+  genre: z.string().trim().min(1).max(40),
+  hook: z.string().trim().min(1).max(200),
+});
+
+export function parsePremisesJson(stdout: string): StoryPremise[] {
+  return parseJsonOutput(
+    stdout,
+    "premises",
+    z.object({ premises: z.array(premiseSchema).min(3) }),
+  ).premises.slice(0, 3);
+}
+
+export function buildStoryOutlinePrompt(premise: StoryPremise): string {
+  return (
+    "Pianifica una storia a puntate in polacco per uno studente italiano " +
+    "principiante (sotto A1). Decidi tu il numero di episodi in base alla trama, " +
+    "al massimo 10; ogni episodio sarà di circa 150 parole. Scrivi IN ITALIANO: " +
+    "la trama in breve, i personaggi (nome polacco + una descrizione breve) e, per " +
+    "ogni episodio, cosa succede. La storia deve arrivare a una conclusione. " +
+    "Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
+    '{"plot":"...","characters":["..."],"beats":["episodio 1: ...","episodio 2: ..."]}\n\n' +
+    `Titolo: ${premise.title}\nGenere: ${premise.genre}\nIdea: ${premise.hook}`
+  );
+}
+
+export function parseStoryOutlineJson(stdout: string): StoryOutline {
+  return parseJsonOutput(
+    stdout,
+    "outline",
+    z.object({
+      plot: z.string().trim().min(1),
+      characters: z.array(z.string().trim().min(1)),
+      beats: z.array(z.string().trim().min(1)).min(1),
+    }),
+  );
+}
+
+export function buildEpisodePrompt(req: EpisodeRequest): string {
+  const previous = req.previous.length
+    ? req.previous.map((t, i) => `--- Episodio ${i + 1} ---\n${t}`).join("\n\n")
+    : "(nessuno: questo è il primo episodio)";
+  return (
+    `Scrivi l'episodio ${req.episodeNumber} di ${req.totalEpisodes} di una storia ` +
+    "a puntate IN POLACCO per uno studente italiano principiante (sotto A1). " +
+    "Circa 150 parole. Grammatica semplice: frasi brevi, presente quando possibile. " +
+    "Usa soprattutto le parole che lo studente conosce (elenco sotto, in forma base; " +
+    "puoi fletterle), e circa il 10% di parole nuove. Segui il piano della storia e " +
+    "resta coerente con gli episodi precedenti. " +
+    (req.episodeNumber === req.totalEpisodes ? "È l'ultimo episodio: concludi la storia. " : "") +
+    "Rispondi SOLO con il testo polacco dell'episodio, senza titolo, traduzione né " +
+    "commenti.\n\n" +
+    `Titolo: ${req.premise.title}\nTrama: ${req.outline.plot}\n` +
+    `Personaggi: ${req.outline.characters.join("; ")}\n` +
+    `Piano degli episodi:\n${req.outline.beats.map((b, i) => `${i + 1}. ${b}`).join("\n")}\n\n` +
+    `Episodi precedenti:\n${previous}\n\n` +
+    `Parole conosciute: ${req.knownLemmas.join(", ")}`
+  );
+}
+
+const MAX_EPISODE_LEN = 4000;
+
+export function parseEpisodeText(stdout: string): string {
+  const text = stripFences(stdout).trim();
+  if (!text || text.length > MAX_EPISODE_LEN) {
+    throw new Error(`unexpected episode output: ${JSON.stringify(text.slice(0, 80))}`);
+  }
+  return text;
+}
+
 export interface GlossProvider {
   readonly name: ProviderName; // recorded on the cache row so output can be purged
   gloss(req: GlossRequest): Promise<string>;
@@ -189,6 +313,10 @@ export interface GlossProvider {
   glossSenses?(req: SenseGlossRequest): Promise<SenseGlossResult>;
   // Optional capability: comprehension-check MCQ generation for a whole text.
   comprehension?(req: ComprehensionRequest): Promise<ComprehensionResult>;
+  // Optional capabilities: story generation (Slice 0.5).
+  storyPremises?(): Promise<StoryPremise[]>;
+  storyOutline?(premise: StoryPremise): Promise<StoryOutline>;
+  storyEpisode?(req: EpisodeRequest): Promise<string>;
 }
 
 import { ClaudeCliGlossProvider } from "./claude-cli";

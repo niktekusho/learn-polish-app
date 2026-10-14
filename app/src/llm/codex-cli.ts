@@ -4,18 +4,27 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import {
   buildComprehensionPrompt,
+  buildEpisodePrompt,
+  buildPremisesPrompt,
+  buildStoryOutlinePrompt,
   buildGlossPrompt,
   buildSenseGlossPrompt,
   type ComprehensionRequest,
   type ComprehensionResult,
+  type EpisodeRequest,
   type GlossProvider,
   type GlossRequest,
   parseComprehensionJson,
+  parseEpisodeText,
   parseGloss,
   parseSenseGlossJson,
+  parsePremisesJson,
+  parseStoryOutlineJson,
   type ProviderName,
   type SenseGlossRequest,
   type SenseGlossResult,
+  type StoryOutline,
+  type StoryPremise,
 } from "./provider";
 
 // Real Italian gloss via the `codex` CLI already on PATH. Codex exec can print
@@ -71,5 +80,17 @@ export class CodexCliGlossProvider implements GlossProvider {
 
   async comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {
     return parseComprehensionJson(await this.exec(buildComprehensionPrompt(req)));
+  }
+
+  async storyPremises(): Promise<StoryPremise[]> {
+    return parsePremisesJson(await this.exec(buildPremisesPrompt()));
+  }
+
+  async storyOutline(premise: StoryPremise): Promise<StoryOutline> {
+    return parseStoryOutlineJson(await this.exec(buildStoryOutlinePrompt(premise)));
+  }
+
+  async storyEpisode(req: EpisodeRequest): Promise<string> {
+    return parseEpisodeText(await this.exec(buildEpisodePrompt(req)));
   }
 }

@@ -4,18 +4,27 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildComprehensionPrompt,
+  buildEpisodePrompt,
+  buildPremisesPrompt,
+  buildStoryOutlinePrompt,
   buildGlossPrompt,
   buildSenseGlossPrompt,
   type ComprehensionRequest,
   type ComprehensionResult,
+  type EpisodeRequest,
   type GlossProvider,
   type GlossRequest,
   parseComprehensionJson,
+  parseEpisodeText,
   parseGloss,
   parseSenseGlossJson,
+  parsePremisesJson,
+  parseStoryOutlineJson,
   type ProviderName,
   type SenseGlossRequest,
   type SenseGlossResult,
+  type StoryOutline,
+  type StoryPremise,
 } from "./provider";
 
 // Real Italian gloss via the `claude` CLI already on PATH (bills the user's
@@ -96,5 +105,17 @@ export class ClaudeCliGlossProvider implements GlossProvider {
 
   async comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {
     return parseComprehensionJson(await this.exec(buildComprehensionPrompt(req)));
+  }
+
+  async storyPremises(): Promise<StoryPremise[]> {
+    return parsePremisesJson(await this.exec(buildPremisesPrompt()));
+  }
+
+  async storyOutline(premise: StoryPremise): Promise<StoryOutline> {
+    return parseStoryOutlineJson(await this.exec(buildStoryOutlinePrompt(premise)));
+  }
+
+  async storyEpisode(req: EpisodeRequest): Promise<string> {
+    return parseEpisodeText(await this.exec(buildEpisodePrompt(req)));
   }
 }

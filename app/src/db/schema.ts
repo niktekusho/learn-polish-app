@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // ---------------------------------------------------------------------------
@@ -9,15 +9,52 @@ import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-or
 // derivable by scanning `token`; the gap is deliberate for the MVP — not modeled.
 // ---------------------------------------------------------------------------
 
-/** An imported document the user pasted in (#4 fills these). */
-export const sourceText = sqliteTable("source_text", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  title: text("title"),
-  content: text("content").notNull(),
-  createdAt: integer("created_at", { mode: "timestamp" })
-    .notNull()
-    .$defaultFn(() => new Date()),
-});
+/**
+ * An LLM-written serial (CONTEXT.md "Story"). Its episodes are source_text
+ * rows. At most one story is active.
+ */
+export const story = sqliteTable(
+  "story",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    title: text("title").notNull(),
+    genre: text("genre").notNull(),
+    hook: text("hook").notNull(),
+    // LLM outline: plot sketch, characters, one beat per planned episode.
+    outline: text("outline", { mode: "json" })
+      .$type<{ plot: string; characters: string[]; beats: string[] }>()
+      .notNull(),
+    plannedEpisodes: integer("planned_episodes").notNull(), // 1..10
+    status: text("status", { enum: ["active", "finished", "abandoned"] }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    endedAt: integer("ended_at", { mode: "timestamp" }),
+  },
+  (t) => [
+    uniqueIndex("story_one_active_uq")
+      .on(t.status)
+      .where(sql`status = 'active'`),
+  ],
+);
+
+/** An imported document: pasted by the user, or a story Episode. */
+export const sourceText = sqliteTable(
+  "source_text",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    title: text("title"),
+    content: text("content").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    // Set on Episodes only.
+    storyId: integer("story_id").references(() => story.id),
+    episodeNumber: integer("episode_number"),
+    readAt: integer("read_at", { mode: "timestamp" }),
+  },
+  (t) => [uniqueIndex("source_text_story_episode_uq").on(t.storyId, t.episodeNumber)],
+);
 
 /** The dictionary/base form. The unit knowledge is tracked against. */
 export const lemma = sqliteTable(

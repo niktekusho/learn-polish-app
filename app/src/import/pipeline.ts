@@ -33,7 +33,7 @@ export interface ImportResult {
  */
 export function persistAnalysis(
   db: DB,
-  input: { title?: string | null; content: string },
+  input: { title?: string | null; content: string; storyId?: number; episodeNumber?: number },
   analysis: AnalyzeResponse,
   now = new Date(),
   // Injectable so pipeline tests stay sidecar- and dictionary-free.
@@ -42,7 +42,12 @@ export function persistAnalysis(
   return db.transaction((tx) => {
     const [{ id: textId }] = tx
       .insert(sourceText)
-      .values({ title: input.title ?? null, content: input.content })
+      .values({
+        title: input.title ?? null,
+        content: input.content,
+        storyId: input.storyId,
+        episodeNumber: input.episodeNumber,
+      })
       .returning({ id: sourceText.id })
       .all();
 

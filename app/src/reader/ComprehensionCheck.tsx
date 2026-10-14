@@ -26,7 +26,13 @@ type Question = { question: string; choices: string[]; correctIndex: number };
 // answered all-at-once, graded client-side. The answer key travels to the
 // client deliberately — single-user local app, nothing persisted, so a
 // server-grading round-trip buys nothing (unlike Practice, which feeds FSRS).
-export function ComprehensionCheck({ textId }: { textId: number }) {
+export function ComprehensionCheck({
+  textId,
+  onGraded,
+}: {
+  textId: number;
+  onGraded?: () => void; // the check was answered: an Episode counts as read
+}) {
   const [questions, setQuestions] = useState<Question[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -125,7 +131,10 @@ export function ComprehensionCheck({ textId }: { textId: number }) {
         <button
           type="button"
           disabled={!allAnswered}
-          onClick={() => setGraded(true)}
+          onClick={() => {
+            setGraded(true);
+            onGraded?.();
+          }}
           className="mt-6 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-40"
         >
           Verifica

@@ -1,7 +1,19 @@
-import { and, desc, eq, gte, inArray, lt, min } from "drizzle-orm";
+import {
+  and,
+  countDistinct,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lt,
+  min,
+  notExists,
+} from "drizzle-orm";
+import { alias } from "drizzle-orm/sqlite-core";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
-import { dailyActivity, lemma, reviewLog } from "#/db/schema";
+import { dailyActivity, lemma, reviewLog, token } from "#/db/schema";
 import { startOfDay } from "#/fsrs/index";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -153,4 +165,29 @@ export function practiceLine(db: DB, lemmaIds: number[], now = new Date()): stri
     parts.push(`${s.matured.count} ${s.matured.count === 1 ? "consolidata" : "consolidate"}`);
   }
   return parts.join(" · ");
+}
+
+/**
+ * One-line note after an Episode: its lemmas no earlier text contained.
+ * ponytail: token lemmas only; MWE occurrences are not counted.
+ */
+export function episodeLine(db: DB, textId: number): string {
+  const earlier = alias(token, "earlier");
+  const [{ n }] = db
+    .select({ n: countDistinct(token.lemmaId) })
+    .from(token)
+    .where(
+      and(
+        eq(token.textId, textId),
+        isNotNull(token.lemmaId),
+        notExists(
+          db
+            .select({ id: earlier.id })
+            .from(earlier)
+            .where(and(eq(earlier.lemmaId, token.lemmaId), lt(earlier.textId, textId))),
+        ),
+      ),
+    )
+    .all();
+  return `+${n} ${n === 1 ? "parola nuova incontrata" : "parole nuove incontrate"}`;
 }
