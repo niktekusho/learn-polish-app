@@ -78,6 +78,12 @@ A spoken attempt at a lemma made while the lemma is on screen — any **Read-alo
 attempt, or a **Spoken recall** retry after the answer was revealed. The only evidence
 that grades **Pronunciation knowledge**; never evidence of retrieval.
 
+**Mature**:
+A lemma's state on one **Knowledge state** track once its FSRS stability reaches 21 days.
+Per track: a lemma can be Mature on **Receptive** and not on **Productive**. Not final:
+a lapse drops it back. Shown in the UI as _consolidata_.
+_Avoid_: known, learned, mastered
+
 ## Practice
 
 **Exercise**:
@@ -123,6 +129,13 @@ The **Exercise** of reading a displayed Polish sentence out loud. Grades **Pronu
 knowledge** only, of the target lemma in the sentence.
 _Avoid_: speaking exercise
 
+**Passage exercise**:
+The **Exercise** of reading 2–3 Polish sentences containing a due lemma and answering an
+Italian multiple-choice question whose answer hinges on that lemma in context. Grades
+**Receptive knowledge** of that lemma. The receptive exercise for **Context-bound
+lemmas**. Differs from a **Comprehension check**: lemma-level, scheduled and graded.
+_Avoid_: reading exercise, comprehension exercise
+
 **Comprehension check**:
 A question about a text the learner just read, answered to verify understanding of the
 text itself. Part of the reading flow, NOT an **Exercise**: it is tied to a text rather
@@ -137,3 +150,13 @@ genitive), instead of the mixed **Practice** queue.
 The Wiktionary-derived data imported into SQLite (POS, senses, IPA, inflection tables),
 used as reference and as exercise fuel. Distinct from the **Gloss**, which is the Italian
 meaning layered on top. See ADR-0002.
+
+**Story**:
+An LLM-generated serial fiction at the learner's level, built from known lemmas plus
+~10% new ones. Its outline and episode count (at most 10) are set when the learner picks
+one of the proposed premises.
+
+**Episode**:
+One installment of a **Story**, stored and read as a normal imported text. One Episode
+plus one **Practice** session make the daily routine.
+_Avoid_: chapter, chunk

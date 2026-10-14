@@ -31,9 +31,9 @@ Restart starts **2026-10-06**, before any new feature.
 - **Slot**: morning coffee, before Genshin dailies — weekdays before 8:00, weekends
   ~9:30. Rule: Polish dailies first, Genshin is the reward. Phone alarms set. Duolingo
   in bed stays (social time with partner, not competing).
-- **Dailies**: 3 slots/day, any mix — Review (10 items) / Read (1 chunk) / Speak
-  (5 items), each sized ~3 min. Done = 3 slots. Running ~2× long → shrink slot size.
-  Sunday chapter import counts as that day's dailies.
+- **Dailies**: ~~3 slots/day~~ → revised 2026-10-14 to **Practice (1 session) +
+  Episode** after real use showed one 20-item Practice/day, never 3 slots. See
+  "Slice 0.5" below.
 - **Content**: *Impariamo il polacco 1 – Testi* is the backbone (vol 2 commentary stays
   on paper). Bilingual Dickens / Sherlock readers = graduation reward after vol 1.
   Import = Sunday ritual: photograph a chapter → macOS Live Text → paste into Import.
@@ -42,11 +42,64 @@ Restart starts **2026-10-06**, before any new feature.
 - **Access**: phone over Tailscale serve HTTPS (mic works), Mac always awake on power,
   app server auto-started.
 - **Build rule**: dailies UI (slot picker + done screen + streak counter) only after
-  3 days of real use, timeboxed.
+  3 days of real use, timeboxed. Met 2026-10-14 (9 straight days); shape revised in
+  Slice 0.5.
 - **Parked, dogfood signal needed**: Duolingo-style varied quests (if bored after 2–3
   weeks) · Mac-side lapse alarm via ntfy if phone alarms get ignored · photo-OCR import
   if Live Text errors hurt · pre-gloss on import (watch item above) · practice
   conversation with partner.
+
+## Slice 0.5 — Fresh content + visible progress (designed 2026-10-14)
+
+Dogfood signal (9 days, ~20 reviews/day, no missed day): Practice feels samey. Cause:
+only 2 texts ever imported (2026-07-11), so all 187 lemmas come from them. The friction
+is finding texts that are both readable and interesting, on paper too, not the import
+step. Phone alarms work as the trigger; Genshin never felt like the reward. What is
+missing is the app saying "well done: you learned X, improved Y".
+
+Ship order (each shippable): 1) recap + streak 2) story + episodes 3) passage exercise.
+
+### 1. Recap + streak
+
+- **Daily** = one **Practice** session + one **Episode**. Both done = *giornata
+  completa*. Streak counts days with at least one of the two done ("never miss twice"
+  with one rule).
+- **Slot line**: one line after each Practice / Episode (e.g. "+3 parole più solide").
+- **Daily recap** (both done): new words (first review today), stronger words (stability
+  grew today, 3 example words), words that became **Mature** today (*consolidate*),
+  streak. All derived from `review_log`; per-track split skipped as noise.
+- **Mature** (CONTEXT.md): stability ≥ 21 days, per track. Recap counts distinct
+  lemmas that crossed on any track today.
+
+### 2. Story + episodes
+
+Supersedes the parked "LLM-generated graded texts": the FSRS store is the known-lemma
+list the generator needed.
+
+- **Start**: LLM proposes 3 premises (genre + one-line hook, Italian), learner taps one;
+  reroll for 3 others. "New story" abandons the current one.
+- **Outline call**: one LLM call per story sets up as much as possible: plot sketch,
+  characters, episode count (LLM decides, hard cap 10). Each episode prompt gets the
+  outline, previous episodes, and the known-lemma list.
+- **Level**: ~10% new lemmas per episode. LLM ratios are unreliable, so the episode is
+  run through `/analyze`, unknown lemmas counted, regenerated if far off.
+- **Timing**: next episode generated in the background as soon as the current one is
+  finished, so Read never waits on the LLM. A day-stale known list is fine at 10%.
+- **Storage**: an episode is a normal `source_text`: existing reader, glosses,
+  comprehension check and vocab mining work unchanged.
+
+### 3. Passage exercise
+
+New **Exercise** (CONTEXT.md), grades **Receptive**: 2–3 sentences containing a due
+lemma, then an Italian MCQ whose answer hinges on that lemma in context. Distinct from
+the **Comprehension check** (text-level, ungraded).
+
+- **Sentences**: real sentences from read texts/episodes (`token` table) first;
+  LLM-generated passage as fallback when none fits.
+- **Questions**: LLM-generated in the background, cached per (sentence, lemma). Session
+  build stays LLM-free; no cached question → not applicable.
+- **Selection**: receptive due with both MCQ and Passage applicable → 50/50 random.
+  **Context-bound lemmas** always get Passage: their first receptive feeder.
 
 ## Slice 1 — Speaking (opens the productive track; designed 2026-07-12)
 
@@ -166,11 +219,10 @@ Future notes (explicitly wanted, not v1):
 - **Etymology-based games** — new idea (2026-07-12): `dict_entry.etymology` is now
   stored; explore exercises built on it (cognate guessing, Proto-Slavic roots,
   borrowing-language quizzes). Fun layer, not a knowledge-track feeder.
-- **LLM-generated graded texts** — new candidate from this session, not pursued: hard to
-  give the model reliable cognition of the learner's level. Counterpoint for later: the
-  FSRS store *is* a machine-readable known-lemma list, which is exactly that cognition.
-- **Progress/stats view** — cheap filler slice, motivates the daily habit; slot in
-  anytime.
+- ~~**LLM-generated graded texts**~~ — **promoted (2026-10-14)** to Slice 0.5 story +
+  episodes.
+- **Progress/stats view** — partly covered by the Slice 0.5 recap (daily only); a
+  history view stays parked.
 - **Top-5k gloss seeding** — effectively dead: contradicts the mandatory-context gloss
   rule; superseded by pre-gloss-on-import if glossing latency ever hurts.
 - **Frequency-onboarding UI** — effectively dead: at sub-A1 vocabulary there is nothing
