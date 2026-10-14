@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull, lt, lte, ne, or } from "drizzle-orm";
+import { and, asc, eq, exists, isNull, lt, lte, ne, or } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   type Card,
@@ -9,7 +9,7 @@ import {
   generatorParameters,
 } from "ts-fsrs";
 import * as schema from "#/db/schema";
-import { knowledge, lemma, reviewLog } from "#/db/schema";
+import { knowledge, lemma, passageQuestion, reviewLog } from "#/db/schema";
 
 export { Rating } from "ts-fsrs";
 export type { Grade } from "ts-fsrs";
@@ -155,6 +155,7 @@ export interface DueLemma {
   due: Date;
   stability: number;
   state: number;
+  contextBound: boolean;
 }
 
 /**
@@ -187,11 +188,27 @@ export function dueLemmas(
     due: knowledge.due,
     stability: knowledge.stability,
     state: knowledge.state,
+    contextBound: lemma.contextBound,
   };
 
-  // Receptive and productive render the lemma alone; a context-bound lemma
-  // has no meaning there. Filtered here, not at render, so it can't take a slot.
-  const singleWordOk = track === "pronunciation" ? undefined : eq(lemma.contextBound, false);
+  // Single-word exercises have no meaning for a context-bound lemma. Filtered
+  // here, not at render, so it can't take a slot. Receptive keeps it when a
+  // prepared passage question can carry the meaning.
+  const notContextBound = eq(lemma.contextBound, false);
+  const singleWordOk =
+    track === "pronunciation"
+      ? undefined
+      : track === "receptive"
+        ? or(
+            notContextBound,
+            exists(
+              db
+                .select({ id: passageQuestion.id })
+                .from(passageQuestion)
+                .where(eq(passageQuestion.lemmaId, lemma.id)),
+            ),
+          )
+        : notContextBound;
 
   const reviews = db
     .select(cols)
@@ -232,4 +249,14 @@ export function dueLemmas(
     : [];
 
   return [...reviews, ...news] as DueLemma[];
+}
+
+/** Base forms of every lemma in the store (any knowledge row): LLM writing fuel. */
+export function knownLemmas(db: DB): string[] {
+  return db
+    .selectDistinct({ lemma: lemma.lemma })
+    .from(lemma)
+    .innerJoin(knowledge, eq(knowledge.lemmaId, lemma.id))
+    .all()
+    .map((r) => r.lemma);
 }

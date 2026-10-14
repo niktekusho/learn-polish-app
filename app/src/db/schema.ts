@@ -236,6 +236,35 @@ export const comprehensionQuestion = sqliteTable(
   (t) => [uniqueIndex("cq_text_question_uq").on(t.textId, t.questionIndex)],
 );
 
+/**
+ * Prepared Passage-exercise questions, several allowed per lemma. Disposable
+ * derived data like comprehension questions: a report deletes the row.
+ */
+export const passageQuestion = sqliteTable(
+  "passage_question",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    lemmaId: integer("lemma_id")
+      .notNull()
+      .references(() => lemma.id, { onDelete: "cascade" }),
+    passage: text("passage").notNull(), // 2–3 Polish sentences
+    target: text("target").notNull(), // the lemma's form as written in the passage
+    // 'text': cut from a read text (textId); 'generated': written by the LLM.
+    source: text("source", { enum: ["text", "generated"] }).notNull(),
+    textId: integer("text_id").references(() => sourceText.id, { onDelete: "set null" }),
+    question: text("question").notNull(), // Italian
+    choices: text("choices", { mode: "json" }).$type<string[]>().notNull(),
+    correctIndex: integer("correct_index").notNull(),
+    provider: text("provider", {
+      enum: ["stub", "claude-cli", "codex-cli", "ollama", "api", "manual"],
+    }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [index("passage_question_lemma_idx").on(t.lemmaId)],
+);
+
 // ---------------------------------------------------------------------------
 // Home dictionary (ADR-0002): kaikki.org Polish JSONL imported into SQLite.
 // Bulk-replaced on re-import; never referenced by FK from learner data

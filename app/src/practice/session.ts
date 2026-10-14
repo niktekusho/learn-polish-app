@@ -2,7 +2,9 @@ import { and, asc, eq, exists, isNull, ne, notExists } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import { alias } from "drizzle-orm/sqlite-core";
 import * as schema from "#/db/schema";
-import { gloss, knowledge, lemma, token } from "#/db/schema";
+import { gloss, knowledge, lemma, passageQuestion, token } from "#/db/schema";
+import type { PassageClientItem, PassageItem } from "#/exercises/passage";
+import { passage } from "#/exercises/passage";
 import type { ReadAloudClientItem, ReadAloudItem } from "#/exercises/read-aloud";
 import { readAloud } from "#/exercises/read-aloud";
 import type { McqClientItem, McqItem } from "#/exercises/recognition-mcq";
@@ -13,7 +15,7 @@ import type {
   SpokenResponse,
 } from "#/exercises/spoken-recall";
 import { spokenRecall } from "#/exercises/spoken-recall";
-import type { ExerciseCandidate } from "#/exercises/types";
+import type { ExerciseCandidate, PassageQuestion } from "#/exercises/types";
 import {
   type DueLemma,
   type Grade,
@@ -34,6 +36,7 @@ type DB = BetterSQLite3Database<typeof schema>;
  */
 type StoredItem = (
   | { exercise: "recognition-mcq"; item: McqItem }
+  | { exercise: "passage"; item: PassageItem }
   | { exercise: "spoken-recall"; item: SpokenRecallItem }
   | { exercise: "read-aloud"; item: ReadAloudItem }
 ) & { retry?: boolean };
@@ -47,6 +50,7 @@ type SpeechStored = Extract<StoredItem, { exercise: keyof typeof speechExercises
 
 export type ClientPracticeItem = (
   | ({ kind: "recognition-mcq" } & McqClientItem)
+  | PassageClientItem
   | SpokenRecallClientItem
   | ReadAloudClientItem
 ) & { retry?: boolean };
@@ -88,6 +92,8 @@ function toClientItem(s: StoredItem): ClientPracticeItem {
   switch (s.exercise) {
     case "recognition-mcq":
       return { kind: "recognition-mcq", ...recognitionMcq.toClient(s.item), ...retry };
+    case "passage":
+      return { ...passage.toClient(s.item), ...retry };
     case "spoken-recall":
       return { ...spokenRecall.toClient(s.item), ...retry };
     case "read-aloud":
@@ -108,6 +114,13 @@ function queueRetry(db: DB, s: StoredSession, stored: StoredItem): ClientPractic
     const target = pool.find((c) => c.lemmaId === stored.item.lemmaId);
     const item = target && recognitionMcq.generate(target, pool);
     retry = item ? { exercise: "recognition-mcq", item, retry: true } : null;
+  } else if (stored.exercise === "passage") {
+    const { item } = stored;
+    const reshuffled = passage.generate(
+      { lemmaId: item.lemmaId, lemma: item.target, pos: "", passage: item },
+      [],
+    );
+    retry = reshuffled && { exercise: "passage", item: reshuffled, retry: true };
   } else {
     retry = {
       ...stored,
@@ -165,6 +178,17 @@ function glossedCandidates(db: DB): ExerciseCandidate[] {
     .innerJoin(gloss, and(eq(gloss.lemmaId, lemma.id), eq(gloss.sense, "")))
     .where(isNull(lemma.flaggedAt)) // a reported gloss mustn't leak in as a distractor
     .all();
+}
+
+/** Prepared passage questions by lemma. */
+function passagesByLemma(db: DB): Map<number, PassageQuestion[]> {
+  const map = new Map<number, PassageQuestion[]>();
+  for (const r of db.select().from(passageQuestion).all()) {
+    const list = map.get(r.lemmaId) ?? [];
+    list.push({ ...r, questionId: r.id });
+    map.set(r.lemmaId, list);
+  }
+  return map;
 }
 
 /**
@@ -230,7 +254,8 @@ function renderDues(dues: DueLemma[], render: (d: DueLemma) => StoredItem | null
 /**
  * Build a Practice session (#10): due lemmas rendered through the applicable
  * exercise, held server-side under a fresh id. Mix (CONTEXT.md "Practice"):
- * one queue per active track — productive → spoken recall, receptive → MCQ,
+ * one queue per active track — productive → spoken recall, receptive → MCQ
+ * or Passage (50/50 when both apply; Passage only for context-bound lemmas),
  * pronunciation → read-aloud — drawn round-robin, so tracks get equal shares,
  * an empty queue yields its turn, and items come interleaved. A lemma appears
  * once per session (a read-aloud would give away a later spoken recall).
@@ -245,10 +270,12 @@ export function buildSession(
     limit = 20,
     newCardLimit,
     mic = false,
+    rng = Math.random,
   }: {
     limit?: number;
     newCardLimit?: number;
     mic?: boolean;
+    rng?: () => number; // MCQ vs Passage pick
   } = {},
 ): ClientSession {
   const pool = glossedCandidates(db);
@@ -268,11 +295,19 @@ export function buildSession(
       }),
     );
   }
+  const passages = passagesByLemma(db);
   queues.push(
     renderDues(due("receptive"), (d) => {
-      const target = byId.get(d.lemmaId);
-      if (!target) return null; // no cached gloss -> skip, never generate
-      const item = recognitionMcq.generate(target, pool);
+      // No cached gloss or context-bound -> no MCQ; never generated here.
+      const mcqTarget = d.contextBound ? undefined : byId.get(d.lemmaId);
+      const prepared = passages.get(d.lemmaId);
+      const p = prepared?.[Math.floor(rng() * prepared.length)];
+      if (p && (!mcqTarget || rng() < 0.5)) {
+        const item = passage.generate({ ...d, passage: p }, pool);
+        return item && { exercise: "passage", item };
+      }
+      if (!mcqTarget) return null;
+      const item = recognitionMcq.generate(mcqTarget, pool);
       return item && { exercise: "recognition-mcq", item };
     }),
   );
@@ -352,7 +387,9 @@ export function answerItem(
   choiceIndex: number,
 ): AnswerResult {
   const { s, stored } = heldItem(sessionId, itemId);
-  if (stored.exercise !== "recognition-mcq") throw new Error("not a choice item");
+  if (stored.exercise !== "recognition-mcq" && stored.exercise !== "passage") {
+    throw new Error("not a choice item");
+  }
   const item = stored.item;
 
   if (s.answered.has(itemId)) {
@@ -363,7 +400,10 @@ export function answerItem(
     };
   }
 
-  const rating = recognitionMcq.grade(item, { choiceIndex });
+  const rating =
+    stored.exercise === "passage"
+      ? passage.grade(stored.item, { choiceIndex })
+      : recognitionMcq.grade(stored.item, { choiceIndex });
   if (!stored.retry) gradeLemma(db, item.lemmaId, "receptive", rating);
   s.answered.set(itemId, rating !== Rating.Again);
   const retry = rating === Rating.Again ? queueRetry(db, s, stored) : undefined;
@@ -552,6 +592,11 @@ export function reportItem(
   note: string,
 ): { dropped: string[] } {
   const { s, stored } = heldItem(sessionId, itemId);
+  if (stored.exercise === "passage") {
+    // A bad passage question is disposable: delete it, the next prep run rewrites it.
+    db.delete(passageQuestion).where(eq(passageQuestion.id, stored.item.questionId)).run();
+    return closeReported(db, s, stored, itemId);
+  }
   db.update(lemma)
     .set({ flaggedAt: new Date(), flagNote: note.trim() || null })
     .where(eq(lemma.id, stored.item.lemmaId))

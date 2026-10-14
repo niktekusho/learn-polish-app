@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { eq, ne } from "drizzle-orm";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import { dueLemmas, initialKnowledgeFields } from "#/fsrs/index";
@@ -267,4 +268,99 @@ test("an unfinished session records nothing", () => {
   answerItem(db, session.sessionId, first.id, right);
   expect(db.select().from(schema.dailyActivity).all()).toHaveLength(0);
   expect(sessionSummary(db, session.sessionId)).toBeNull();
+});
+
+function addPassage(db: ReturnType<typeof freshDb>, lemmaId: number, target: string) {
+  return db
+    .insert(schema.passageQuestion)
+    .values({
+      lemmaId,
+      passage: `Idę ${target} sklepu. Kupuję chleb.`,
+      target,
+      source: "generated",
+      question: "Dove va la persona?",
+      choices: ["al negozio", "a casa", "a scuola"],
+      correctIndex: 0,
+      provider: "stub",
+    })
+    .returning({ id: schema.passageQuestion.id })
+    .all()[0].id;
+}
+
+test("a context-bound lemma with a passage is asked through Passage, never MCQ", () => {
+  const db = freshDb();
+  for (const [w, g] of Object.entries(GLOSS)) seed(db, w, g);
+  const doId = seed(db, "do", "a");
+  db.update(schema.lemma).set({ contextBound: true }).run();
+  db.update(schema.lemma).set({ contextBound: false }).where(ne(schema.lemma.id, doId)).run();
+  const before = db.select().from(schema.passageQuestion).all();
+
+  const unprepared = buildSession(db, { limit: 20 });
+  expect(unprepared.items.map((i) => i.kind === "recognition-mcq" && i.prompt)).not.toContain("do");
+
+  addPassage(db, doId, "do");
+  for (const r of [0.1, 0.9]) {
+    const s = buildSession(db, { limit: 20, rng: () => r });
+    const asked = s.items.filter(
+      (i) =>
+        (i.kind === "passage" && i.target === "do") ||
+        (i.kind === "recognition-mcq" && i.prompt === "do"),
+    );
+    expect(asked.map((i) => i.kind)).toEqual(["passage"]);
+  }
+  expect(db.select().from(schema.passageQuestion).all()).toHaveLength(before.length + 1);
+});
+
+test("with both applicable, the random source picks MCQ or Passage", () => {
+  const db = freshDb();
+  for (const [w, g] of Object.entries(GLOSS)) seed(db, w, g);
+  const kot = db
+    .select()
+    .from(schema.lemma)
+    .all()
+    .find((l) => l.lemma === "kot")!;
+  addPassage(db, kot.id, "kota");
+  const kinds = [0.1, 0.9].map((r) => {
+    const s = buildSession(db, { limit: 20, rng: () => r });
+    return s.items.find(
+      (i) =>
+        (i.kind === "passage" && i.target === "kota") ||
+        (i.kind === "recognition-mcq" && i.prompt === "kot"),
+    )?.kind;
+  });
+  expect(new Set(kinds)).toEqual(new Set(["passage", "recognition-mcq"]));
+});
+
+function passageSession(db: ReturnType<typeof freshDb>) {
+  for (const [w, g] of Object.entries(GLOSS)) seed(db, w, g);
+  const doId = seed(db, "do", "a");
+  db.update(schema.lemma).set({ contextBound: true }).where(eq(schema.lemma.id, doId)).run();
+  const questionId = addPassage(db, doId, "do");
+  const session = buildSession(db, { limit: 20 });
+  const item = session.items.find((i) => i.kind === "passage")!;
+  if (item.kind !== "passage") throw new Error("expected a passage");
+  return { session, item, doId, questionId };
+}
+
+test("a passage answer grades receptive; a miss queues a Passage Retry", () => {
+  const db = freshDb();
+  const { session, item, doId } = passageSession(db);
+  const wrong = item.choices.findIndex((c) => c !== "al negozio");
+
+  const res = answerItem(db, session.sessionId, item.id, wrong);
+  expect(res.correct).toBe(false);
+  expect(item.choices[res.correctIndex]).toBe("al negozio");
+  expect(res.retry).toMatchObject({ kind: "passage", target: "do", retry: true });
+  expect(db.select().from(schema.reviewLog).all()).toMatchObject([
+    { lemmaId: doId, track: "receptive", rating: 1 },
+  ]);
+});
+
+test("reporting a passage deletes its question so it is prepared again", () => {
+  const db = freshDb();
+  const { session, item, doId } = passageSession(db);
+  reportItem(db, session.sessionId, item.id, "");
+  expect(db.select().from(schema.passageQuestion).all()).toHaveLength(0);
+  expect(listFlagged(db)).toHaveLength(0);
+  expect(dueLemmas(db, "receptive").map((d) => d.lemmaId)).not.toContain(doId);
 });

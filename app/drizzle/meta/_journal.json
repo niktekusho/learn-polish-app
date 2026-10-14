@@ -78,6 +78,13 @@
       "when": 1792014378826,
       "tag": "0010_dusty_omega_sentinel",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1792014599791,
+      "tag": "0011_striped_giant_girl",
+      "breakpoints": true
     }
   ]
 }

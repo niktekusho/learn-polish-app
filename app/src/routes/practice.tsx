@@ -105,7 +105,16 @@ const getSummary = createServerFn()
   .handler(async ({ data }) => {
     const { db } = await import("#/db/index");
     const { sessionSummary } = await import("#/practice/session");
-    return sessionSummary(db, data.sessionId);
+    const summary = sessionSummary(db, data.sessionId);
+    if (summary) {
+      // Prepare passage questions for the coming days, off the request path.
+      const { prepareUpcomingPassages } = await import("#/passage/service");
+      const { getGlossProvider } = await import("#/llm/provider");
+      prepareUpcomingPassages(db, getGlossProvider()).catch((err) =>
+        console.error("[passage] background prep failed:", err),
+      );
+    }
+    return summary;
   });
 
 export const Route = createFileRoute("/practice")({
@@ -221,7 +230,7 @@ function PracticeSession() {
   const item = items[index];
 
   async function choose(choiceIndex: number) {
-    if (reveal || busy || item.kind !== "recognition-mcq") return;
+    if (reveal || busy || (item.kind !== "recognition-mcq" && item.kind !== "passage")) return;
     setBusy(true);
     try {
       const res = await submitAnswer({
@@ -376,24 +385,35 @@ function PracticeSession() {
             disabled={busy}
             className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50"
           >
-            Meaning is wrong
+            {item.kind === "passage" ? "Question is wrong" : "Meaning is wrong"}
           </button>
-          <button
-            type="button"
-            onClick={() => report("context")}
-            disabled={busy}
-            className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50"
-            title="Only makes sense in a sentence: stop asking it as a single word"
-          >
-            Needs context
-          </button>
+          {item.kind !== "passage" && (
+            <button
+              type="button"
+              onClick={() => report("context")}
+              disabled={busy}
+              className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50"
+              title="Only makes sense in a sentence: stop asking it as a single word"
+            >
+              Needs context
+            </button>
+          )}
         </div>
       )}
       {hint && <p className="mt-1 text-sm text-gray-500">{hintText(hint)}</p>}
 
-      {item.kind === "recognition-mcq" && (
+      {(item.kind === "recognition-mcq" || item.kind === "passage") && (
         <>
-          <div className="mt-2 text-3xl font-bold">{item.prompt}</div>
+          {item.kind === "recognition-mcq" ? (
+            <div className="mt-2 text-3xl font-bold">{item.prompt}</div>
+          ) : (
+            <>
+              <p className="mt-2 text-xl leading-relaxed">
+                <Highlighted text={item.passage} target={item.target} />
+              </p>
+              <p className="mt-4 font-medium">{item.question}</p>
+            </>
+          )}
           <div className="mt-6 space-y-2">
             {item.choices.map((choice, i) => {
               const revealed = reveal !== null;
@@ -524,6 +544,25 @@ function PracticeSession() {
         </>
       )}
     </Shell>
+  );
+}
+
+/** The passage with every occurrence of the target word in bold. */
+function Highlighted({ text, target }: { text: string; target: string }) {
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.toLowerCase() === target.toLowerCase() ? (
+          <strong key={i} className="text-blue-800">
+            {p}
+          </strong>
+        ) : (
+          p
+        ),
+      )}
+    </>
   );
 }
 

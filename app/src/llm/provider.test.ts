@@ -3,7 +3,12 @@ import {
   buildComprehensionPrompt,
   buildSenseGlossPrompt,
   parseComprehensionJson,
+  parseEpisodeText,
+  parsePassageJson,
+  parsePassageQuestionJson,
+  parsePremisesJson,
   parseSenseGlossJson,
+  parseStoryOutlineJson,
 } from "./provider";
 
 const good = JSON.stringify({
@@ -106,4 +111,41 @@ test("prompt lists senses with their indexes and demands JSON", () => {
   expect(prompt).toContain("0. castle");
   expect(prompt).toContain("1. lock");
   expect(prompt).toContain("bestIndex");
+});
+
+const premise = { title: "Il gatto", genre: "giallo", hook: "Un gatto scompare." };
+
+test("premises: parses three, strips fences, rejects fewer", () => {
+  const three = JSON.stringify({ premises: [premise, premise, premise] });
+  expect(parsePremisesJson("```json\n" + three + "\n```")).toHaveLength(3);
+  expect(() => parsePremisesJson(JSON.stringify({ premises: [premise] }))).toThrow();
+  expect(() => parsePremisesJson("ecco le premesse")).toThrow(/not JSON/);
+});
+
+test("outline: needs at least one episode beat", () => {
+  const outline = { plot: "Trama", characters: ["Ala"], beats: ["inizio", "fine"] };
+  expect(parseStoryOutlineJson(JSON.stringify(outline)).beats).toHaveLength(2);
+  expect(() => parseStoryOutlineJson(JSON.stringify({ ...outline, beats: [] }))).toThrow();
+});
+
+test("episode text: trims fences, rejects empty and runaway output", () => {
+  expect(parseEpisodeText("```\nAla ma kota.\n```")).toBe("Ala ma kota.");
+  expect(() => parseEpisodeText("  ")).toThrow();
+  expect(() => parseEpisodeText("a".repeat(5000))).toThrow();
+});
+
+test("generated passage: the target must appear in the passage", () => {
+  const ok = { passage: "Idę do sklepu.", target: "do" };
+  expect(parsePassageJson(JSON.stringify(ok))).toEqual(ok);
+  expect(() => parsePassageJson(JSON.stringify({ ...ok, target: "za" }))).toThrow(/not in/);
+});
+
+test("passage question: 3–4 distinct choices with an in-range answer", () => {
+  const q = { question: "Dove?", choices: ["a", "b", "c"], correctIndex: 2 };
+  expect(parsePassageQuestionJson(JSON.stringify(q))).toEqual(q);
+  expect(() => parsePassageQuestionJson(JSON.stringify({ ...q, correctIndex: 3 }))).toThrow();
+  expect(() => parsePassageQuestionJson(JSON.stringify({ ...q, choices: ["a", "b"] }))).toThrow();
+  expect(() =>
+    parsePassageQuestionJson(JSON.stringify({ ...q, choices: ["a", "a", "c"] })),
+  ).toThrow(/duplicate/);
 });

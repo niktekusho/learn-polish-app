@@ -13,12 +13,23 @@ export interface Modality {
 // `sentence` is a sentence from the user's imported texts containing the
 // lemma — populated by the session builder only when a speaking exercise
 // might use it (read-aloud).
+// `passage` is a prepared passage question for the lemma (Passage exercise).
 export interface ExerciseCandidate {
   lemmaId: number;
   lemma: string;
   pos: string;
   gloss?: string;
   sentence?: string;
+  passage?: PassageQuestion;
+}
+
+export interface PassageQuestion {
+  questionId: number;
+  passage: string; // 2–3 Polish sentences
+  target: string; // the lemma's form as written in the passage
+  question: string; // Italian
+  choices: string[];
+  correctIndex: number;
 }
 
 /**

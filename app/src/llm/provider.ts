@@ -305,6 +305,85 @@ export function parseEpisodeText(stdout: string): string {
   return text;
 }
 
+// --- Passage exercise (Slice 0.5) ------------------------------------------
+// Prepared in the background; Practice only reads the cached result.
+
+export interface PassageRequest {
+  lemma: string;
+  pos: string;
+  knownLemmas: string[];
+}
+
+export interface GeneratedPassage {
+  passage: string;
+  target: string; // the lemma's form as written in the passage
+}
+
+export interface PassageQuestionRequest {
+  passage: string;
+  lemma: string;
+  target: string;
+}
+
+export function buildPassagePrompt(req: PassageRequest): string {
+  return (
+    "Scrivi 2 o 3 frasi brevi IN POLACCO per uno studente italiano principiante " +
+    "(sotto A1) che contengono la parola indicata, usata in modo che il suo " +
+    "significato sia chiaro dal contesto. Usa soprattutto le parole conosciute " +
+    "(elenco sotto, in forma base; puoi fletterle). Rispondi SOLO con JSON valido, " +
+    'senza testo attorno, nel formato: {"passage":"...","target":"..."} dove ' +
+    "target è la parola esattamente come appare nel testo.\n\n" +
+    `Parola: ${req.lemma}\nPOS: ${req.pos}\nParole conosciute: ${req.knownLemmas.join(", ")}`
+  );
+}
+
+export function parsePassageJson(stdout: string): GeneratedPassage {
+  const res = parseJsonOutput(
+    stdout,
+    "passage",
+    z.object({
+      passage: z.string().trim().min(1).max(600),
+      target: z.string().trim().min(1),
+    }),
+  );
+  if (!res.passage.toLowerCase().includes(res.target.toLowerCase())) {
+    throw new Error(`passage target ${JSON.stringify(res.target)} not in passage`);
+  }
+  return res;
+}
+
+export function buildPassageQuestionPrompt(req: PassageQuestionRequest): string {
+  return (
+    "Sei un insegnante di polacco. Ecco un breve testo polacco per uno studente " +
+    "italiano principiante. Scrivi UNA domanda a scelta multipla IN ITALIANO a cui " +
+    `si può rispondere solo capendo la parola «${req.target}» (lemma: ${req.lemma}) ` +
+    "in questo contesto. Non tradurre né citare quella parola nella domanda. 3 o 4 " +
+    "risposte in italiano, tutte diverse, di cui ESATTAMENTE una corretta secondo il " +
+    "testo. Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
+    '{"question":"...","choices":["...","...","..."],"correctIndex":0}\n\n' +
+    `Testo:\n${req.passage}`
+  );
+}
+
+export function parsePassageQuestionJson(stdout: string): ComprehensionQuestion {
+  const q = parseJsonOutput(
+    stdout,
+    "passage question",
+    z.object({
+      question: z.string().trim().min(1),
+      choices: z.array(z.string().trim().min(1)).min(3).max(4),
+      correctIndex: z.number().int().min(0),
+    }),
+  );
+  if (q.correctIndex >= q.choices.length) {
+    throw new Error(`passage correctIndex ${q.correctIndex} out of range`);
+  }
+  if (new Set(q.choices).size !== q.choices.length) {
+    throw new Error("passage question has duplicate choices");
+  }
+  return q;
+}
+
 export interface GlossProvider {
   readonly name: ProviderName; // recorded on the cache row so output can be purged
   gloss(req: GlossRequest): Promise<string>;
@@ -317,6 +396,9 @@ export interface GlossProvider {
   storyPremises?(): Promise<StoryPremise[]>;
   storyOutline?(premise: StoryPremise): Promise<StoryOutline>;
   storyEpisode?(req: EpisodeRequest): Promise<string>;
+  // Optional capabilities: Passage exercise preparation (Slice 0.5).
+  passage?(req: PassageRequest): Promise<GeneratedPassage>;
+  passageQuestion?(req: PassageQuestionRequest): Promise<ComprehensionQuestion>;
 }
 
 import { ClaudeCliGlossProvider } from "./claude-cli";

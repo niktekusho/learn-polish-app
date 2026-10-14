@@ -5,21 +5,29 @@ import { join } from "node:path";
 import {
   buildComprehensionPrompt,
   buildEpisodePrompt,
+  buildPassagePrompt,
+  buildPassageQuestionPrompt,
   buildPremisesPrompt,
   buildStoryOutlinePrompt,
   buildGlossPrompt,
   buildSenseGlossPrompt,
   type ComprehensionRequest,
+  type ComprehensionQuestion,
   type ComprehensionResult,
   type EpisodeRequest,
+  type GeneratedPassage,
   type GlossProvider,
   type GlossRequest,
   parseComprehensionJson,
   parseEpisodeText,
+  parsePassageJson,
+  parsePassageQuestionJson,
   parseGloss,
   parseSenseGlossJson,
   parsePremisesJson,
   parseStoryOutlineJson,
+  type PassageQuestionRequest,
+  type PassageRequest,
   type ProviderName,
   type SenseGlossRequest,
   type SenseGlossResult,
@@ -117,5 +125,13 @@ export class ClaudeCliGlossProvider implements GlossProvider {
 
   async storyEpisode(req: EpisodeRequest): Promise<string> {
     return parseEpisodeText(await this.exec(buildEpisodePrompt(req)));
+  }
+
+  async passage(req: PassageRequest): Promise<GeneratedPassage> {
+    return parsePassageJson(await this.exec(buildPassagePrompt(req)));
+  }
+
+  async passageQuestion(req: PassageQuestionRequest): Promise<ComprehensionQuestion> {
+    return parsePassageQuestionJson(await this.exec(buildPassageQuestionPrompt(req)));
   }
 }

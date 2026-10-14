@@ -1,7 +1,8 @@
 import { and, asc, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
-import { knowledge, lemma, sourceText, story } from "#/db/schema";
+import { sourceText, story } from "#/db/schema";
+import { knownLemmas } from "#/fsrs/index";
 import { persistAnalysis } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import type { GlossProvider, StoryPremise } from "#/llm/provider";
@@ -81,21 +82,12 @@ export function storyService(db: DB, deps: StoryDeps) {
       .all();
   }
 
-  function knownLemmas(): string[] {
-    return db
-      .selectDistinct({ lemma: lemma.lemma })
-      .from(lemma)
-      .innerJoin(knowledge, eq(knowledge.lemmaId, lemma.id))
-      .all()
-      .map((r) => r.lemma);
-  }
-
   /**
    * Write episode `n`: draft, analyze, accept when the new-lemma share is in
    * range, else redraft (LEVEL_RETRIES times) and keep the closest draft.
    */
   async function generateEpisode(s: StoryRow, n: number): Promise<void> {
-    const known = knownLemmas();
+    const known = knownLemmas(db);
     const knownSet = new Set(known.map((l) => l.toLowerCase()));
     const req = {
       premise: { title: s.title, genre: s.genre, hook: s.hook },

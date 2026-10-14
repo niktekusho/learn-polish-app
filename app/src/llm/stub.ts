@@ -1,9 +1,13 @@
 import type {
   ComprehensionRequest,
+  ComprehensionQuestion,
   ComprehensionResult,
   EpisodeRequest,
+  GeneratedPassage,
   GlossProvider,
   GlossRequest,
+  PassageQuestionRequest,
+  PassageRequest,
   ProviderName,
   SenseGlossRequest,
   SenseGlossResult,
@@ -57,5 +61,17 @@ export class StubGlossProvider implements GlossProvider {
 
   async storyEpisode(req: EpisodeRequest): Promise<string> {
     return `Ala ma kota. To jest odcinek ${req.episodeNumber}. Kot jest mały.`;
+  }
+
+  async passage(req: PassageRequest): Promise<GeneratedPassage> {
+    return { passage: `To jest ${req.lemma}. Lubię ${req.lemma}.`, target: req.lemma };
+  }
+
+  async passageQuestion(req: PassageQuestionRequest): Promise<ComprehensionQuestion> {
+    return {
+      question: `Domanda stub su «${req.target}»?`,
+      choices: ["Risposta giusta (stub)", "Distrattore A", "Distrattore B"],
+      correctIndex: 0,
+    };
   }
 }
