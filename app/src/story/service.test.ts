@@ -161,6 +161,15 @@ test("the planned last episode finishes the story", async () => {
   expect(db.select().from(schema.story).all()[0].status).toBe("finished");
   expect(await svc.currentEpisode()).toBeNull();
   expect(provider.calls.episode).toBe(1);
+  expect((await svc.markEpisodeRead(ep1.textId)).storyFinished).toBe(false); // reread
+});
+
+test("reading the last episode of an abandoned story does not finish it", async () => {
+  const { db, svc } = setup(1);
+  const ep1 = (await svc.startStory(PREMISE))!;
+  svc.abandonStory();
+  expect((await svc.markEpisodeRead(ep1.textId)).storyFinished).toBe(false);
+  expect(db.select().from(schema.story).all()[0].status).toBe("abandoned");
 });
 
 test("a failed background generation is retried when the episode is asked for", async () => {

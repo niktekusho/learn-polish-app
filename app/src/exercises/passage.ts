@@ -2,7 +2,7 @@ import { Rating } from "#/fsrs/index";
 import type { McqResponse } from "./recognition-mcq";
 import type { Exercise } from "./types";
 
-/** Full item, held server-side. Carries the answer — never sent to the client. */
+/** Full item, held server-side. Carries the answer: never sent to the client. */
 export interface PassageItem {
   id: string;
   lemmaId: number;
@@ -32,10 +32,8 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 /**
- * Passage exercise (CONTEXT.md): 2–3 sentences around the lemma, then an
- * Italian MCQ whose answer hinges on it. Grades Receptive like recognition
- * MCQ. Questions are prepared ahead (passage service); session build only
- * reads them.
+ * Passage exercise (CONTEXT.md). Grades Receptive like recognition MCQ.
+ * Questions are prepared ahead by the passage service: session build only reads them.
  */
 export const passage: Exercise<PassageItem, PassageClientItem, McqResponse> = {
   id: "passage",

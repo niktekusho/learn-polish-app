@@ -157,8 +157,10 @@ function Reader() {
     if (!story || readResult) return;
     const res = await markEpisodeReadFn({ data: { textId: text.id } });
     setReadResult(res);
-    // The finished-story screen comes first; the recap stays reachable from home.
-    if (res.dayCompleted && !res.storyFinished) navigate({ to: "/recap" });
+    // The slot line stays up for a moment; a finished story keeps its own screen.
+    if (res.dayCompleted && !res.storyFinished) {
+      setTimeout(() => navigate({ to: "/recap" }), 2500);
+    }
   }
 
   async function markAllNewKnown() {

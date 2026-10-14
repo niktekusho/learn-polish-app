@@ -245,7 +245,14 @@ test("finishing a session, Retries included, records the day's practice once", (
 
   answerAll(db, session.sessionId);
   expect(db.select().from(schema.dailyActivity).all()).toMatchObject([{ kind: "practice" }]);
-  expect(sessionSummary(db, session.sessionId)?.line).toMatch(/^\+\d+ parol/);
+  expect(sessionSummary(db, session.sessionId)).toMatchObject({
+    line: expect.stringMatching(/^\+\d+ parol/),
+    first: true,
+  });
+  expect(sessionSummary(db, session.sessionId)).toMatchObject({
+    first: false,
+    dayCompleted: false,
+  });
 
   // Graded today: a second session needs fresh dues.
   for (const [w, g] of Object.entries({

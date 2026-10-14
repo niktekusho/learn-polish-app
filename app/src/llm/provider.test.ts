@@ -138,6 +138,11 @@ test("generated passage: the target must appear in the passage", () => {
   const ok = { passage: "Idę do sklepu.", target: "do" };
   expect(parsePassageJson(JSON.stringify(ok))).toEqual(ok);
   expect(() => parsePassageJson(JSON.stringify({ ...ok, target: "za" }))).toThrow(/not in/);
+  // Inside another word is not an occurrence.
+  const inside = { passage: "Idę domu.", target: "do" };
+  expect(() => parsePassageJson(JSON.stringify(inside))).toThrow(/not in/);
+  const accented = { passage: "Żółw śpi.", target: "żółw" };
+  expect(parsePassageJson(JSON.stringify(accented))).toEqual(accented);
 });
 
 test("passage question: 3–4 distinct choices with an in-range answer", () => {

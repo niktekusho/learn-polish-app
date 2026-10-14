@@ -12,7 +12,7 @@ type DB = BetterSQLite3Database<typeof schema>;
 type StoryRow = typeof story.$inferSelect;
 
 export const MAX_EPISODES = 10;
-// Share of an episode's content lemmas missing from the store (roadmap: ~10%).
+// Share of an episode's content lemmas missing from the store.
 export const NEW_SHARE_TARGET = 0.1;
 export const NEW_SHARE_MIN = 0.05;
 export const NEW_SHARE_MAX = 0.15;
@@ -64,7 +64,7 @@ function newShare(analysis: AnalyzeResponse, known: Set<string>): number {
   return [...lemmas].filter((l) => !known.has(l)).length / lemmas.size;
 }
 
-/** The Story seam (Slice 0.5): provider and analyzer injected. */
+/** The Story seam: provider and analyzer injected so tests use fakes. */
 export function storyService(db: DB, deps: StoryDeps) {
   const running = inFlight.get(db) ?? new Map<string, Promise<void>>();
   inFlight.set(db, running);
@@ -204,7 +204,7 @@ export function storyService(db: DB, deps: StoryDeps) {
       const [s] = db.select().from(story).where(eq(story.id, t.storyId)).all();
       const line = episodeLine(db, textId);
       const isLast = t.episodeNumber >= s.plannedEpisodes;
-      if (t.readAt) return { line, storyFinished: isLast, dayCompleted: false };
+      if (t.readAt) return { line, storyFinished: false, dayCompleted: false };
 
       db.update(sourceText).set({ readAt: now }).where(eq(sourceText.id, textId)).run();
       const { inserted, complete } = recordActivity(db, "episode", now);
@@ -219,7 +219,11 @@ export function storyService(db: DB, deps: StoryDeps) {
           console.error(`[story] background episode ${next} failed:`, err),
         );
       }
-      return { line, storyFinished: isLast, dayCompleted: inserted && complete };
+      return {
+        line,
+        storyFinished: isLast && s.status === "active",
+        dayCompleted: inserted && complete,
+      };
     },
 
     /** End the active story; its episodes stay readable as texts. */

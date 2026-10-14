@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import { PushToTalk } from "#/audio/recorder";
 import { ListenButton } from "#/audio/speak";
+import { wordPattern } from "#/reader/word-pattern";
 
 // Build a new session, or resume the held one by id (reload/refocus). No LLM
 // calls: buildSession only reads cached glosses.
@@ -99,9 +100,6 @@ const submitReport = createServerFn({ method: "POST" })
       : reportItem(db, data.sessionId, data.itemId, data.note);
   });
 
-// Sessions whose passage prep already ran: the end screen may ask twice.
-const prepTriggered = new Set<string>();
-
 // End-of-session note (slot line). Null while the session isn't finished.
 const getSummary = createServerFn()
   .validator((d: unknown) => z.object({ sessionId: z.string() }).parse(d))
@@ -109,8 +107,7 @@ const getSummary = createServerFn()
     const { db } = await import("#/db/index");
     const { sessionSummary } = await import("#/practice/session");
     const summary = sessionSummary(db, data.sessionId);
-    if (summary && !prepTriggered.has(data.sessionId)) {
-      prepTriggered.add(data.sessionId);
+    if (summary?.first) {
       // Prepare passage questions for the coming days, off the request path.
       const { prepareUpcomingPassages } = await import("#/passage/service");
       const { getGlossProvider } = await import("#/llm/provider");
@@ -553,12 +550,12 @@ function PracticeSession() {
 
 /** The passage with every occurrence of the target word in bold. */
 function Highlighted({ text, target }: { text: string; target: string }) {
-  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const parts = text.split(new RegExp(`(${escaped})`, "gi"));
+  // split keeps the capture group: odd indexes are the matches.
+  const parts = text.split(wordPattern(target, "giu"));
   return (
     <>
       {parts.map((p, i) =>
-        p.toLowerCase() === target.toLowerCase() ? (
+        i % 2 === 1 ? (
           <strong key={i} className="text-blue-800">
             {p}
           </strong>
@@ -570,6 +567,8 @@ function Highlighted({ text, target }: { text: string; target: string }) {
   );
 }
 
+const RECAP_DELAY_MS = 2500;
+
 function SessionNote({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate();
   const [line, setLine] = useState<string | null>(null);
@@ -577,7 +576,8 @@ function SessionNote({ sessionId }: { sessionId: string }) {
     getSummary({ data: { sessionId } }).then((s) => {
       if (!s) return;
       setLine(s.line);
-      if (s.dayCompleted) navigate({ to: "/recap" });
+      // Leave the slot line on screen for a moment before the recap.
+      if (s.dayCompleted) setTimeout(() => navigate({ to: "/recap" }), RECAP_DELAY_MS);
     });
   }, [sessionId, navigate]);
   return line ? <p className="mt-2 font-medium text-green-700">{line}</p> : null;

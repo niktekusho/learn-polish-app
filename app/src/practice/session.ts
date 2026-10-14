@@ -72,8 +72,9 @@ interface StoredSession {
   items: StoredItem[]; // full items, held server-side (carry the answer)
   answered: Map<string, boolean>; // itemId -> was correct
   attempts: Map<string, SpeechAttempts>; // speech items only
-  // Set when the last item is answered; dayCompleted = this session completed the day.
-  finished?: { dayCompleted: boolean };
+  // Set when the last item is answered. dayCompleted: this session completed the
+  // day. summarized: the end screen already got its note.
+  finished?: { dayCompleted: boolean; summarized: boolean };
 }
 
 // ponytail: in-memory, single-user. A reload resumes via the session id; a
@@ -180,7 +181,6 @@ function glossedCandidates(db: DB): ExerciseCandidate[] {
     .all();
 }
 
-/** Prepared passage questions by lemma. */
 function passagesByLemma(db: DB): Map<number, PassageQuestion[]> {
   const map = new Map<number, PassageQuestion[]>();
   for (const r of db.select().from(passageQuestion).all()) {
@@ -634,16 +634,25 @@ function closeReported(
 function checkFinished(db: DB, s: StoredSession) {
   if (s.finished || s.items.some((i) => !s.answered.has(i.item.id))) return;
   const { inserted, complete } = recordActivity(db, "practice");
-  s.finished = { dayCompleted: inserted && complete };
+  s.finished = { dayCompleted: inserted && complete, summarized: false };
 }
 
-/** End-of-session note; null until the session is finished. */
+/**
+ * End-of-session note; null until the session is finished. `first` is true on
+ * the first call only: the recap opens and background work starts once.
+ */
 export function sessionSummary(
   db: DB,
   sessionId: string,
-): { line: string; dayCompleted: boolean } | null {
+): { line: string; dayCompleted: boolean; first: boolean } | null {
   const s = sessions.get(sessionId);
   if (!s?.finished) return null;
+  const first = !s.finished.summarized;
+  s.finished.summarized = true;
   const lemmaIds = [...new Set(s.items.map((i) => i.item.lemmaId))];
-  return { line: practiceLine(db, lemmaIds), dayCompleted: s.finished.dayCompleted };
+  return {
+    line: practiceLine(db, lemmaIds),
+    dayCompleted: first && s.finished.dayCompleted,
+    first,
+  };
 }

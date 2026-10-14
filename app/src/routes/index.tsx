@@ -72,7 +72,12 @@ function Home() {
               Pratica
             </Link>
           </li>
-          <li>{today.episodeDone ? "✅" : "⬜"} Episodio</li>
+          <li>
+            {today.episodeDone ? "✅" : "⬜"}{" "}
+            <Link to="/story" className="underline">
+              Episodio
+            </Link>
+          </li>
         </ul>
         {today.complete && (
           <Link to="/recap" className="mt-3 inline-block text-sm text-blue-600 underline">

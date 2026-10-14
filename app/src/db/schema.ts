@@ -168,7 +168,7 @@ export const reviewLog = sqliteTable(
 
 /**
  * What the learner finished on a local calendar day: one row per (day, kind).
- * Feeds the streak and the daily recap (Slice 0.5).
+ * Feeds the streak and the daily recap.
  */
 export const dailyActivity = sqliteTable(
   "daily_activity",
@@ -247,8 +247,8 @@ export const passageQuestion = sqliteTable(
     lemmaId: integer("lemma_id")
       .notNull()
       .references(() => lemma.id, { onDelete: "cascade" }),
-    passage: text("passage").notNull(), // 2–3 Polish sentences
-    target: text("target").notNull(), // the lemma's form as written in the passage
+    passage: text("passage").notNull(),
+    target: text("target").notNull(),
     // 'text': cut from a read text (textId); 'generated': written by the LLM.
     source: text("source", { enum: ["text", "generated"] }).notNull(),
     textId: integer("text_id").references(() => sourceText.id, { onDelete: "set null" }),

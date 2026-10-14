@@ -3,6 +3,7 @@
 // now, Ollama or an API later) is chosen in getGlossProvider().
 
 import { z } from "zod";
+import { wordPattern } from "#/reader/word-pattern";
 
 export type ProviderName = "stub" | "claude-cli" | "codex-cli" | "ollama" | "api" | "manual"; // learner-written gloss; not produced by a GlossProvider
 
@@ -181,9 +182,8 @@ export function parseComprehensionJson(stdout: string): ComprehensionResult {
   return parsed;
 }
 
-// --- Story + Episodes (Slice 0.5) ------------------------------------------
-// Premises and outline are Italian (UI copy); episodes are Polish at the
-// learner's level. The service checks the level after the fact via /analyze.
+// Story premises and outline are Italian (UI copy); episodes are Polish at the
+// learner's level. LLM ratios are unreliable: the story service checks the level via /analyze.
 
 export interface StoryPremise {
   title: string;
@@ -305,9 +305,6 @@ export function parseEpisodeText(stdout: string): string {
   return text;
 }
 
-// --- Passage exercise (Slice 0.5) ------------------------------------------
-// Prepared in the background; Practice only reads the cached result.
-
 export interface PassageRequest {
   lemma: string;
   pos: string;
@@ -316,7 +313,7 @@ export interface PassageRequest {
 
 export interface GeneratedPassage {
   passage: string;
-  target: string; // the lemma's form as written in the passage
+  target: string;
 }
 
 export interface PassageQuestionRequest {
@@ -346,7 +343,7 @@ export function parsePassageJson(stdout: string): GeneratedPassage {
       target: z.string().trim().min(1),
     }),
   );
-  if (!res.passage.toLowerCase().includes(res.target.toLowerCase())) {
+  if (!wordPattern(res.target).test(res.passage)) {
     throw new Error(`passage target ${JSON.stringify(res.target)} not in passage`);
   }
   return res;
@@ -392,11 +389,11 @@ export interface GlossProvider {
   glossSenses?(req: SenseGlossRequest): Promise<SenseGlossResult>;
   // Optional capability: comprehension-check MCQ generation for a whole text.
   comprehension?(req: ComprehensionRequest): Promise<ComprehensionResult>;
-  // Optional capabilities: story generation (Slice 0.5).
+  // Optional capabilities: story generation.
   storyPremises?(): Promise<StoryPremise[]>;
   storyOutline?(premise: StoryPremise): Promise<StoryOutline>;
   storyEpisode?(req: EpisodeRequest): Promise<string>;
-  // Optional capabilities: Passage exercise preparation (Slice 0.5).
+  // Optional capabilities: Passage exercise preparation, run in the background.
   passage?(req: PassageRequest): Promise<GeneratedPassage>;
   passageQuestion?(req: PassageQuestionRequest): Promise<ComprehensionQuestion>;
 }
