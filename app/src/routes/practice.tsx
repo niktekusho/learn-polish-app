@@ -99,6 +99,15 @@ const submitReport = createServerFn({ method: "POST" })
       : reportItem(db, data.sessionId, data.itemId, data.note);
   });
 
+// End-of-session note (slot line). Null while the session isn't finished.
+const getSummary = createServerFn()
+  .validator((d: unknown) => z.object({ sessionId: z.string() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db } = await import("#/db/index");
+    const { sessionSummary } = await import("#/practice/session");
+    return sessionSummary(db, data.sessionId);
+  });
+
 export const Route = createFileRoute("/practice")({
   validateSearch: (s: Record<string, unknown>): { session?: string; mic?: boolean } => ({
     session: typeof s.session === "string" ? s.session : undefined,
@@ -204,6 +213,7 @@ function PracticeSession() {
         <p className="mt-2 text-gray-700">
           Reviewed {firsts.length} — {correctCount} correct.
         </p>
+        <SessionNote sessionId={data.sessionId} />
       </Shell>
     );
   }
@@ -515,6 +525,19 @@ function PracticeSession() {
       )}
     </Shell>
   );
+}
+
+function SessionNote({ sessionId }: { sessionId: string }) {
+  const navigate = useNavigate();
+  const [line, setLine] = useState<string | null>(null);
+  useEffect(() => {
+    getSummary({ data: { sessionId } }).then((s) => {
+      if (!s) return;
+      setLine(s.line);
+      if (s.dayCompleted) navigate({ to: "/recap" });
+    });
+  }, [sessionId, navigate]);
+  return line ? <p className="mt-2 font-medium text-green-700">{line}</p> : null;
 }
 
 /**

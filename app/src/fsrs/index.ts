@@ -120,6 +120,8 @@ export function gradeLemma(
         rating,
         stateBefore,
         stateAfter: next.state,
+        stabilityBefore: base.stability,
+        stabilityAfter: next.stability,
         reviewedAt: now,
       })
       .run();
@@ -128,7 +130,8 @@ export function gradeLemma(
   });
 }
 
-function startOfDay(d: Date): Date {
+/** Local midnight: the day boundary for Practice and the daily recap. */
+export function startOfDay(d: Date): Date {
   const s = new Date(d);
   s.setHours(0, 0, 0, 0);
   return s;

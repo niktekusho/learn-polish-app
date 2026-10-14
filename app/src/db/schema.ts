@@ -115,6 +115,10 @@ export const reviewLog = sqliteTable(
     rating: integer("rating").notNull(), // ts-fsrs Rating (1 Again .. 4 Easy)
     stateBefore: integer("state_before").notNull(), // FSRS State before grade
     stateAfter: integer("state_after").notNull(), // FSRS State after grade
+    // FSRS stability around the grade, for the daily recap. Null on rows
+    // written before the columns existed: those never count as stronger/matured.
+    stabilityBefore: real("stability_before"),
+    stabilityAfter: real("stability_after"),
     reviewedAt: integer("reviewed_at", { mode: "timestamp" })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -123,6 +127,23 @@ export const reviewLog = sqliteTable(
     index("review_log_lemma_idx").on(t.lemmaId, t.track),
     index("review_log_reviewed_idx").on(t.reviewedAt),
   ],
+);
+
+/**
+ * What the learner finished on a local calendar day: one row per (day, kind).
+ * Feeds the streak and the daily recap (Slice 0.5).
+ */
+export const dailyActivity = sqliteTable(
+  "daily_activity",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    day: text("day").notNull(), // local date, YYYY-MM-DD
+    kind: text("kind", { enum: ["practice", "episode"] }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [uniqueIndex("daily_activity_day_kind_uq").on(t.day, t.kind)],
 );
 
 /** Italian gloss cached per lemma (optionally per sense). See ADR-0002. */

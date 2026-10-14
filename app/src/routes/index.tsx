@@ -19,13 +19,22 @@ const listTexts = createServerFn().handler(async () => {
     .all();
 });
 
+const getToday = createServerFn().handler(async () => {
+  const { db } = await import("#/db/index");
+  const { getRecap } = await import("#/recap/service");
+  return getRecap(db);
+});
+
 export const Route = createFileRoute("/")({
   component: Home,
-  loader: () => listTexts(),
+  loader: async () => {
+    const [texts, today] = await Promise.all([listTexts(), getToday()]);
+    return { texts, today };
+  },
 });
 
 function Home() {
-  const texts = Route.useLoaderData();
+  const { texts, today } = Route.useLoaderData();
   return (
     <div className="mx-auto max-w-2xl p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -45,6 +54,29 @@ function Home() {
           </Link>
         </div>
       </div>
+
+      <section className="mt-6 rounded border border-gray-200 p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">Oggi</h2>
+          <span className="text-sm text-gray-600">
+            🔥 {today.streak} {today.streak === 1 ? "giorno" : "giorni"} di fila
+          </span>
+        </div>
+        <ul className="mt-2 space-y-1">
+          <li>
+            {today.practiceDone ? "✅" : "⬜"}{" "}
+            <Link to="/practice" className="underline">
+              Pratica
+            </Link>
+          </li>
+          <li>{today.episodeDone ? "✅" : "⬜"} Episodio</li>
+        </ul>
+        {today.complete && (
+          <Link to="/recap" className="mt-3 inline-block text-sm text-blue-600 underline">
+            Giornata completa: vedi il riepilogo →
+          </Link>
+        )}
+      </section>
 
       {texts.length === 0 ? (
         <p className="mt-8 text-gray-600">

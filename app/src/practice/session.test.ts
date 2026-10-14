@@ -5,7 +5,14 @@ import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import { dueLemmas, initialKnowledgeFields } from "#/fsrs/index";
 import { listContextBound, listFlagged, resolveFlag, unmarkContextBound } from "#/maintenance/ops";
-import { answerItem, buildSession, markContextBound, reportItem, resumeSession } from "./session";
+import {
+  answerItem,
+  buildSession,
+  markContextBound,
+  reportItem,
+  resumeSession,
+  sessionSummary,
+} from "./session";
 
 function freshDb() {
   const sqlite = new Database(":memory:");
@@ -215,4 +222,49 @@ test("reporting a missed item drops its pending Retry", () => {
     dropped: [retry?.id],
   });
   expect(resumeSession(session.sessionId)!.items).toHaveLength(session.items.length);
+});
+
+function answerAll(db: ReturnType<typeof freshDb>, sessionId: string) {
+  for (let s = resumeSession(sessionId)!; ; s = resumeSession(sessionId)!) {
+    const done = new Set(s.answered.map((a) => a.itemId));
+    const next = s.items.find((i) => !done.has(i.id));
+    if (!next) return;
+    answerItem(db, sessionId, next.id, 0); // some right, some wrong: Retries join in
+  }
+}
+
+test("finishing a session, Retries included, records the day's practice once", () => {
+  const db = freshDb();
+  for (const [w, g] of Object.entries(GLOSS)) seed(db, w, g);
+  const session = buildSession(db, { limit: 20 });
+  const [first, ...rest] = session.items;
+  answerItem(db, session.sessionId, first.id, 0);
+  expect(db.select().from(schema.dailyActivity).all()).toHaveLength(0);
+  for (const i of rest) answerItem(db, session.sessionId, i.id, 0);
+
+  answerAll(db, session.sessionId);
+  expect(db.select().from(schema.dailyActivity).all()).toMatchObject([{ kind: "practice" }]);
+  expect(sessionSummary(db, session.sessionId)?.line).toMatch(/^\+\d+ parol/);
+
+  // Graded today: a second session needs fresh dues.
+  for (const [w, g] of Object.entries({
+    las: "bosco",
+    ryba: "pesce",
+    sok: "succo",
+    ser: "formaggio",
+  })) {
+    seed(db, w, g);
+  }
+  const second = buildSession(db, { limit: 20 });
+  expect(second.items.length).toBeGreaterThan(0);
+  answerAll(db, second.sessionId);
+  expect(db.select().from(schema.dailyActivity).all()).toHaveLength(1);
+});
+
+test("an unfinished session records nothing", () => {
+  const db = freshDb();
+  const { session, first, right } = seedFourAndBuild(db);
+  answerItem(db, session.sessionId, first.id, right);
+  expect(db.select().from(schema.dailyActivity).all()).toHaveLength(0);
+  expect(sessionSummary(db, session.sessionId)).toBeNull();
 });

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as RecapRouteImport } from './routes/recap'
 import { Route as PracticeRouteImport } from './routes/practice'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as ImportRouteImport } from './routes/import'
@@ -16,6 +17,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReadTextIdRouteImport } from './routes/read.$textId'
 import { Route as ApiDeployStatusRouteImport } from './routes/api/deploy-status'
 
+const RecapRoute = RecapRouteImport.update({
+  id: '/recap',
+  path: '/recap',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PracticeRoute = PracticeRouteImport.update({
   id: '/practice',
   path: '/practice',
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/import': typeof ImportRoute
   '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
+  '/recap': typeof RecapRoute
   '/api/deploy-status': typeof ApiDeployStatusRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/import': typeof ImportRoute
   '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
+  '/recap': typeof RecapRoute
   '/api/deploy-status': typeof ApiDeployStatusRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/import': typeof ImportRoute
   '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
+  '/recap': typeof RecapRoute
   '/api/deploy-status': typeof ApiDeployStatusRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
@@ -79,6 +88,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/maintenance'
     | '/practice'
+    | '/recap'
     | '/api/deploy-status'
     | '/read/$textId'
   fileRoutesByTo: FileRoutesByTo
@@ -87,6 +97,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/maintenance'
     | '/practice'
+    | '/recap'
     | '/api/deploy-status'
     | '/read/$textId'
   id:
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/maintenance'
     | '/practice'
+    | '/recap'
     | '/api/deploy-status'
     | '/read/$textId'
   fileRoutesById: FileRoutesById
@@ -104,12 +116,20 @@ export interface RootRouteChildren {
   ImportRoute: typeof ImportRoute
   MaintenanceRoute: typeof MaintenanceRoute
   PracticeRoute: typeof PracticeRoute
+  RecapRoute: typeof RecapRoute
   ApiDeployStatusRoute: typeof ApiDeployStatusRoute
   ReadTextIdRoute: typeof ReadTextIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/recap': {
+      id: '/recap'
+      path: '/recap'
+      fullPath: '/recap'
+      preLoaderRoute: typeof RecapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/practice': {
       id: '/practice'
       path: '/practice'
@@ -160,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   ImportRoute: ImportRoute,
   MaintenanceRoute: MaintenanceRoute,
   PracticeRoute: PracticeRoute,
+  RecapRoute: RecapRoute,
   ApiDeployStatusRoute: ApiDeployStatusRoute,
   ReadTextIdRoute: ReadTextIdRoute,
 }

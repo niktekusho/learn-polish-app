@@ -24,6 +24,7 @@ import {
   nextPracticeDue,
 } from "#/fsrs/index";
 import { analyze, transcribe } from "#/import/sidecar";
+import { practiceLine, recordActivity } from "#/recap/service";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -67,6 +68,8 @@ interface StoredSession {
   items: StoredItem[]; // full items, held server-side (carry the answer)
   answered: Map<string, boolean>; // itemId -> was correct
   attempts: Map<string, SpeechAttempts>; // speech items only
+  // Set when the last item is answered; dayCompleted = this session completed the day.
+  finished?: { dayCompleted: boolean };
 }
 
 // ponytail: in-memory, single-user. A reload resumes via the session id; a
@@ -363,11 +366,13 @@ export function answerItem(
   const rating = recognitionMcq.grade(item, { choiceIndex });
   if (!stored.retry) gradeLemma(db, item.lemmaId, "receptive", rating);
   s.answered.set(itemId, rating !== Rating.Again);
+  const retry = rating === Rating.Again ? queueRetry(db, s, stored) : undefined;
+  checkFinished(db, s);
   return {
     correct: rating !== Rating.Again,
     correctIndex: item.correctIndex,
     alreadyAnswered: false,
-    retry: rating === Rating.Again ? queueRetry(db, s, stored) : undefined,
+    retry,
   };
 }
 
@@ -456,6 +461,7 @@ export async function answerSpeechItem(
     if (hit) {
       if (!speech.retry) gradeLemma(db, speech.item.lemmaId, "productive", Rating.Good);
       s.answered.set(itemId, true);
+      checkFinished(db, s);
       return { status: "correct", transcript: text, answer };
     }
     a.revealed = true;
@@ -472,6 +478,7 @@ export async function answerSpeechItem(
     ? undefined
     : gradePronunciation(db, speech.item, pronunciationRating(a) as Grade);
   s.answered.set(itemId, true);
+  checkFinished(db, s);
   return { status: "correct", transcript: text, answer, hint };
 }
 
@@ -512,6 +519,7 @@ export function selfGradeItem(
   if (s.answered.has(itemId)) return { alreadyAnswered: true };
   if (speech.retry) {
     s.answered.set(itemId, saidIt);
+    checkFinished(db, s);
     return { alreadyAnswered: false };
   }
   const a = attemptsFor(s, itemId);
@@ -525,7 +533,9 @@ export function selfGradeItem(
     if (rating !== null) hint = gradePronunciation(db, speech.item, rating);
   }
   s.answered.set(itemId, saidIt);
-  return { alreadyAnswered: false, hint, retry: saidIt ? undefined : queueRetry(db, s, stored) };
+  const retry = saidIt ? undefined : queueRetry(db, s, stored);
+  checkFinished(db, s);
+  return { alreadyAnswered: false, hint, retry };
 }
 
 /**
@@ -546,7 +556,7 @@ export function reportItem(
     .set({ flaggedAt: new Date(), flagNote: note.trim() || null })
     .where(eq(lemma.id, stored.item.lemmaId))
     .run();
-  return closeReported(s, stored, itemId);
+  return closeReported(db, s, stored, itemId);
 }
 
 /**
@@ -557,10 +567,11 @@ export function reportItem(
 export function markContextBound(db: DB, sessionId: string, itemId: string): { dropped: string[] } {
   const { s, stored } = heldItem(sessionId, itemId);
   db.update(lemma).set({ contextBound: true }).where(eq(lemma.id, stored.item.lemmaId)).run();
-  return closeReported(s, stored, itemId);
+  return closeReported(db, s, stored, itemId);
 }
 
 function closeReported(
+  db: DB,
   s: StoredSession,
   stored: StoredItem,
   itemId: string,
@@ -570,5 +581,24 @@ function closeReported(
     i.retry && i.item.lemmaId === stored.item.lemmaId && !s.answered.has(i.item.id);
   const dropped = s.items.filter(pending).map((i) => i.item.id);
   s.items = s.items.filter((i) => !pending(i));
+  checkFinished(db, s);
   return { dropped };
+}
+
+/** On the last answer (Retries included), the session counts as the day's Practice. */
+function checkFinished(db: DB, s: StoredSession) {
+  if (s.finished || s.items.some((i) => !s.answered.has(i.item.id))) return;
+  const { inserted, complete } = recordActivity(db, "practice");
+  s.finished = { dayCompleted: inserted && complete };
+}
+
+/** End-of-session note; null until the session is finished. */
+export function sessionSummary(
+  db: DB,
+  sessionId: string,
+): { line: string; dayCompleted: boolean } | null {
+  const s = sessions.get(sessionId);
+  if (!s?.finished) return null;
+  const lemmaIds = [...new Set(s.items.map((i) => i.item.lemmaId))];
+  return { line: practiceLine(db, lemmaIds), dayCompleted: s.finished.dayCompleted };
 }
