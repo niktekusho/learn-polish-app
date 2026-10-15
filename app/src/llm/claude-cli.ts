@@ -14,7 +14,7 @@ import type { LlmTask, ProviderName } from "./provider";
 const TIMEOUT_MS = 60_000;
 // Without --model the CLI uses the plan's default (a large model). Glosses are short.
 const MODEL = process.env.GLOSS_MODEL || "claude-haiku-5-5";
-const STORY_MODEL = process.env.STORY_MODEL || MODEL;
+const STORY_MODEL = process.env.STORY_MODEL || "claude-sonnet-5-5";
 
 // Strips everything a gloss call does not need (tools, MCP, settings/hooks,
 // skills, Chrome, session files) so each call sends a minimal prompt. --bare is
