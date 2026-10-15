@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { CliProvider } from "./cli";
-import type { ProviderName } from "./provider";
+import type { LlmTask, ProviderName } from "./provider";
 
 // Real Italian gloss via the `codex` CLI already on PATH. Codex exec can print
 // progress/log output, so the final assistant message is captured with
@@ -46,7 +46,7 @@ export function buildCodexArgs(prompt: string, outputPath: string): string[] {
 export class CodexCliProvider extends CliProvider {
   readonly name: ProviderName = "codex-cli";
 
-  constructor(exec: (prompt: string) => Promise<string> = runCodex) {
+  constructor(exec: (prompt: string, task: LlmTask) => Promise<string> = runCodex) {
     super(exec);
   }
 }

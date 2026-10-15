@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CliProvider } from "./cli";
-import type { ProviderName } from "./provider";
+import type { LlmTask, ProviderName } from "./provider";
 
 // Real Italian gloss via the `claude` CLI already on PATH (bills the user's
 // subscription, no API key). One-shot per lemma: `claude -p "<prompt>"` prints
@@ -14,13 +14,12 @@ import type { ProviderName } from "./provider";
 const TIMEOUT_MS = 60_000;
 // Without --model the CLI uses the plan's default (a large model). Glosses are short.
 const MODEL = process.env.GLOSS_MODEL || "claude-haiku-4-5-20251001";
+const STORY_MODEL = process.env.STORY_MODEL || MODEL;
 
 // Strips everything a gloss call does not need (tools, MCP, settings/hooks,
 // skills, Chrome, session files) so each call sends a minimal prompt. --bare is
 // not usable: it drops OAuth, so it would bill an API key instead of the subscription.
 const LEAN_ARGS = [
-  "--model",
-  MODEL,
   "--effort",
   "medium",
   "--tools",
@@ -42,9 +41,10 @@ const EMPTY_CWD = mkdtempSync(join(tmpdir(), "gloss-"));
 // Node hands it as piped input, waits 3s, warns "no stdin data received", and
 // exits non-zero. Closing stdin makes it run the prompt argument directly. The
 // prompt is a single argv element, so the pasted sentence can't shell-inject.
-function runClaude(prompt: string): Promise<string> {
+function runClaude(prompt: string, task: LlmTask): Promise<string> {
+  const model = task === "story" ? STORY_MODEL : MODEL;
   return new Promise((resolve, reject) => {
-    const child = spawn("claude", [...LEAN_ARGS, "-p", prompt], {
+    const child = spawn("claude", ["--model", model, ...LEAN_ARGS, "-p", prompt], {
       cwd: EMPTY_CWD,
       stdio: ["ignore", "pipe", "pipe"],
       timeout: TIMEOUT_MS,
@@ -68,7 +68,7 @@ function runClaude(prompt: string): Promise<string> {
 export class ClaudeCliProvider extends CliProvider {
   readonly name: ProviderName = "claude-cli";
 
-  constructor(exec: (prompt: string) => Promise<string> = runClaude) {
+  constructor(exec: (prompt: string, task: LlmTask) => Promise<string> = runClaude) {
     super(exec);
   }
 }

@@ -7,6 +7,9 @@ import { wordPattern } from "#/reader/word-pattern";
 
 export type ProviderName = "stub" | "claude-cli" | "codex-cli" | "ollama" | "api" | "manual"; // learner-written gloss; not produced by a GlossProvider
 
+/** Which model tier a CLI call needs: stories are longer, level-controlled Polish. */
+export type LlmTask = "gloss" | "story";
+
 export interface GlossRequest {
   lemma: string;
   pos: string;

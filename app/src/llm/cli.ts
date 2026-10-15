@@ -14,6 +14,7 @@ import {
   type GeneratedPassage,
   type GlossProvider,
   type GlossRequest,
+  type LlmTask,
   parseComprehensionJson,
   parseEpisodeText,
   parseGloss,
@@ -34,42 +35,46 @@ import {
 
 /**
  * A provider that sends each prompt to a CLI and parses its stdout. Subclasses
- * supply only the shell-out, injectable so tests skip the process.
+ * supply only the shell-out, injectable so tests skip the process. Story calls
+ * pass task "story" so a CLI can pick a bigger model for them.
  */
 export abstract class CliProvider implements GlossProvider, StoryProvider {
   abstract readonly name: ProviderName;
 
-  constructor(private readonly exec: (prompt: string) => Promise<string>) {}
+  constructor(private readonly exec: (prompt: string, task: LlmTask) => Promise<string>) {}
 
   async gloss(req: GlossRequest): Promise<string> {
-    return parseGloss(await this.exec(buildGlossPrompt(req)));
+    return parseGloss(await this.exec(buildGlossPrompt(req), "gloss"));
   }
 
   async glossSenses(req: SenseGlossRequest): Promise<SenseGlossResult> {
-    return parseSenseGlossJson(await this.exec(buildSenseGlossPrompt(req)), req.senses.length);
+    return parseSenseGlossJson(
+      await this.exec(buildSenseGlossPrompt(req), "gloss"),
+      req.senses.length,
+    );
   }
 
   async comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {
-    return parseComprehensionJson(await this.exec(buildComprehensionPrompt(req)));
+    return parseComprehensionJson(await this.exec(buildComprehensionPrompt(req), "gloss"));
   }
 
   async passage(req: PassageRequest): Promise<GeneratedPassage> {
-    return parsePassageJson(await this.exec(buildPassagePrompt(req)));
+    return parsePassageJson(await this.exec(buildPassagePrompt(req), "gloss"));
   }
 
   async passageQuestion(req: PassageQuestionRequest): Promise<ChoiceQuestion> {
-    return parsePassageQuestionJson(await this.exec(buildPassageQuestionPrompt(req)));
+    return parsePassageQuestionJson(await this.exec(buildPassageQuestionPrompt(req), "gloss"));
   }
 
   async premises(): Promise<StoryPremise[]> {
-    return parsePremisesJson(await this.exec(buildPremisesPrompt()));
+    return parsePremisesJson(await this.exec(buildPremisesPrompt(), "story"));
   }
 
   async outline(premise: StoryPremise): Promise<StoryOutline> {
-    return parseStoryOutlineJson(await this.exec(buildStoryOutlinePrompt(premise)));
+    return parseStoryOutlineJson(await this.exec(buildStoryOutlinePrompt(premise), "story"));
   }
 
   async episode(req: EpisodeRequest): Promise<string> {
-    return parseEpisodeText(await this.exec(buildEpisodePrompt(req)));
+    return parseEpisodeText(await this.exec(buildEpisodePrompt(req), "story"));
   }
 }
