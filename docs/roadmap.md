@@ -234,4 +234,5 @@ Future notes (explicitly wanted, not v1):
   first-pick-wins until WSD (below) is picked up.
 - **Word-sense disambiguation, accent scoring (tier-3), IPA exercises, native audio
   (v2)** — unchanged, still parked. (WSD = auto-picking the right sense per occurrence;
-  a later layer on top of per-sense glosses above.)
+  a later layer on top of per-sense glosses above.) Dogfood signal (2026-10-15): *do*
+  glossed "per" inline in *Marco idzie do piekarni*, where it means "in".

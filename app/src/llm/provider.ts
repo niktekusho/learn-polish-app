@@ -121,6 +121,41 @@ export function parseSenseGlossJson(stdout: string, senseCount: number): SenseGl
   return parsed;
 }
 
+// --- MWE check (CONTEXT.md "Multi-word expression") -------------------------
+// ONE call per batch: a dictionary match can be a compositional phrase
+// (*To jest chleb*), so each match is judged in its sentence.
+
+export interface MweCheckItem {
+  headword: string;
+  meaning: string; // English dictionary senses of the MWE
+  sentence: string;
+}
+
+export function buildMweCheckPrompt(items: MweCheckItem[]): string {
+  return (
+    "Sei un linguista polacco. Per ogni voce, decidi se nella frase le parole " +
+    "indicate sono usate come espressione fissa con il significato dato (true) " +
+    "oppure come parole separate con il loro senso normale (false). Esempio: " +
+    '"to jest" = "that is to say" in "To jest chleb." è false. Rispondi SOLO con ' +
+    'JSON valido, senza testo attorno, nel formato: {"keep":[true,false]} con un ' +
+    "valore per voce, nello stesso ordine.\n\n" +
+    items
+      .map(
+        (it, i) =>
+          `${i + 1}. Espressione: ${it.headword}\nSignificato: ${it.meaning}\nFrase: ${it.sentence}`,
+      )
+      .join("\n\n")
+  );
+}
+
+export function parseMweCheckJson(stdout: string, itemCount: number): boolean[] {
+  const { keep } = parseJsonOutput(stdout, "MWE check", z.object({ keep: z.array(z.boolean()) }));
+  if (keep.length !== itemCount) {
+    throw new Error(`MWE check returned ${keep.length} verdicts for ${itemCount} items`);
+  }
+  return keep;
+}
+
 // --- Comprehension checks (roadmap 2026-07-12) ------------------------------
 // ONE call generates all MCQ questions for a text. Italian questions/choices
 // isolate text comprehension from question comprehension at sub-A1.
@@ -376,6 +411,8 @@ export interface GlossProvider {
   // Optional capabilities: Passage exercise preparation, run in the background.
   passage?(req: PassageRequest): Promise<GeneratedPassage>;
   passageQuestion?(req: PassageQuestionRequest): Promise<ChoiceQuestion>;
+  // Optional capability: providers without it keep every MWE match unchecked.
+  checkMwes?(items: MweCheckItem[]): Promise<boolean[]>;
 }
 
 export interface StoryProvider {

@@ -1,7 +1,7 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "#/db/schema";
-import { dictEntry } from "#/db/schema";
+import { dictEntry, lemma } from "#/db/schema";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -26,15 +26,24 @@ export interface MweMatch {
   sentenceIndex: number;
 }
 
-/** All multi-word headwords, keyed by lowercased first word. */
+/** All multi-word headwords except suppressed ones, keyed by lowercased first word. */
 export function loadMweHeadwords(db: DB): Map<string, string[]> {
   const map = new Map<string, string[]>();
+  const suppressed = new Set(
+    db
+      .select({ word: lemma.lemma })
+      .from(lemma)
+      .where(and(eq(lemma.pos, "MWE"), eq(lemma.suppressed, true)))
+      .all()
+      .map((r) => r.word),
+  );
   const rows = db
     .selectDistinct({ word: dictEntry.word })
     .from(dictEntry)
     .where(eq(dictEntry.isMwe, true))
     .all();
   for (const { word } of rows) {
+    if (suppressed.has(word)) continue;
     const first = word.split(" ")[0].toLowerCase();
     const list = map.get(first);
     if (list) list.push(word);

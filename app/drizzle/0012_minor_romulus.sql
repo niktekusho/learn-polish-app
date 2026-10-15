@@ -1,0 +1,1 @@
+ALTER TABLE `lemma` ADD `suppressed` integer DEFAULT false NOT NULL;

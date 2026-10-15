@@ -19,8 +19,12 @@ const importText = createServerFn({ method: "POST" })
     const { analyze } = await import("#/import/sidecar");
     const { persistAnalysis } = await import("#/import/pipeline");
     const { db } = await import("#/db/index");
+    const { checkMweOccurrences } = await import("#/dictionary/mwe-check");
+    const { getGlossProvider } = await import("#/llm/index");
     const analysis = await analyze(content);
-    return persistAnalysis(db, { title: data.title || null, content }, analysis);
+    const result = persistAnalysis(db, { title: data.title || null, content }, analysis);
+    const dropped = await checkMweOccurrences(db, getGlossProvider(), { textId: result.textId });
+    return { ...result, mweCount: result.mweCount - dropped };
   });
 
 export const Route = createFileRoute("/import")({ component: Import });

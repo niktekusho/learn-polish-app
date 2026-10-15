@@ -22,7 +22,15 @@ therefore a **Tracked unit**. May be discontinuous in a sentence (_zdaję sobie 
 sprawę_). Compositional phrases (_ciekawe rzeczy_, _czerwone wino_) are NOT MWEs — they
 stay separate lemmas. Detected at text import by matching token runs against the **Home
 dictionary**'s multi-word headwords (contiguous only in v1; discontinuous parked).
+A match is only a candidate: the same words can form a compositional phrase (_To jest
+chleb_ is "questo è pane", not the _to jest_ meaning "cioè"), so each match is checked
+in its sentence before it counts. If the check cannot run, matches count unchecked.
 _Avoid_: phrase, collocation, idiom (as data terms)
+
+**Suppressed MWE**:
+A **Multi-word expression** the learner has marked as never-detect, for when the
+in-context check keeps letting false matches through. Its occurrences and **Knowledge
+state** are removed. Restoring it rechecks past texts and starts its knowledge fresh.
 
 **Tracked unit**:
 What the user's knowledge is recorded against: a **Lemma** (plus the set of **Surface

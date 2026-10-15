@@ -42,8 +42,29 @@ const unmarkContextBoundFn = createServerFn({ method: "POST" })
     unmarkContextBound(db, data.lemmaId);
   });
 
+const loadSuppressed = createServerFn().handler(async (): Promise<ContextBoundLemma[]> => {
+  const { db } = await import("#/db/index");
+  const { listSuppressedMwes } = await import("#/maintenance/ops");
+  return listSuppressedMwes(db);
+});
+
+const restoreMweFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ lemmaId: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db } = await import("#/db/index");
+    const { restoreMwe } = await import("#/dictionary/mwe-check");
+    const { getGlossProvider } = await import("#/llm/index");
+    await restoreMwe(db, getGlossProvider(), data.lemmaId);
+  });
+
 const actionInput = z.object({
-  action: z.enum(["clear-texts", "prune-lemmas", "purge-stub-glosses", "clear-dictionary"]),
+  action: z.enum([
+    "clear-texts",
+    "prune-lemmas",
+    "purge-stub-glosses",
+    "clear-dictionary",
+    "recheck-mwes",
+  ]),
 });
 
 const runAction = createServerFn({ method: "POST" })
@@ -60,6 +81,11 @@ const runAction = createServerFn({ method: "POST" })
         return { deleted: ops.purgeStubGlosses(db) };
       case "clear-dictionary":
         return { deleted: ops.clearDictionary(db) };
+      case "recheck-mwes": {
+        const { checkMweOccurrences } = await import("#/dictionary/mwe-check");
+        const { getGlossProvider } = await import("#/llm/index");
+        return { deleted: await checkMweOccurrences(db, getGlossProvider()) };
+      }
     }
   });
 
@@ -79,19 +105,21 @@ const getDictImportStatus = createServerFn().handler(async (): Promise<DictImpor
 export const Route = createFileRoute("/maintenance")({
   component: Maintenance,
   loader: async () => {
-    const [stats, flagged, contextBound] = await Promise.all([
+    const [stats, flagged, contextBound, suppressed] = await Promise.all([
       loadStats(),
       loadFlagged(),
       loadContextBound(),
+      loadSuppressed(),
     ]);
-    return { stats, flagged, contextBound };
+    return { stats, flagged, contextBound, suppressed };
   },
 });
 
 type Action = z.infer<typeof actionInput>["action"];
 
 function Maintenance() {
-  const { stats, flagged, contextBound } = Route.useLoaderData();
+  const { stats, flagged, contextBound, suppressed } = Route.useLoaderData();
+  const [restoring, setRestoring] = useState<number | null>(null);
   const router = useRouter();
   const [pending, setPending] = useState<Action | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -210,6 +238,39 @@ function Maintenance() {
         </div>
       )}
 
+      {suppressed.length > 0 && (
+        <div className="mt-8 rounded border border-gray-200 p-4">
+          <h2 className="font-semibold">Not expressions ({suppressed.length})</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Never detected as multi-word expressions. Restore finds them again in past texts and
+            keeps only the matches the LLM confirms.
+          </p>
+          <ul className="mt-3 divide-y divide-gray-100 text-sm">
+            {suppressed.map((m) => (
+              <li key={m.lemmaId} className="flex items-center justify-between py-1.5">
+                <span className="font-semibold">{m.lemma}</span>
+                <button
+                  type="button"
+                  disabled={restoring !== null}
+                  onClick={async () => {
+                    setRestoring(m.lemmaId);
+                    try {
+                      await restoreMweFn({ data: { lemmaId: m.lemmaId } });
+                      await router.invalidate();
+                    } finally {
+                      setRestoring(null);
+                    }
+                  }}
+                  className="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {restoring === m.lemmaId ? "Restoring…" : "Restore"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <dl className="mt-6 grid grid-cols-2 gap-x-8 gap-y-1 text-sm sm:grid-cols-3">
         <Stat label="Texts" value={stats.texts} />
         <Stat label="Tokens" value={stats.tokens} />
@@ -301,6 +362,20 @@ function Maintenance() {
           disabled={pending !== null || stats.stubGlosses === 0}
           onClick={() =>
             run("purge-stub-glosses", `Delete ${stats.stubGlosses} stub glosses?`, "stub glosses")
+          }
+        />
+        <ActionRow
+          title="Recheck expressions"
+          description="Asks the LLM whether each detected multi-word expression is really one in its sentence, in one call, and deletes the false matches."
+          button="Recheck"
+          pending={pending === "recheck-mwes"}
+          disabled={pending !== null}
+          onClick={() =>
+            run(
+              "recheck-mwes",
+              "Recheck every detected expression with the LLM and delete the false matches?",
+              "false expression matches",
+            )
           }
         />
         <ActionRow

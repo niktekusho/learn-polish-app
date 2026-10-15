@@ -3,6 +3,7 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { sourceText, story } from "#/db/schema";
 import { knownLemmas } from "#/fsrs/index";
+import { checkMweOccurrences, type MweChecker } from "#/dictionary/mwe-check";
 import { persistAnalysis } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import type { StoryPremise, StoryProvider } from "#/llm/provider";
@@ -23,6 +24,7 @@ export interface StoryDeps {
   provider: StoryProvider;
   analyze: (text: string) => Promise<AnalyzeResponse>;
   mweHeadwords?: Map<string, string[]>; // tests skip the dictionary lookup
+  mweChecker?: MweChecker; // absent: MWE matches are kept unchecked
 }
 
 export interface Episode {
@@ -100,7 +102,7 @@ export function storyService(db: DB, deps: StoryDeps) {
       if (share >= NEW_SHARE_MIN && share <= NEW_SHARE_MAX) break;
     }
     const chosen = best as NonNullable<typeof best>;
-    persistAnalysis(
+    const { textId } = persistAnalysis(
       db,
       {
         title: `${s.title} · episodio ${n}`,
@@ -112,6 +114,7 @@ export function storyService(db: DB, deps: StoryDeps) {
       new Date(),
       deps.mweHeadwords,
     );
+    if (deps.mweChecker) await checkMweOccurrences(db, deps.mweChecker, { textId });
   }
 
   /** Generate episode `n` unless it exists or is already being generated. */
@@ -146,6 +149,8 @@ export function storyService(db: DB, deps: StoryDeps) {
     if (!s) return null;
     const unread = () => episodes(s.id).find((e) => e.readAt === null);
     let e = unread();
+    // The episode row exists before its MWE check finishes.
+    if (e) await running.get(`${s.id}:${e.episodeNumber}`)?.catch(() => {});
     if (!e) {
       const last = episodes(s.id).at(-1)?.episodeNumber ?? 0;
       if (last >= s.plannedEpisodes) return null;

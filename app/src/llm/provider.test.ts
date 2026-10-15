@@ -4,6 +4,7 @@ import {
   buildSenseGlossPrompt,
   parseComprehensionJson,
   parseEpisodeText,
+  parseMweCheckJson,
   parsePassageJson,
   parsePassageQuestionJson,
   parsePremisesJson,
@@ -153,4 +154,11 @@ test("passage question: 3–4 distinct choices with an in-range answer", () => {
   expect(() =>
     parsePassageQuestionJson(JSON.stringify({ ...q, choices: ["a", "a", "c"] })),
   ).toThrow(/duplicate/);
+});
+
+test("MWE check: one verdict per item, in order", () => {
+  expect(parseMweCheckJson(JSON.stringify({ keep: [true, false] }), 2)).toEqual([true, false]);
+  expect(parseMweCheckJson('```json\n{"keep":[false]}\n```', 1)).toEqual([false]);
+  expect(() => parseMweCheckJson(JSON.stringify({ keep: [true] }), 2)).toThrow(/2/);
+  expect(() => parseMweCheckJson(JSON.stringify({ keep: ["yes"] }), 1)).toThrow();
 });

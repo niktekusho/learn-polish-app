@@ -2,6 +2,7 @@ import {
   buildComprehensionPrompt,
   buildEpisodePrompt,
   buildGlossPrompt,
+  buildMweCheckPrompt,
   buildPassagePrompt,
   buildPassageQuestionPrompt,
   buildPremisesPrompt,
@@ -15,9 +16,11 @@ import {
   type GlossProvider,
   type GlossRequest,
   type LlmTask,
+  type MweCheckItem,
   parseComprehensionJson,
   parseEpisodeText,
   parseGloss,
+  parseMweCheckJson,
   parsePassageJson,
   parsePassageQuestionJson,
   parsePremisesJson,
@@ -64,6 +67,10 @@ export abstract class CliProvider implements GlossProvider, StoryProvider {
 
   async passageQuestion(req: PassageQuestionRequest): Promise<ChoiceQuestion> {
     return parsePassageQuestionJson(await this.exec(buildPassageQuestionPrompt(req), "gloss"));
+  }
+
+  async checkMwes(items: MweCheckItem[]): Promise<boolean[]> {
+    return parseMweCheckJson(await this.exec(buildMweCheckPrompt(items), "gloss"), items.length);
   }
 
   async premises(): Promise<StoryPremise[]> {

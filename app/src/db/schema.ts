@@ -72,6 +72,8 @@ export const lemma = sqliteTable(
     // Meaning only exists in a sentence (CONTEXT.md "Context-bound lemma"):
     // never asked as a single word, still read aloud.
     contextBound: integer("context_bound", { mode: "boolean" }).notNull().default(false),
+    // pos='MWE' only (CONTEXT.md "Suppressed MWE"): never detected at import.
+    suppressed: integer("suppressed", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [
     // A lemma is identified by its base form + POS (kot/NOUN vs homographs).

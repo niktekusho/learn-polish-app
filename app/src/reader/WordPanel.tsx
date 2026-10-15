@@ -89,6 +89,15 @@ const lookupDictFn = createServerFn({ method: "POST" })
     return lookupDictionary(db, data.lemma, data.pos, data.lemmaId ?? undefined);
   });
 
+// Server-only: mark an MWE never-detect (CONTEXT.md "Suppressed MWE").
+const suppressMweFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ lemmaId: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db } = await import("#/db/index");
+    const { suppressMwe } = await import("#/dictionary/mwe-check");
+    suppressMwe(db, data.lemmaId);
+  });
+
 // ts-fsrs Rating values used by the two learner actions.
 const RATING_KNOWN = 4; // Easy: long interval, marks the word learned
 const RATING_LEARNING = 1; // Again: short interval, keep it in rotation
@@ -98,6 +107,7 @@ export function WordPanel({
   sentence,
   mwe = null,
   onSelectMwe,
+  onSuppressed,
   onGraded,
   onClose,
 }: {
@@ -106,6 +116,7 @@ export function WordPanel({
   // Set when the clicked token sits inside a detected MWE occurrence.
   mwe?: { lemmaId: number; headword: string } | null;
   onSelectMwe?: (mwe: { lemmaId: number; headword: string }) => void;
+  onSuppressed?: () => void;
   onGraded: (lemmaId: number, flags: KnowledgeFlags) => void;
   onClose: () => void;
 }) {
@@ -330,6 +341,31 @@ export function WordPanel({
             {mwe.headword}
           </button>
         </p>
+      )}
+
+      {token.pos === "MWE" && token.lemmaId != null && (
+        <button
+          type="button"
+          disabled={marking}
+          onClick={async () => {
+            if (
+              !window.confirm(
+                `«${token.lemma}» non verrà più riconosciuta come espressione. Puoi ripristinarla da Maintenance.`,
+              )
+            )
+              return;
+            setMarking(true);
+            try {
+              await suppressMweFn({ data: { lemmaId: token.lemmaId as number } });
+              onSuppressed?.();
+            } finally {
+              setMarking(false);
+            }
+          }}
+          className="mt-4 text-sm text-gray-500 underline hover:text-gray-700 disabled:opacity-50"
+        >
+          Non è un'espressione
+        </button>
       )}
 
       {dict && dict.matchedBy !== null && <DictSection dict={dict} />}

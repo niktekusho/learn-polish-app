@@ -128,7 +128,7 @@ function upsertLemma(db: DB, lemmaText: string, pos: string): number {
 }
 
 /** Create the receptive knowledge row if the lemma doesn't have one yet. */
-function ensureReceptiveKnowledge(db: DB, lemmaId: number, now: Date): void {
+export function ensureReceptiveKnowledge(db: DB, lemmaId: number, now: Date): void {
   db.insert(knowledge)
     .values({ lemmaId, track: "receptive", ...initialKnowledgeFields(now) })
     .onConflictDoNothing()

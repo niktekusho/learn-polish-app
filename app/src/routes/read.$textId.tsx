@@ -1,4 +1,4 @@
-import { Link, createFileRoute, notFound, useNavigate } from "@tanstack/react-router";
+import { Link, createFileRoute, notFound, useNavigate, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -111,6 +111,7 @@ type MweInfo = {
 function Reader() {
   const { text, tokens, mwes, story } = Route.useLoaderData();
   const navigate = useNavigate();
+  const router = useRouter();
   const [readResult, setReadResult] = useState<{
     line: string;
     storyFinished: boolean;
@@ -291,6 +292,10 @@ function Reader() {
               known: false,
               stillLearning: false,
             });
+          }}
+          onSuppressed={() => {
+            setSelected(null);
+            router.invalidate();
           }}
           onGraded={markGraded}
           onClose={() => setSelected(null)}

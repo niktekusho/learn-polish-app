@@ -63,6 +63,7 @@ export function clearSourceTexts(db: DB): number {
  * ever produced, they were never reviewed, and no MWE occurrence points at
  * them (MWE lemmas have no token rows — their components keep their own
  * lemmas — so without this check every unglossed MWE would be pruned).
+ * Suppressed MWEs stay: the row holds the never-detect mark.
  * Their (empty) knowledge rows cascade. Run after clearSourceTexts to sweep
  * the never-practiced backlog.
  */
@@ -71,6 +72,7 @@ export function pruneOrphanLemmas(db: DB): number {
     .delete(lemma)
     .where(
       and(
+        eq(lemma.suppressed, false),
         notExists(db.select().from(token).where(eq(token.lemmaId, lemma.id))),
         notExists(db.select().from(gloss).where(eq(gloss.lemmaId, lemma.id))),
         notExists(db.select().from(reviewLog).where(eq(reviewLog.lemmaId, lemma.id))),
@@ -145,4 +147,14 @@ export function listContextBound(db: DB): ContextBoundLemma[] {
 /** Undo a "needs context" mark: the lemma rejoins the single-word exercises. */
 export function unmarkContextBound(db: DB, lemmaId: number): void {
   db.update(lemma).set({ contextBound: false }).where(eq(lemma.id, lemmaId)).run();
+}
+
+/** MWEs marked never-detect from the reader, alphabetical. */
+export function listSuppressedMwes(db: DB): ContextBoundLemma[] {
+  return db
+    .select({ lemmaId: lemma.id, lemma: lemma.lemma, pos: lemma.pos })
+    .from(lemma)
+    .where(eq(lemma.suppressed, true))
+    .orderBy(asc(lemma.lemma))
+    .all();
 }

@@ -85,6 +85,13 @@
       "when": 1792014599791,
       "tag": "0011_striped_giant_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1792049362791,
+      "tag": "0012_minor_romulus",
+      "breakpoints": true
     }
   ]
 }
