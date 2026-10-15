@@ -3,7 +3,8 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { gloss } from "#/db/schema";
 import { lookupDictionary, senseKey } from "#/dictionary/service";
-import { type GlossProvider, getGlossProvider } from "#/llm/provider";
+import { getGlossProvider } from "#/llm/index";
+import type { GlossProvider } from "#/llm/provider";
 
 type DB = BetterSQLite3Database<typeof schema>;
 

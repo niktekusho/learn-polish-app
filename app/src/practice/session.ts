@@ -69,6 +69,7 @@ interface SpeechAttempts {
 
 interface StoredSession {
   id: string;
+  startedAt: Date;
   items: StoredItem[]; // full items, held server-side (carry the answer)
   answered: Map<string, boolean>; // itemId -> was correct
   attempts: Map<string, SpeechAttempts>; // speech items only
@@ -345,7 +346,7 @@ export function buildSession(
   }
 
   const id = crypto.randomUUID();
-  sessions.set(id, { id, items, answered: new Map(), attempts: new Map() });
+  sessions.set(id, { id, startedAt: new Date(), items, answered: new Map(), attempts: new Map() });
   return { sessionId: id, items: items.map(toClientItem), answered: [] };
 }
 
@@ -651,7 +652,7 @@ export function sessionSummary(
   s.finished.summarized = true;
   const lemmaIds = [...new Set(s.items.map((i) => i.item.lemmaId))];
   return {
-    line: practiceLine(db, lemmaIds),
+    line: practiceLine(db, lemmaIds, s.startedAt),
     dayCompleted: first && s.finished.dayCompleted,
     first,
   };

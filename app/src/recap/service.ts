@@ -1,15 +1,4 @@
-import {
-  and,
-  countDistinct,
-  desc,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  lt,
-  min,
-  notExists,
-} from "drizzle-orm";
+import { and, countDistinct, desc, eq, gte, inArray, lt, min, ne, notExists } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
@@ -91,12 +80,10 @@ function streak(db: DB, now: Date): number {
 }
 
 /**
- * Review effects on `now`'s local day, optionally limited to some lemmas.
- * Legacy review rows (null stabilities) count only toward first-review detection.
+ * Review effects from `from` to `to` (open-ended when omitted), optionally
+ * limited to some lemmas. Legacy rows (null stabilities) count only as first reviews.
  */
-function summarize(db: DB, now: Date, lemmaIds?: number[]) {
-  const from = startOfDay(now);
-  const to = addDays(from, 1);
+function summarize(db: DB, from: Date, to?: Date, lemmaIds?: number[]) {
   const scope = lemmaIds ? inArray(reviewLog.lemmaId, lemmaIds) : undefined;
 
   const firsts = db
@@ -105,7 +92,7 @@ function summarize(db: DB, now: Date, lemmaIds?: number[]) {
     .where(scope)
     .groupBy(reviewLog.lemmaId)
     .all();
-  const newWords = firsts.filter((r) => r.first && r.first >= from && r.first < to).length;
+  const newWords = firsts.filter((r) => r.first && r.first >= from && (!to || r.first < to)).length;
 
   const rows = db
     .select({
@@ -116,7 +103,7 @@ function summarize(db: DB, now: Date, lemmaIds?: number[]) {
     })
     .from(reviewLog)
     .innerJoin(lemma, eq(lemma.id, reviewLog.lemmaId))
-    .where(and(gte(reviewLog.reviewedAt, from), lt(reviewLog.reviewedAt, to), scope))
+    .where(and(gte(reviewLog.reviewedAt, from), to && lt(reviewLog.reviewedAt, to), scope))
     .all();
 
   const gain = new Map<number, { lemma: string; gain: number }>();
@@ -146,8 +133,9 @@ function summarize(db: DB, now: Date, lemmaIds?: number[]) {
 /** The daily recap for `now`'s local day. Derived, nothing stored. */
 export function getRecap(db: DB, now = new Date()): Recap {
   const done = kindsDone(db, localDay(now));
+  const from = startOfDay(now);
   return {
-    ...summarize(db, now),
+    ...summarize(db, from, addDays(from, 1)),
     streak: streak(db, now),
     practiceDone: done.has("practice"),
     episodeDone: done.has("episode"),
@@ -155,9 +143,9 @@ export function getRecap(db: DB, now = new Date()): Recap {
   };
 }
 
-/** One-line note at the end of a Practice session over the lemmas it showed. */
-export function practiceLine(db: DB, lemmaIds: number[], now = new Date()): string {
-  const s = summarize(db, now, lemmaIds);
+/** One-line note at the end of a Practice session: its lemmas' reviews since it started. */
+export function practiceLine(db: DB, lemmaIds: number[], startedAt: Date): string {
+  const s = summarize(db, startedAt, undefined, lemmaIds);
   const parts = [
     `+${s.stronger.count} ${s.stronger.count === 1 ? "parola più solida" : "parole più solide"}`,
   ];
@@ -168,18 +156,20 @@ export function practiceLine(db: DB, lemmaIds: number[], now = new Date()): stri
 }
 
 /**
- * One-line note after an Episode: its lemmas no earlier text contained.
- * ponytail: token lemmas only; MWE occurrences are not counted.
+ * One-line note after an Episode: its lemmas no earlier text contained, names excluded.
+ * ponytail: token lemmas only; MWE occurrences are not counted. A name the
+ * analyzer mistags as NOUN still counts.
  */
 export function episodeLine(db: DB, textId: number): string {
   const earlier = alias(token, "earlier");
   const [{ n }] = db
     .select({ n: countDistinct(token.lemmaId) })
     .from(token)
+    .innerJoin(lemma, eq(lemma.id, token.lemmaId))
     .where(
       and(
         eq(token.textId, textId),
-        isNotNull(token.lemmaId),
+        ne(lemma.pos, "PROPN"),
         notExists(
           db
             .select({ id: earlier.id })

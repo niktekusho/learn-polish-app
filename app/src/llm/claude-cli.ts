@@ -2,38 +2,8 @@ import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  buildComprehensionPrompt,
-  buildEpisodePrompt,
-  buildPassagePrompt,
-  buildPassageQuestionPrompt,
-  buildPremisesPrompt,
-  buildStoryOutlinePrompt,
-  buildGlossPrompt,
-  buildSenseGlossPrompt,
-  type ComprehensionRequest,
-  type ComprehensionQuestion,
-  type ComprehensionResult,
-  type EpisodeRequest,
-  type GeneratedPassage,
-  type GlossProvider,
-  type GlossRequest,
-  parseComprehensionJson,
-  parseEpisodeText,
-  parsePassageJson,
-  parsePassageQuestionJson,
-  parseGloss,
-  parseSenseGlossJson,
-  parsePremisesJson,
-  parseStoryOutlineJson,
-  type PassageQuestionRequest,
-  type PassageRequest,
-  type ProviderName,
-  type SenseGlossRequest,
-  type SenseGlossResult,
-  type StoryOutline,
-  type StoryPremise,
-} from "./provider";
+import { CliProvider } from "./cli";
+import type { ProviderName } from "./provider";
 
 // Real Italian gloss via the `claude` CLI already on PATH (bills the user's
 // subscription, no API key). One-shot per lemma: `claude -p "<prompt>"` prints
@@ -95,43 +65,10 @@ function runClaude(prompt: string): Promise<string> {
   });
 }
 
-// The shell-out is injectable so tests exercise parseGloss without spawning a
-// process. ponytail: single-lemma only; when the batch decision lands, add an
-// optional glossBatch() to the GlossProvider interface.
-export class ClaudeCliGlossProvider implements GlossProvider {
+export class ClaudeCliProvider extends CliProvider {
   readonly name: ProviderName = "claude-cli";
 
-  constructor(private readonly exec: (prompt: string) => Promise<string> = runClaude) {}
-
-  async gloss(req: GlossRequest): Promise<string> {
-    return parseGloss(await this.exec(buildGlossPrompt(req)));
-  }
-
-  async glossSenses(req: SenseGlossRequest): Promise<SenseGlossResult> {
-    return parseSenseGlossJson(await this.exec(buildSenseGlossPrompt(req)), req.senses.length);
-  }
-
-  async comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {
-    return parseComprehensionJson(await this.exec(buildComprehensionPrompt(req)));
-  }
-
-  async storyPremises(): Promise<StoryPremise[]> {
-    return parsePremisesJson(await this.exec(buildPremisesPrompt()));
-  }
-
-  async storyOutline(premise: StoryPremise): Promise<StoryOutline> {
-    return parseStoryOutlineJson(await this.exec(buildStoryOutlinePrompt(premise)));
-  }
-
-  async storyEpisode(req: EpisodeRequest): Promise<string> {
-    return parseEpisodeText(await this.exec(buildEpisodePrompt(req)));
-  }
-
-  async passage(req: PassageRequest): Promise<GeneratedPassage> {
-    return parsePassageJson(await this.exec(buildPassagePrompt(req)));
-  }
-
-  async passageQuestion(req: PassageQuestionRequest): Promise<ComprehensionQuestion> {
-    return parsePassageQuestionJson(await this.exec(buildPassageQuestionPrompt(req)));
+  constructor(exec: (prompt: string) => Promise<string> = runClaude) {
+    super(exec);
   }
 }

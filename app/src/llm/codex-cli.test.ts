@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { parseGloss } from "./provider";
-import { buildCodexArgs, CodexCliGlossProvider } from "./codex-cli";
+import { buildCodexArgs, CodexCliProvider } from "./codex-cli";
 
 const req = { lemma: "robić", pos: "VERB", sentence: "Robię obiad w kuchni." };
 
@@ -17,7 +17,7 @@ test("parseGloss rejects a rambling response (too long)", () => {
 });
 
 test("provider returns the parsed CLI final message", async () => {
-  const provider = new CodexCliGlossProvider(async () => "fare\n");
+  const provider = new CodexCliProvider(async () => "fare\n");
   expect(await provider.gloss(req)).toBe("fare");
 });
 
@@ -33,7 +33,7 @@ test("codex invocation uses portable exec flags only", () => {
 });
 
 test("provider bubbles a CLI failure so nothing gets cached", async () => {
-  const provider = new CodexCliGlossProvider(async () => {
+  const provider = new CodexCliProvider(async () => {
     throw new Error("codex exited 1");
   });
   await expect(provider.gloss(req)).rejects.toThrow();

@@ -2,7 +2,8 @@ import { asc, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { comprehensionQuestion, sourceText } from "#/db/schema";
-import { type GlossProvider, getGlossProvider } from "#/llm/provider";
+import { getGlossProvider } from "#/llm/index";
+import type { GlossProvider } from "#/llm/provider";
 
 type DB = BetterSQLite3Database<typeof schema>;
 

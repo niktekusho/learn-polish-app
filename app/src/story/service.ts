@@ -5,7 +5,7 @@ import { sourceText, story } from "#/db/schema";
 import { knownLemmas } from "#/fsrs/index";
 import { persistAnalysis } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import type { GlossProvider, StoryPremise } from "#/llm/provider";
+import type { StoryPremise, StoryProvider } from "#/llm/provider";
 import { episodeLine, recordActivity } from "#/recap/service";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -20,7 +20,7 @@ export const LEVEL_RETRIES = 2;
 const CONTENT_POS = new Set(["NOUN", "VERB", "ADJ", "ADV"]);
 
 export interface StoryDeps {
-  provider: GlossProvider;
+  provider: StoryProvider;
   analyze: (text: string) => Promise<AnalyzeResponse>;
   mweHeadwords?: Map<string, string[]>; // tests skip the dictionary lookup
 }
@@ -43,15 +43,6 @@ export interface ReadResult {
 // Episode generations in flight, per DB, keyed "storyId:episodeNumber": the
 // reader waits on a running background generation instead of starting another.
 const inFlight = new WeakMap<DB, Map<string, Promise<void>>>();
-
-function capability<K extends "storyPremises" | "storyOutline" | "storyEpisode">(
-  provider: GlossProvider,
-  key: K,
-): NonNullable<GlossProvider[K]> {
-  const fn = provider[key];
-  if (!fn) throw new Error(`provider "${provider.name}" does not support stories`);
-  return fn.bind(provider) as NonNullable<GlossProvider[K]>;
-}
 
 /** Fraction of distinct content lemmas in `analysis` that are not in `known`. */
 function newShare(analysis: AnalyzeResponse, known: Set<string>): number {
@@ -99,10 +90,9 @@ export function storyService(db: DB, deps: StoryDeps) {
       totalEpisodes: s.plannedEpisodes,
       knownLemmas: known,
     };
-    const write = capability(deps.provider, "storyEpisode");
     let best: { text: string; analysis: AnalyzeResponse; miss: number } | undefined;
     for (let attempt = 0; attempt <= LEVEL_RETRIES; attempt++) {
-      const text = await write(req);
+      const text = await deps.provider.episode(req);
       const analysis = await deps.analyze(text);
       const share = newShare(analysis, knownSet);
       const miss = Math.abs(share - NEW_SHARE_TARGET);
@@ -169,13 +159,13 @@ export function storyService(db: DB, deps: StoryDeps) {
 
   return {
     async proposePremises(): Promise<StoryPremise[]> {
-      return capability(deps.provider, "storyPremises")();
+      return deps.provider.premises();
     },
 
     /** Outline the story, persist it, and write episode 1 (the one visible wait). */
     async startStory(premise: StoryPremise): Promise<Episode | null> {
       if (activeStory()) throw new Error("a story is already active");
-      const outline = await capability(deps.provider, "storyOutline")(premise);
+      const outline = await deps.provider.outline(premise);
       const planned = Math.min(MAX_EPISODES, outline.beats.length);
       const [s] = db
         .insert(story)

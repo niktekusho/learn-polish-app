@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { parseGloss } from "./provider";
-import { ClaudeCliGlossProvider } from "./claude-cli";
+import { ClaudeCliProvider } from "./claude-cli";
 
 const req = { lemma: "robić", pos: "VERB", sentence: "Robię obiad w kuchni." };
 
@@ -17,19 +17,19 @@ test("parseGloss rejects a rambling response (too long)", () => {
 });
 
 test("provider returns the parsed CLI stdout", async () => {
-  const provider = new ClaudeCliGlossProvider(async () => "fare\n");
+  const provider = new ClaudeCliProvider(async () => "fare\n");
   expect(await provider.gloss(req)).toBe("fare");
 });
 
 test("provider bubbles a CLI failure so nothing gets cached", async () => {
-  const provider = new ClaudeCliGlossProvider(async () => {
+  const provider = new ClaudeCliProvider(async () => {
     throw new Error("claude exited 1");
   });
   await expect(provider.gloss(req)).rejects.toThrow();
 });
 
 test("provider drops an echoed surface form before the arrow", async () => {
-  const provider = new ClaudeCliGlossProvider(async () => "swoich → proprio\n");
+  const provider = new ClaudeCliProvider(async () => "swoich → proprio\n");
   const swoj = { lemma: "swój", pos: "DET", sentence: "Mają swoich przyjaciół." };
   expect(await provider.gloss(swoj)).toBe("proprio");
 });

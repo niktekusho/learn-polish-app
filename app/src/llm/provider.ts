@@ -1,6 +1,6 @@
 // Swappable gloss provider (backlog #6 / ADR-0002). Everything that needs an
 // Italian gloss depends only on this interface; the concrete provider (stub
-// now, Ollama or an API later) is chosen in getGlossProvider().
+// now, Ollama or an API later) is chosen in getGlossProvider() (llm/index.ts).
 
 import { z } from "zod";
 import { wordPattern } from "#/reader/word-pattern";
@@ -31,6 +31,24 @@ export function buildGlossPrompt(req: GlossRequest): string {
 }
 
 const MAX_GLOSS_LEN = 60;
+
+function stripFences(stdout: string): string {
+  return stdout
+    .trim()
+    .replace(/^```(?:json|text)?\s*/i, "")
+    .replace(/\s*```$/, "");
+}
+
+function parseJsonOutput<T>(stdout: string, what: string, schema: z.ZodType<T>): T {
+  const raw = stripFences(stdout);
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    throw new Error(`${what} output is not JSON: ${JSON.stringify(raw.slice(0, 120))}`);
+  }
+  return schema.parse(json);
+}
 
 // Validate the raw CLI output. Throws on junk so getGloss() bubbles and nothing
 // is cached: a bad gloss written to the cache becomes permanent (#6). The model
@@ -88,17 +106,7 @@ const senseGlossResponse = z.object({
 // Validate the raw CLI output. Throws on junk so nothing gets cached — a bad
 // gloss written to the cache becomes permanent (#6).
 export function parseSenseGlossJson(stdout: string, senseCount: number): SenseGlossResult {
-  const raw = stdout
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/, "");
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    throw new Error(`sense gloss output is not JSON: ${JSON.stringify(raw.slice(0, 120))}`);
-  }
-  const parsed = senseGlossResponse.parse(json);
+  const parsed = parseJsonOutput(stdout, "sense gloss", senseGlossResponse);
   for (const t of parsed.translations) {
     if (t.index >= senseCount) {
       throw new Error(`sense gloss translation index ${t.index} out of range (${senseCount})`);
@@ -118,14 +126,15 @@ export interface ComprehensionRequest {
   text: string; // full text content
 }
 
-export interface ComprehensionQuestion {
+/** An Italian multiple-choice question: comprehension checks and Passage exercises. */
+export interface ChoiceQuestion {
   question: string;
   choices: string[]; // 3–4 Italian choices
   correctIndex: number;
 }
 
 export interface ComprehensionResult {
-  questions: ComprehensionQuestion[]; // 1–10, LLM picks the count
+  questions: ChoiceQuestion[]; // 1–10, LLM picks the count
 }
 
 // Shared prompt for the CLI providers, same hardened tone as the gloss prompts.
@@ -161,17 +170,7 @@ const comprehensionResponse = z.object({
 // Validate the raw CLI output. Throws on junk so nothing gets cached — the
 // service writes all questions in one transaction only after this passes.
 export function parseComprehensionJson(stdout: string): ComprehensionResult {
-  const raw = stdout
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/, "");
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    throw new Error(`comprehension output is not JSON: ${JSON.stringify(raw.slice(0, 120))}`);
-  }
-  const parsed = comprehensionResponse.parse(json);
+  const parsed = parseJsonOutput(stdout, "comprehension", comprehensionResponse);
   for (const q of parsed.questions) {
     if (q.correctIndex >= q.choices.length) {
       throw new Error(
@@ -204,24 +203,6 @@ export interface EpisodeRequest {
   episodeNumber: number;
   totalEpisodes: number;
   knownLemmas: string[];
-}
-
-function stripFences(stdout: string): string {
-  return stdout
-    .trim()
-    .replace(/^```(?:json|text)?\s*/i, "")
-    .replace(/\s*```$/, "");
-}
-
-function parseJsonOutput<T>(stdout: string, what: string, schema: z.ZodType<T>): T {
-  const raw = stripFences(stdout);
-  let json: unknown;
-  try {
-    json = JSON.parse(raw);
-  } catch {
-    throw new Error(`${what} output is not JSON: ${JSON.stringify(raw.slice(0, 120))}`);
-  }
-  return schema.parse(json);
 }
 
 export function buildPremisesPrompt(): string {
@@ -362,7 +343,7 @@ export function buildPassageQuestionPrompt(req: PassageQuestionRequest): string 
   );
 }
 
-export function parsePassageQuestionJson(stdout: string): ComprehensionQuestion {
+export function parsePassageQuestionJson(stdout: string): ChoiceQuestion {
   const q = parseJsonOutput(
     stdout,
     "passage question",
@@ -389,36 +370,14 @@ export interface GlossProvider {
   glossSenses?(req: SenseGlossRequest): Promise<SenseGlossResult>;
   // Optional capability: comprehension-check MCQ generation for a whole text.
   comprehension?(req: ComprehensionRequest): Promise<ComprehensionResult>;
-  // Optional capabilities: story generation.
-  storyPremises?(): Promise<StoryPremise[]>;
-  storyOutline?(premise: StoryPremise): Promise<StoryOutline>;
-  storyEpisode?(req: EpisodeRequest): Promise<string>;
   // Optional capabilities: Passage exercise preparation, run in the background.
   passage?(req: PassageRequest): Promise<GeneratedPassage>;
-  passageQuestion?(req: PassageQuestionRequest): Promise<ComprehensionQuestion>;
+  passageQuestion?(req: PassageQuestionRequest): Promise<ChoiceQuestion>;
 }
 
-import { ClaudeCliGlossProvider } from "./claude-cli";
-import { CodexCliGlossProvider } from "./codex-cli";
-import { StubGlossProvider } from "./stub";
-
-let cached: GlossProvider | null = null;
-
-// GLOSS_PROVIDER selects the concrete provider; default stub keeps tests and
-// offline dev untouched. Set GLOSS_PROVIDER=claude-cli or codex-cli to use a
-// real CLI.
-export function getGlossProvider(): GlossProvider {
-  if (!cached) {
-    switch (process.env.GLOSS_PROVIDER) {
-      case "claude-cli":
-        cached = new ClaudeCliGlossProvider();
-        break;
-      case "codex-cli":
-        cached = new CodexCliGlossProvider();
-        break;
-      default:
-        cached = new StubGlossProvider();
-    }
-  }
-  return cached;
+export interface StoryProvider {
+  readonly name: ProviderName;
+  premises(): Promise<StoryPremise[]>;
+  outline(premise: StoryPremise): Promise<StoryOutline>;
+  episode(req: EpisodeRequest): Promise<string>;
 }

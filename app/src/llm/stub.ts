@@ -1,6 +1,6 @@
 import type {
+  ChoiceQuestion,
   ComprehensionRequest,
-  ComprehensionQuestion,
   ComprehensionResult,
   EpisodeRequest,
   GeneratedPassage,
@@ -13,12 +13,13 @@ import type {
   SenseGlossResult,
   StoryOutline,
   StoryPremise,
+  StoryProvider,
 } from "./provider";
 
 // Deterministic, offline stand-in for a real LLM. Produces a unique, stable
 // string per lemma so the whole pipeline — caching, the word panel, and the
 // MCQ distractors (#9) — works without any network or API key.
-export class StubGlossProvider implements GlossProvider {
+export class StubProvider implements GlossProvider, StoryProvider {
   readonly name: ProviderName = "stub";
 
   async gloss(req: GlossRequest): Promise<string> {
@@ -47,7 +48,7 @@ export class StubGlossProvider implements GlossProvider {
     };
   }
 
-  async storyPremises(): Promise<StoryPremise[]> {
+  async premises(): Promise<StoryPremise[]> {
     return ["giallo", "avventura", "commedia"].map((genre, i) => ({
       title: `Storia stub ${i + 1}`,
       genre,
@@ -55,11 +56,11 @@ export class StubGlossProvider implements GlossProvider {
     }));
   }
 
-  async storyOutline(premise: StoryPremise): Promise<StoryOutline> {
+  async outline(premise: StoryPremise): Promise<StoryOutline> {
     return { plot: premise.hook, characters: ["Ala"], beats: ["inizio", "svolta", "fine"] };
   }
 
-  async storyEpisode(req: EpisodeRequest): Promise<string> {
+  async episode(req: EpisodeRequest): Promise<string> {
     return `Ala ma kota. To jest odcinek ${req.episodeNumber}. Kot jest mały.`;
   }
 
@@ -67,7 +68,7 @@ export class StubGlossProvider implements GlossProvider {
     return { passage: `To jest ${req.lemma}. Lubię ${req.lemma}.`, target: req.lemma };
   }
 
-  async passageQuestion(req: PassageQuestionRequest): Promise<ComprehensionQuestion> {
+  async passageQuestion(req: PassageQuestionRequest): Promise<ChoiceQuestion> {
     return {
       question: `Domanda stub su «${req.target}»?`,
       choices: ["Risposta giusta (stub)", "Distrattore A", "Distrattore B"],

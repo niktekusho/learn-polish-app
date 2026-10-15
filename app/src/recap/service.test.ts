@@ -4,7 +4,8 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import { Rating, gradeLemma } from "#/fsrs/index";
-import { getRecap, recordActivity } from "./service";
+import { persistAnalysis } from "#/import/pipeline";
+import { episodeLine, getRecap, practiceLine, recordActivity } from "./service";
 
 function freshDb() {
   const sqlite = new Database(":memory:");
@@ -150,4 +151,36 @@ test("streak crosses a month boundary", () => {
   recordActivity(db, "practice", new Date(2026, 9, 31, 22, 0));
   recordActivity(db, "practice", new Date(2026, 10, 1, 7, 0));
   expect(getRecap(db, new Date(2026, 10, 1, 8, 0)).streak).toBe(2);
+});
+
+test("the practice line counts only reviews since the session started", () => {
+  const db = freshDb();
+  const a = addLemma(db, "dom");
+  const b = addLemma(db, "kot");
+  const morning = new Date(2026, 9, 14, 9, 0);
+  const start = new Date(2026, 9, 14, 12, 0);
+  review(db, a, morning, 1, 3);
+  review(db, b, morning, 1, 3);
+  review(db, a, new Date(2026, 9, 14, 12, 5), 3, 8);
+
+  expect(practiceLine(db, [a, b], start)).toBe("+1 parola più solida");
+});
+
+test("the episode line does not count proper nouns as new words", () => {
+  const db = freshDb();
+  const word = (surface: string, pos: string) => ({
+    surface,
+    lemma: surface,
+    pos,
+    tags: [],
+    is_space: false,
+  });
+  const { textId } = persistAnalysis(
+    db,
+    { content: "Ala ma kota" },
+    { sentences: [{ tokens: [word("Ala", "PROPN"), word("mieć", "VERB"), word("kot", "NOUN")] }] },
+    new Date(),
+    new Map(),
+  );
+  expect(episodeLine(db, textId)).toBe("+2 parole nuove incontrate");
 });

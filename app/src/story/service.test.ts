@@ -5,7 +5,7 @@ import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import { initialKnowledgeFields } from "#/fsrs/index";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import type { EpisodeRequest, GlossProvider, StoryOutline } from "#/llm/provider";
+import type { EpisodeRequest, StoryOutline, StoryProvider } from "#/llm/provider";
 import { storyService } from "./service";
 
 function freshDb() {
@@ -62,25 +62,22 @@ function fakeProvider(beats: number, drafts: (string | Error)[] = []) {
     name: "stub" as const,
     calls: { premises: 0, outline: 0, episode: 0 },
     episodeRequests: [] as EpisodeRequest[],
-    async gloss() {
-      return "unused";
-    },
-    async storyPremises() {
+    async premises() {
       this.calls.premises++;
       return [PREMISE, PREMISE, PREMISE];
     },
-    async storyOutline() {
+    async outline() {
       this.calls.outline++;
       return outline;
     },
-    async storyEpisode(req: EpisodeRequest) {
+    async episode(req: EpisodeRequest) {
       this.calls.episode++;
       this.episodeRequests.push(req);
       const next = drafts.shift() ?? draft(2, `e${req.episodeNumber}`);
       if (next instanceof Error) throw next;
       return next;
     },
-  } satisfies GlossProvider & { calls: Record<string, number>; episodeRequests: EpisodeRequest[] };
+  } satisfies StoryProvider & { calls: Record<string, number>; episodeRequests: EpisodeRequest[] };
 }
 
 function setup(beats = 3, drafts: (string | Error)[] = []) {
