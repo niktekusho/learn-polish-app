@@ -10,6 +10,7 @@ export interface ReaderToken {
   lemmaId: number | null;
   lemma: string | null;
   pos: string | null;
+  tags: string[] | null;
   known: boolean;
   stillLearning: boolean;
 }

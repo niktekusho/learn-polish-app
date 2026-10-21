@@ -292,3 +292,15 @@ test("regenerate wipes per-sense rows too and re-runs the hybrid path", async ()
   expect(provider.senseCalls).toBe(2);
   expect(db.select().from(schema.gloss).all()).toHaveLength(4); // fresh set
 });
+
+test("a Name is never glossed", async () => {
+  const db = freshDb();
+  const provider = countingProvider();
+  const res = await getGloss(
+    db,
+    { lemmaId: 1, lemma: "Kasia", pos: "PROPN", sentence: "To jest Kasia." },
+    provider,
+  );
+  expect(res).toEqual({ italian: null, cached: false });
+  expect(provider.calls).toBe(0);
+});

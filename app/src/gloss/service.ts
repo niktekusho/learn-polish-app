@@ -5,6 +5,7 @@ import { gloss } from "#/db/schema";
 import { lookupDictionary, senseKey } from "#/dictionary/service";
 import { getGlossProvider } from "#/llm/index";
 import type { GlossProvider } from "#/llm/provider";
+import { isName } from "#/reader/name";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -46,6 +47,8 @@ export async function getGloss(
   input: GlossInput,
   provider: GlossProvider = getGlossProvider(),
 ): Promise<GlossResult> {
+  // A Name has no Italian meaning to learn (CONTEXT.md "Name").
+  if (isName(input.pos)) return { italian: null, cached: false };
   const [existing] = db
     .select()
     .from(gloss)

@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 import { ListenButton } from "#/audio/speak";
 import type { DictLookupResult } from "#/dictionary/service";
+import { nameLabel } from "./name";
 import type { KnowledgeFlags, ReaderToken } from "./types";
 
 // Server-only: resolve (and cache) the Italian gloss for a lemma. The reader
@@ -228,16 +229,7 @@ export function WordPanel({
     : null;
 
   return (
-    <aside className="fixed right-0 top-0 h-full w-80 overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-lg">
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close"
-        className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
-      >
-        ✕
-      </button>
-
+    <PanelShell onClose={onClose}>
       <div className="text-2xl font-bold">
         {token.surface}
         {dict?.entries[0]?.ipa && (
@@ -399,6 +391,33 @@ export function WordPanel({
           Wiktionary ↗
         </a>
       )}
+    </PanelShell>
+  );
+}
+
+/** Slim panel for an inflected Name: base form and case only (CONTEXT.md "Name"). */
+export function NamePanel({ token, onClose }: { token: ReaderToken; onClose: () => void }) {
+  return (
+    <PanelShell onClose={onClose}>
+      <p className="pr-6 text-lg font-medium">
+        {nameLabel(token.surface, token.lemma ?? "", token.tags)}
+      </p>
+    </PanelShell>
+  );
+}
+
+function PanelShell({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  return (
+    <aside className="fixed right-0 top-0 h-full w-80 overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-lg">
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close"
+        className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
+      >
+        ✕
+      </button>
+      {children}
     </aside>
   );
 }

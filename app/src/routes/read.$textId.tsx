@@ -3,7 +3,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 import { ComprehensionCheck } from "#/reader/ComprehensionCheck";
-import { WordPanel } from "#/reader/WordPanel";
+import { NamePanel, WordPanel } from "#/reader/WordPanel";
+import { isName, nameLabel } from "#/reader/name";
 import type { KnowledgeFlags, ReaderToken } from "#/reader/types";
 
 // Load a text and its tokens in reading order. `known` / `stillLearning` are
@@ -31,6 +32,7 @@ const getText = createServerFn()
         lemmaId: schema.lemma.id,
         lemma: schema.lemma.lemma,
         pos: schema.lemma.pos,
+        tags: schema.token.tags,
         receptiveState: schema.knowledge.state,
       })
       .from(schema.token)
@@ -136,13 +138,14 @@ function Reader() {
     t.lemmaId != null && overrides[t.lemmaId]
       ? overrides[t.lemmaId]
       : { known: t.known, stillLearning: t.stillLearning };
-  const isUnknown = (t: ReaderToken) => t.lemmaId != null && !flagsOf(t).known;
+  // A Name is never vocabulary: no highlight, no batch mark.
+  const isUnknown = (t: ReaderToken) => t.lemmaId != null && !isName(t.pos) && !flagsOf(t).known;
 
   // Batch only burns never-touched (New) words: unknown and not still-learning.
   const batchEligible = useMemo(() => {
     const ids = new Set<number>();
     for (const t of tokens) {
-      if (t.lemmaId == null) continue;
+      if (t.lemmaId == null || isName(t.pos)) continue;
       const f = flagsOf(t);
       if (!f.known && !f.stillLearning) ids.add(t.lemmaId);
     }
@@ -200,6 +203,19 @@ function Reader() {
         {tokens.map((t, i) => {
           if (t.isSpace || t.lemmaId == null) {
             return <span key={i}>{t.surface}</span>;
+          }
+          if (isName(t.pos)) {
+            const label = nameLabel(t.surface, t.lemma ?? "", t.tags);
+            if (!label) return <span key={i}>{t.surface}</span>;
+            return (
+              <span
+                key={i}
+                onClick={() => setSelected(t)}
+                className="cursor-pointer rounded hover:bg-gray-200"
+              >
+                {t.surface}
+              </span>
+            );
           }
           const f = flagsOf(t);
           const cls = !isUnknown(t)
@@ -259,7 +275,10 @@ function Reader() {
         </div>
       )}
 
-      {selected && (
+      {selected && isName(selected.pos) && (
+        <NamePanel token={selected} onClose={() => setSelected(null)} />
+      )}
+      {selected && !isName(selected.pos) && (
         <WordPanel
           token={selected}
           sentence={tokens
@@ -289,6 +308,7 @@ function Reader() {
               lemmaId: m.lemmaId,
               lemma: m.headword,
               pos: "MWE",
+              tags: null,
               known: false,
               stillLearning: false,
             });

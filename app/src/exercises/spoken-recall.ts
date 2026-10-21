@@ -1,4 +1,5 @@
 import { Rating } from "#/fsrs/index";
+import { isName } from "#/reader/name";
 import type { Exercise } from "./types";
 
 /** Full item, held server-side. `lemma` IS the answer — never sent to client. */
@@ -124,7 +125,7 @@ export const spokenRecall: Exercise<SpokenRecallItem, SpokenRecallClientItem, Sp
 
   // PROPN excluded: producing "Ola" from "nome proprio" is name-guessing,
   // not vocabulary retrieval.
-  appliesTo: (c) => typeof c.gloss === "string" && c.gloss.length > 0 && c.pos !== "PROPN",
+  appliesTo: (c) => typeof c.gloss === "string" && c.gloss.length > 0 && !isName(c.pos),
 
   generate(target) {
     if (!target.gloss) return null;

@@ -18,8 +18,14 @@ function freshDb() {
 function sp(surface: string) {
   return { surface, lemma: surface, pos: "SPACE", tags: [], is_space: true };
 }
-function w(surface: string, lemma: string, pos: string) {
-  return { surface, lemma, pos, tags: [], is_space: false };
+function w(surface: string, lemma: string, pos: string, tags: string[] = []) {
+  return { surface, lemma, pos, tags, is_space: false };
+}
+
+function dict(db: ReturnType<typeof freshDb>, entries: [string, string][]) {
+  db.insert(schema.dictEntry)
+    .values(entries.map(([word, pos]) => ({ word, pos })))
+    .run();
 }
 
 // "Robię obiad w kuchni." analyzed (matches the sidecar's #2 acceptance).
@@ -128,6 +134,55 @@ test("no headwords: zero MWE occurrences, pipeline unchanged", () => {
   const res = persistAnalysis(db, { content: "x" }, ANALYSIS, new Date(), new Map());
   expect(res.mweCount).toBe(0);
   expect(db.select().from(schema.mweOccurrence).all()).toHaveLength(0);
+});
+
+test("names link to a base-form lemma without knowledge; common words and emoji are classified", () => {
+  const db = freshDb();
+  dict(db, [
+    ["Kasia", "name"],
+    ["bułka", "noun"],
+    ["Róża", "name"],
+    ["róża", "noun"],
+  ]);
+  const analysis: AnalyzeResponse = {
+    sentences: [
+      {
+        tokens: [
+          w("Bułka", "Bułka", "PROPN", ["Case=Nom"]),
+          sp(" "),
+          w("Marco", "marco", "PROPN"),
+          sp(" "),
+          w("Kasi", "Kasi", "PROPN", ["Case=Gen", "Number=Sing"]),
+          sp(" "),
+          w("Róża", "Róża", "PROPN"),
+          sp(" "),
+          w("🤗", "🤗", "PROPN"),
+        ],
+      },
+    ],
+  };
+  persistAnalysis(db, { content: "x" }, analysis, new Date(), new Map());
+
+  const lemmas = db.select().from(schema.lemma).all();
+  const know = db.select().from(schema.knowledge).all();
+  const tokens = db.select().from(schema.token).all();
+  const lemmaOf = (surface: string) =>
+    lemmas.find((l) => l.id === tokens.find((t) => t.surface === surface)?.lemmaId);
+
+  for (const [surface, base] of [
+    ["Marco", "Marco"],
+    ["Kasi", "Kasia"],
+    ["Róża", "Róża"],
+  ]) {
+    const l = lemmaOf(surface);
+    expect(l).toMatchObject({ lemma: base, pos: "PROPN" });
+    expect(know.filter((k) => k.lemmaId === l?.id)).toHaveLength(0);
+  }
+  const bulka = lemmaOf("Bułka");
+  expect(bulka).toMatchObject({ lemma: "bułka", pos: "NOUN" });
+  expect(know.filter((k) => k.lemmaId === bulka?.id).map((k) => k.track)).toEqual(["receptive"]);
+  expect(tokens.find((t) => t.surface === "🤗")?.lemmaId).toBeNull();
+  expect(tokens.find((t) => t.surface === "Kasi")?.tags).toEqual(["Case=Gen", "Number=Sing"]);
 });
 
 function entry(word: string, pos: string, forms: string[]) {

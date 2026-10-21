@@ -12,9 +12,10 @@ _Avoid_: token, word (when precision matters)
 
 **Lemma**:
 The dictionary/base form of a word that groups all its surface forms. _kot_ is the lemma
-of _kota_, _kotu_, _kotem_. The unit at which knowledge is tracked. Assigned at text
-import by the morphology analyzer, corrected by the **Home dictionary**'s inflected forms
-when the analyzer's lemma is not a headword for the word's part of speech.
+of _kota_, _kotu_, _kotem_. The unit at which knowledge is tracked, except for a
+**Name**, whose lemma only groups its forms. Assigned at text import by the morphology
+analyzer, corrected by the **Home dictionary**'s inflected forms when the analyzer's lemma
+is not a headword for the word's part of speech.
 _Avoid_: root, stem, base word
 
 **Multi-word expression (MWE)**:
@@ -36,7 +37,15 @@ state** are removed. Restoring it rechecks past texts and starts its knowledge f
 
 **Tracked unit**:
 What the user's knowledge is recorded against: a **Lemma** (plus the set of **Surface
-forms** encountered) or a **Multi-word expression**. Never a raw surface form.
+forms** encountered) or a **Multi-word expression**. Never a raw surface form, never a **Name**.
+
+**Name**:
+A proper noun in a text: a person (_Kasia_) or a place (_Warszawa_). Never a **Tracked
+unit**: it has no Italian meaning to learn. Only its inflection is of interest, so the
+reader shows the base form and case of an inflected name (_Kasi_ → _Kasia_, genitive).
+A word tagged proper noun only because it is capitalized (_Bułka_ at sentence start) is
+not a Name when the **Home dictionary** has it as a common word and not as a name.
+_Avoid_: proper noun (as a data term), PROPN
 
 **L1**:
 The learner's native language. Here it is **Italian**, not English. All translations,

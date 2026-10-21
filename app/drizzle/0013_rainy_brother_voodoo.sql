@@ -1,0 +1,1 @@
+ALTER TABLE `token` ADD `tags` text;

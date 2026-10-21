@@ -266,6 +266,8 @@ Future notes (explicitly wanted, not v1):
   or lemma match). Discontinuous MWEs (*zdaję sobie z tego sprawę*) stay parked.
 - **Grammar drills (case/aspect/gender/conjugation)** — learner is grammar-strong; low
   value today. Now unblocked (`dict_form` has the inflection tables), still low priority.
+  Name inflection belongs here too: the reader shows an inflected name's case (#2), but
+  nothing trains it, and the dictionary has no forms for `name` entries.
 - **Etymology-based games** — new idea (2026-07-12): `dict_entry.etymology` is now
   stored; explore exercises built on it (cognate guessing, Proto-Slavic roots,
   borrowing-language quizzes). Fun layer, not a knowledge-track feeder.

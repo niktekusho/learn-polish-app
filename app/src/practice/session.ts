@@ -27,6 +27,7 @@ import {
 } from "#/fsrs/index";
 import { analyze, transcribe } from "#/import/sidecar";
 import { practiceLine, recordActivity } from "#/recap/service";
+import { NAME_POS } from "#/reader/name";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -206,7 +207,7 @@ function seedProductiveCards(db: DB, now = new Date()) {
     .leftJoin(knowledge, and(eq(knowledge.lemmaId, lemma.id), eq(knowledge.track, "productive")))
     // PROPN never gets a productive card — spoken recall (the only productive
     // exercise) excludes it, so a card would sit due forever, never rendered.
-    .where(and(isNull(knowledge.id), ne(lemma.pos, "PROPN")))
+    .where(and(isNull(knowledge.id), ne(lemma.pos, NAME_POS)))
     .all();
   if (missing.length === 0) return;
   const fields = initialKnowledgeFields(now);

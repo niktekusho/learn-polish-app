@@ -5,15 +5,11 @@ import { knowledge, lemma, mweOccurrence, sourceText, token } from "#/db/schema"
 import { detectMwes, loadMweHeadwords, type MweToken } from "#/dictionary/mwe";
 import { correctLemma } from "#/dictionary/lemma-correction";
 import { initialKnowledgeFields } from "#/fsrs/index";
-import type { AnalyzeResponse, AnalyzedToken } from "./sidecar";
+import { NAME_POS } from "#/reader/name";
+import { classifyToken } from "./classify";
+import type { AnalyzeResponse } from "./sidecar";
 
 type DB = BetterSQLite3Database<typeof schema>;
-
-// UPOS tags that are layout/noise, not vocabulary worth tracking.
-const SKIP_POS = new Set(["PUNCT", "SYM", "SPACE", "X"]);
-function isVocab(t: AnalyzedToken): boolean {
-  return !t.is_space && !SKIP_POS.has(t.pos) && t.lemma.trim() !== "";
-}
 
 export interface ImportResult {
   textId: number;
@@ -25,7 +21,8 @@ export interface ImportResult {
 /**
  * Persist an analyzed document: one `source_text`, its `token`s in reading
  * order, upserted `lemma`s, and a receptive `knowledge` row (default "new") per
- * newly-seen lemma. Idempotent on lemmas/knowledge: re-importing links to the
+ * newly-seen lemma. A Name links to its lemma but gets no knowledge row
+ * (see classifyToken). Idempotent on lemmas/knowledge: re-importing links to the
  * existing lemmas instead of duplicating them.
  *
  * ponytail: only the receptive track is seeded here — it's the only one the
@@ -59,9 +56,13 @@ export function persistAnalysis(
       for (const tok of analysis.sentences[s].tokens) {
         let lemmaId: number | null = null;
         let lemmaText: string | null = null;
-        if (isVocab(tok)) {
-          lemmaText = correctLemma(tx, tok.surface, tok.lemma, tok.pos);
-          lemmaId = upsertLemma(tx, lemmaText, tok.pos);
+        const classified = classifyToken(tx, tok);
+        if (classified.kind === "name") {
+          lemmaText = classified.lemma;
+          lemmaId = upsertLemma(tx, lemmaText, NAME_POS);
+        } else if (classified.kind === "unit") {
+          lemmaText = correctLemma(tx, tok.surface, classified.lemma, classified.pos);
+          lemmaId = upsertLemma(tx, lemmaText, classified.pos);
           if (!seen.has(lemmaId)) {
             seen.add(lemmaId);
             ensureReceptiveKnowledge(tx, lemmaId, now);
@@ -75,6 +76,7 @@ export function persistAnalysis(
             position,
             sentenceIndex: s,
             isSpace: tok.is_space,
+            tags: tok.tags,
           })
           .run();
         if (!tok.is_space) {
@@ -120,7 +122,7 @@ export function persistAnalysis(
 }
 
 /** Insert-or-get a lemma by its (base form, POS) identity. */
-function upsertLemma(db: DB, lemmaText: string, pos: string): number {
+export function upsertLemma(db: DB, lemmaText: string, pos: string): number {
   db.insert(lemma).values({ lemma: lemmaText, pos }).onConflictDoNothing().run();
   const [row] = db
     .select({ id: lemma.id })

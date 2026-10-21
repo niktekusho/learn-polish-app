@@ -41,6 +41,10 @@ on the phone.
 - **Deploy now** instead of waiting: `launchctl kickstart gui/$UID/com.niktekusho.learn-polish-deploy`
 - **Try a branch on the phone:** `pnpm dev` in that checkout, open the test-env URL. It uses
   that checkout's `app/data/app.db`, never the prod DB.
+- **Repair names + backfill morph tags** (maintenance page): run once on prod after the deploy that stops tracking
+  names as vocabulary (#2), with the sidecar up. It cleans names imported before then and
+  re-analyzes older texts to store their morph tags; texts the sidecar could not analyze
+  are reported, and running it again retries them. Otherwise a rerun changes nothing.
 - **Refresh the dev DB with real data:**
   `sqlite3 ~/Library/Application\ Support/learn-polish/app.db ".backup app/data/app.db"`
   (stop `pnpm dev` first).

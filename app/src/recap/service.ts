@@ -4,6 +4,7 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { dailyActivity, lemma, reviewLog, token } from "#/db/schema";
 import { startOfDay } from "#/fsrs/index";
+import { NAME_POS } from "#/reader/name";
 
 type DB = BetterSQLite3Database<typeof schema>;
 export type ActivityKind = "practice" | "episode";
@@ -169,7 +170,7 @@ export function episodeLine(db: DB, textId: number): string {
     .where(
       and(
         eq(token.textId, textId),
-        ne(lemma.pos, "PROPN"),
+        ne(lemma.pos, NAME_POS),
         notExists(
           db
             .select({ id: earlier.id })

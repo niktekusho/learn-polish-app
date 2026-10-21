@@ -96,6 +96,9 @@ export const token = sqliteTable(
     position: integer("position").notNull(), // token index within the text
     sentenceIndex: integer("sentence_index").notNull(),
     isSpace: integer("is_space", { mode: "boolean" }).notNull().default(false),
+    // Sidecar morph features ("Case=Gen", "Number=Sing"); null when the text
+    // has not been analyzed with tags yet.
+    tags: text("tags", { mode: "json" }).$type<string[]>(),
   },
   (t) => [
     index("token_text_idx").on(t.textId, t.position),

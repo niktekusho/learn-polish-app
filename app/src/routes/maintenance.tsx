@@ -64,12 +64,13 @@ const actionInput = z.object({
     "purge-stub-glosses",
     "clear-dictionary",
     "recheck-mwes",
+    "repair-names",
   ]),
 });
 
 const runAction = createServerFn({ method: "POST" })
   .validator((d: unknown) => actionInput.parse(d))
-  .handler(async ({ data }): Promise<{ deleted: number }> => {
+  .handler(async ({ data }): Promise<{ deleted: number; note?: string }> => {
     const { db } = await import("#/db/index");
     const ops = await import("#/maintenance/ops");
     switch (data.action) {
@@ -85,6 +86,15 @@ const runAction = createServerFn({ method: "POST" })
         const { checkMweOccurrences } = await import("#/dictionary/mwe-check");
         const { getGlossProvider } = await import("#/llm/index");
         return { deleted: await checkMweOccurrences(db, getGlossProvider()) };
+      }
+      case "repair-names": {
+        const r = ops.repairNames(db);
+        const { analyze } = await import("#/import/sidecar");
+        const b = await ops.backfillTokenTags(db, analyze);
+        return {
+          deleted: r.deleted,
+          note: `Names: ${r.merged} variants merged, ${r.commonWords} common words relinked, ${r.cleared} knowledge/gloss/review rows cleared. Morph tags: ${b.filled} texts filled, ${b.skipped} skipped (tokens differ), ${b.failed} failed (sidecar unreachable or erroring).`,
+        };
       }
     }
   });
@@ -176,8 +186,8 @@ function Maintenance() {
     setMessage(null);
     setError(null);
     try {
-      const { deleted } = await runAction({ data: { action } });
-      setMessage(`Deleted ${deleted} ${noun}.`);
+      const { deleted, note } = await runAction({ data: { action } });
+      setMessage(`Deleted ${deleted} ${noun}.${note ? ` ${note}` : ""}`);
       await router.invalidate();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Operation failed.");
@@ -375,6 +385,20 @@ function Maintenance() {
               "recheck-mwes",
               "Recheck every detected expression with the LLM and delete the false matches?",
               "false expression matches",
+            )
+          }
+        />
+        <ActionRow
+          title="Repair names + backfill morph tags"
+          description="Names lose knowledge, glosses and reviews, variants merge, capitalized common words join their lemma, emoji and fragments go. Then texts with untagged tokens are re-analyzed through the sidecar to store their morph tags."
+          button="Repair + backfill"
+          pending={pending === "repair-names"}
+          disabled={pending !== null}
+          onClick={() =>
+            run(
+              "repair-names",
+              "Repair names and backfill morph tags? Names' knowledge, glosses and review history are deleted.",
+              "emoji/fragment lemmas",
             )
           }
         />

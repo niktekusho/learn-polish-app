@@ -1,4 +1,4 @@
-import { and, asc, count, eq, isNotNull, notExists } from "drizzle-orm";
+import { and, asc, count, eq, isNotNull, isNull, notExists } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import * as schema from "#/db/schema";
@@ -10,12 +10,17 @@ import {
   knowledge,
   lemma,
   mweOccurrence,
+  passageQuestion,
   reviewLog,
   sourceText,
   token,
 } from "#/db/schema";
 import { wipeDictionary } from "#/dictionary/loader";
 import { setManualGloss } from "#/gloss/service";
+import { classifyToken } from "#/import/classify";
+import { upsertLemma } from "#/import/pipeline";
+import type { AnalyzeResponse } from "#/import/sidecar";
+import { NAME_POS } from "#/reader/name";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -157,4 +162,132 @@ export function listSuppressedMwes(db: DB): ContextBoundLemma[] {
     .where(eq(lemma.suppressed, true))
     .orderBy(asc(lemma.lemma))
     .all();
+}
+
+// ponytail: fragments spotted by hand in prod data; add new ones here.
+const NAME_FRAGMENTS = new Set(["Dzię"]);
+
+export interface NameRepair {
+  deleted: number; // no-letter and fragment lemmas
+  commonWords: number; // mis-tagged common words relinked or converted
+  merged: number; // name variants merged into their base
+  cleared: number; // knowledge, gloss and review rows dropped from Names
+}
+
+/**
+ * A PROPN lemma can carry vocabulary data classifyToken would not create: Names lose
+ * knowledge, glosses and reviews and merge into their base, common words join their
+ * lemma, no-letter lemmas and fragments go. Idempotent.
+ */
+export function repairNames(db: DB): NameRepair {
+  const out: NameRepair = { deleted: 0, commonWords: 0, merged: 0, cleared: 0 };
+  db.transaction((tx) => {
+    const relink = (from: number, to: number | null) =>
+      tx.update(token).set({ lemmaId: to }).where(eq(token.lemmaId, from)).run();
+    const clear = (id: number) => {
+      let n = 0;
+      for (const t of [knowledge, reviewLog, gloss, passageQuestion]) {
+        n += tx.delete(t).where(eq(t.lemmaId, id)).run().changes;
+      }
+      return n;
+    };
+    const drop = (id: number) => {
+      clear(id);
+      tx.delete(lemma).where(eq(lemma.id, id)).run();
+    };
+
+    for (const l of tx.select().from(lemma).where(eq(lemma.pos, NAME_POS)).all()) {
+      const classified = NAME_FRAGMENTS.has(l.lemma)
+        ? ({ kind: "skip" } as const)
+        : classifyToken(tx, { lemma: l.lemma, pos: NAME_POS, is_space: false });
+      switch (classified.kind) {
+        case "skip":
+          relink(l.id, null);
+          drop(l.id);
+          out.deleted++;
+          break;
+        case "unit": {
+          const [existing] = tx
+            .select({ id: lemma.id })
+            .from(lemma)
+            .where(and(eq(lemma.lemma, classified.lemma), eq(lemma.pos, classified.pos)))
+            .all();
+          if (existing) {
+            relink(l.id, existing.id);
+            drop(l.id);
+          } else {
+            tx.update(lemma)
+              .set({ lemma: classified.lemma, pos: classified.pos })
+              .where(eq(lemma.id, l.id))
+              .run();
+          }
+          out.commonWords++;
+          break;
+        }
+        case "name": {
+          let target = l.id;
+          if (classified.lemma !== l.lemma) {
+            target = upsertLemma(tx, classified.lemma, NAME_POS);
+            relink(l.id, target);
+            drop(l.id);
+            out.merged++;
+          }
+          out.cleared += clear(target);
+        }
+      }
+    }
+  });
+  return out;
+}
+
+export interface TagBackfill {
+  filled: number; // texts whose tokens got morph tags
+  skipped: number; // texts whose re-analysis did not match the stored tokens
+  failed: number; // texts the sidecar could not analyze (unreachable or erroring)
+}
+
+/**
+ * Tokens with null tags get them by re-analyzing their text and copying by position.
+ * A text whose re-analysis yields different tokens is skipped.
+ */
+export async function backfillTokenTags(
+  db: DB,
+  analyze: (text: string) => Promise<AnalyzeResponse>,
+): Promise<TagBackfill> {
+  const out: TagBackfill = { filled: 0, skipped: 0, failed: 0 };
+  const texts = db
+    .selectDistinct({ id: sourceText.id, content: sourceText.content })
+    .from(sourceText)
+    .innerJoin(token, eq(token.textId, sourceText.id))
+    .where(isNull(token.tags))
+    .all();
+  for (const text of texts) {
+    let analysis: AnalyzeResponse;
+    try {
+      analysis = await analyze(text.content);
+    } catch {
+      out.failed++;
+      continue;
+    }
+    const fresh = analysis.sentences.flatMap((s) => s.tokens);
+    const stored = db
+      .select({ id: token.id, surface: token.surface, tags: token.tags })
+      .from(token)
+      .where(eq(token.textId, text.id))
+      .orderBy(asc(token.position))
+      .all();
+    if (fresh.length !== stored.length || fresh.some((t, i) => t.surface !== stored[i].surface)) {
+      out.skipped++;
+      continue;
+    }
+    db.transaction((tx) => {
+      stored.forEach((t, i) => {
+        if (t.tags === null) {
+          tx.update(token).set({ tags: fresh[i].tags }).where(eq(token.id, t.id)).run();
+        }
+      });
+    });
+    out.filled++;
+  }
+  return out;
 }

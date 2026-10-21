@@ -4,6 +4,7 @@ import * as schema from "#/db/schema";
 import { knowledge, lemma, mweOccurrence, passageQuestion, sourceText, token } from "#/db/schema";
 import { knownLemmas } from "#/fsrs/index";
 import type { GlossProvider } from "#/llm/provider";
+import { NAME_POS } from "#/reader/name";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -167,7 +168,7 @@ export function passagePrepTargets(db: DB, now = new Date(), cap = PREP_CAP): nu
         eq(knowledge.track, "receptive"),
         lte(knowledge.due, horizon),
         isNull(lemma.flaggedAt),
-        ne(lemma.pos, "PROPN"),
+        ne(lemma.pos, NAME_POS),
         notExists(
           db
             .select({ id: passageQuestion.id })
