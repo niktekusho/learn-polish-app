@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { knowledge, lemma, mweOccurrence, sourceText, token } from "#/db/schema";
-import { detectMwes, loadMweHeadwords, type MweToken } from "#/dictionary/mwe";
+import { detectMwes, loadMweHeadwords, type MweMatch, type MweToken } from "#/dictionary/mwe";
 import { correctLemma } from "#/dictionary/lemma-correction";
 import { initialKnowledgeFields } from "#/fsrs/index";
 import { NAME_POS } from "#/reader/name";
@@ -38,6 +38,8 @@ export function persistAnalysis(
   mweHeadwords?: Map<string, string[]>,
   // Accepted Formula positions from resolveFormulas, with their headword.
   formulas = new Map<number, string>(),
+  // The MWE matches to save; importAnalysis passes only the ones its check accepted.
+  mwes = analysisMwes(db, analysis, formulas, mweHeadwords),
 ): ImportResult {
   return db.transaction((tx) => {
     const [{ id: textId }] = tx
@@ -52,24 +54,14 @@ export function persistAnalysis(
       .all();
 
     const seen = new Set<number>();
-    const collected: MweToken[] = [];
     let position = 0;
     for (let s = 0; s < analysis.sentences.length; s++) {
       for (const tok of analysis.sentences[s].tokens) {
-        let lemmaId: number | null = null;
-        let lemmaText: string | null = null;
-        const classified = classifyToken(tx, tok);
-        if (classified.kind === "name") {
-          lemmaText = classified.lemma;
-          lemmaId = upsertLemma(tx, lemmaText, NAME_POS);
-        } else if (classified.kind === "unit") {
-          const formula = formulas.get(position);
-          lemmaText = formula ?? correctLemma(tx, tok.surface, classified.lemma, classified.pos);
-          lemmaId = upsertLemma(tx, lemmaText, formula ? FORMULA_POS : classified.pos);
-          if (!seen.has(lemmaId)) {
-            seen.add(lemmaId);
-            ensureReceptiveKnowledge(tx, lemmaId, now);
-          }
+        const assigned = tokenLemma(tx, tok, formulas.get(position));
+        const lemmaId = assigned && upsertLemma(tx, assigned.lemma, assigned.pos);
+        if (lemmaId !== null && assigned?.pos !== NAME_POS && !seen.has(lemmaId)) {
+          seen.add(lemmaId);
+          ensureReceptiveKnowledge(tx, lemmaId, now);
         }
         tx.insert(token)
           .values({
@@ -82,23 +74,11 @@ export function persistAnalysis(
             tags: tok.tags,
           })
           .run();
-        if (!tok.is_space) {
-          collected.push({
-            surface: tok.surface,
-            lemma: lemmaText,
-            position,
-            sentenceIndex: s,
-            isSpace: false,
-          });
-        }
         position++;
       }
     }
 
-    // Contiguous MWE detection against the home dictionary's multi-word
-    // headwords. Each match becomes a pos='MWE' tracked unit + occurrence.
-    const matches = detectMwes(collected, mweHeadwords ?? loadMweHeadwords(tx));
-    for (const m of matches) {
+    for (const m of mwes) {
       const mweLemmaId = upsertLemma(tx, m.headword, "MWE");
       if (!seen.has(mweLemmaId)) {
         seen.add(mweLemmaId);
@@ -119,9 +99,57 @@ export function persistAnalysis(
       textId,
       tokenCount: position,
       lemmaCount: seen.size,
-      mweCount: matches.length,
+      mweCount: mwes.length,
     };
   });
+}
+
+/** The lemma and POS a token is saved under, or null when it is no word. */
+function tokenLemma(
+  db: DB,
+  tok: AnalyzeResponse["sentences"][number]["tokens"][number],
+  formula: string | undefined,
+): { lemma: string; pos: string } | null {
+  const classified = classifyToken(db, tok);
+  if (classified.kind === "name") return { lemma: classified.lemma, pos: NAME_POS };
+  if (classified.kind === "skip") return null;
+  if (formula) return { lemma: formula, pos: FORMULA_POS };
+  return {
+    lemma: correctLemma(db, tok.surface, classified.lemma, classified.pos),
+    pos: classified.pos,
+  };
+}
+
+/**
+ * Contiguous MWE matches in an analysis against the home dictionary's
+ * multi-word headwords, with token lemmas as persistAnalysis saves them.
+ */
+export function analysisMwes(
+  db: DB,
+  analysis: AnalyzeResponse,
+  formulas = new Map<number, string>(),
+  mweHeadwords?: Map<string, string[]>,
+): MweMatch[] {
+  const tokens: MweToken[] = [];
+  let position = 0;
+  analysis.sentences.forEach((s, sentenceIndex) => {
+    for (const tok of s.tokens) {
+      if (!tok.is_space) {
+        const lemma = tokenLemma(db, tok, formulas.get(position))?.lemma ?? null;
+        tokens.push({ surface: tok.surface, lemma, position, sentenceIndex, isSpace: false });
+      }
+      position++;
+    }
+  });
+  return detectMwes(tokens, mweHeadwords ?? loadMweHeadwords(db));
+}
+
+/** A sentence's text as its tokens spell it. */
+export function analysisSentence(s: AnalyzeResponse["sentences"][number]): string {
+  return s.tokens
+    .map((t) => t.surface)
+    .join("")
+    .trim();
 }
 
 /** Insert-or-get a lemma by its (base form, POS) identity. */

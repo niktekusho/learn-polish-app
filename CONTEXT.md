@@ -27,7 +27,7 @@ stay separate lemmas. Detected at text import by matching token runs against the
 dictionary**'s multi-word headwords (contiguous only in v1; discontinuous parked).
 A match is only a candidate: the same words can form a compositional phrase (_To jest
 chleb_ is "questo è pane", not the _to jest_ meaning "cioè"), so each match is checked
-in its sentence before it counts. If the check cannot run, matches count unchecked.
+in its sentence before it counts.
 _Avoid_: phrase, collocation, idiom (as data terms)
 
 **Suppressed MWE**:

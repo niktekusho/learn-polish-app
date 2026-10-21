@@ -413,8 +413,8 @@ export interface GlossProvider {
   // Optional capabilities: Passage exercise preparation, run in the background.
   passage?(req: PassageRequest): Promise<GeneratedPassage>;
   passageQuestion?(req: PassageQuestionRequest): Promise<ChoiceQuestion>;
-  // Optional capability: providers without it keep every MWE match unchecked
-  // and fail any import with a Formula candidate.
+  // Optional capability: providers without it fail any import with an MWE
+  // match or a Formula candidate.
   checkMwes?(items: MweCheckItem[]): Promise<boolean[]>;
 }
 

@@ -17,24 +17,11 @@ const importText = createServerFn({ method: "POST" })
     const content = data.content.trim();
     if (!content) throw new Error("Paste some Polish text first.");
     const { analyze } = await import("#/import/sidecar");
-    const { persistAnalysis } = await import("#/import/pipeline");
+    const { importAnalysis } = await import("#/import/checked-import");
     const { db } = await import("#/db/index");
-    const { checkMweOccurrences } = await import("#/dictionary/mwe-check");
-    const { resolveFormulas } = await import("#/dictionary/formula");
     const { getGlossProvider } = await import("#/llm/index");
-    const provider = getGlossProvider();
     const analysis = await analyze(content);
-    const formulas = await resolveFormulas(db, provider, analysis);
-    const result = persistAnalysis(
-      db,
-      { title: data.title || null, content },
-      analysis,
-      new Date(),
-      undefined,
-      formulas,
-    );
-    const dropped = await checkMweOccurrences(db, provider, { textId: result.textId });
-    return { ...result, mweCount: result.mweCount - dropped };
+    return importAnalysis(db, getGlossProvider(), { title: data.title || null, content }, analysis);
   });
 
 export const Route = createFileRoute("/import")({ component: Import });

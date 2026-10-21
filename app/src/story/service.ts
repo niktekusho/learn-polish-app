@@ -3,9 +3,8 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { sourceText, story } from "#/db/schema";
 import { knownLemmas } from "#/fsrs/index";
-import { type FormulaChecker, resolveFormulas } from "#/dictionary/formula";
-import { checkMweOccurrences } from "#/dictionary/mwe-check";
-import { persistAnalysis } from "#/import/pipeline";
+import type { MweChecker } from "#/dictionary/mwe-check";
+import { importAnalysis } from "#/import/checked-import";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import type { StoryPremise, StoryProvider } from "#/llm/provider";
 import { episodeLine, recordActivity } from "#/recap/service";
@@ -25,8 +24,8 @@ export interface StoryDeps {
   provider: StoryProvider;
   analyze: (text: string) => Promise<AnalyzeResponse>;
   mweHeadwords?: Map<string, string[]>; // tests skip the dictionary lookup
-  // Absent: MWE matches are kept unchecked, and an episode with a Formula candidate fails.
-  checker?: FormulaChecker;
+  // Absent: an episode with an MWE match or a Formula candidate fails.
+  checker?: MweChecker;
 }
 
 export interface Episode {
@@ -104,10 +103,9 @@ export function storyService(db: DB, deps: StoryDeps) {
       if (share >= NEW_SHARE_MIN && share <= NEW_SHARE_MAX) break;
     }
     const chosen = best as NonNullable<typeof best>;
-    const formulaChecker = deps.checker ?? { name: deps.provider.name };
-    const formulas = await resolveFormulas(db, formulaChecker, chosen.analysis);
-    const { textId } = persistAnalysis(
+    await importAnalysis(
       db,
+      deps.checker ?? { name: deps.provider.name },
       {
         title: `${s.title} · episodio ${n}`,
         content: chosen.text,
@@ -115,11 +113,8 @@ export function storyService(db: DB, deps: StoryDeps) {
         episodeNumber: n,
       },
       chosen.analysis,
-      new Date(),
       deps.mweHeadwords,
-      formulas,
     );
-    if (deps.checker) await checkMweOccurrences(db, deps.checker, { textId });
   }
 
   /** Generate episode `n` unless it exists or is already being generated. */
@@ -154,8 +149,6 @@ export function storyService(db: DB, deps: StoryDeps) {
     if (!s) return null;
     const unread = () => episodes(s.id).find((e) => e.readAt === null);
     let e = unread();
-    // The episode row exists before its MWE check finishes.
-    if (e) await running.get(`${s.id}:${e.episodeNumber}`)?.catch(() => {});
     if (!e) {
       const last = episodes(s.id).at(-1)?.episodeNumber ?? 0;
       if (last >= s.plannedEpisodes) return null;

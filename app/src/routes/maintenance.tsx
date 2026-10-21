@@ -84,9 +84,9 @@ const runAction = createServerFn({ method: "POST" })
       case "clear-dictionary":
         return { deleted: ops.clearDictionary(db) };
       case "recheck-mwes": {
-        const { checkMweOccurrences } = await import("#/dictionary/mwe-check");
+        const { recheckMwes } = await import("#/dictionary/mwe-check");
         const { getGlossProvider } = await import("#/llm/index");
-        return { deleted: await checkMweOccurrences(db, getGlossProvider()) };
+        return { deleted: await recheckMwes(db, getGlossProvider()) };
       }
       case "repair-names": {
         const r = ops.repairNames(db);
@@ -271,9 +271,12 @@ function Maintenance() {
                   disabled={restoring !== null}
                   onClick={async () => {
                     setRestoring(m.lemmaId);
+                    setError(null);
                     try {
                       await restoreMweFn({ data: { lemmaId: m.lemmaId } });
                       await router.invalidate();
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Restore failed.");
                     } finally {
                       setRestoring(null);
                     }
