@@ -5,8 +5,9 @@ line**. "Final" means it carries the complete daily Polish routine — read, pra
 speak, listen. Slices are ordered by what unblocks real daily use; parked items return
 only when dogfooding demands them.
 
-Learner profile that shaped this ordering: grammar-strong (verb tenses known), vocabulary
-below A1. So vocabulary acquisition and audio skills rank high; grammar drills rank low.
+Learner profile that shaped this ordering: vocabulary below A1; verb tenses familiar
+(they map onto Italian), Polish case inflection new. Vocabulary acquisition and audio
+skills rank high.
 
 ---
 
@@ -264,8 +265,8 @@ Future notes (explicitly wanted, not v1):
 - ~~**MWE tracking (multi-word expressions)**~~ — **v1 shipped (2026-07-12)**:
   contiguous lookup-based detection at import (dictionary multi-word headwords, surface
   or lemma match). Discontinuous MWEs (*zdaję sobie z tego sprawę*) stay parked.
-- **Grammar drills (case/aspect/gender/conjugation)** — learner is grammar-strong; low
-  value today. Now unblocked (`dict_form` has the inflection tables), still low priority.
+- **Grammar drills (case/aspect/gender/conjugation)** — parked until dogfooding asks;
+  case inflection is the unfamiliar part. Now unblocked (`dict_form` has the inflection tables), still low priority.
   Name inflection belongs here too: the reader shows an inflected name's case (#2), but
   nothing trains it, and the dictionary has no forms for `name` entries.
 - **Etymology-based games** — new idea (2026-07-12): `dict_entry.etymology` is now
