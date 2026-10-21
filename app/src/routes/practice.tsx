@@ -138,6 +138,7 @@ type SpeechPhase =
       itemId: string;
       phase: "revealed";
       answer: string;
+      alternatives?: string[];
       transcript: string;
       heard: boolean; // spoken recall: a retry after the reveal was heard
     };
@@ -182,6 +183,8 @@ function PracticeSession() {
     picked: number;
   } | null>(null);
   const [speech, setSpeech] = useState<SpeechPhase | null>(null);
+  // Alternative answers already said, per spoken-recall item: named in the prompt.
+  const [excluded, setExcluded] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
   const [reportFor, setReportFor] = useState<string | null>(null);
   // Last Pronunciation grade; stays up (it names its word) until the next one.
@@ -278,11 +281,17 @@ function PracticeSession() {
           transcript: res.transcript,
         });
         if (res.hint) setHint(res.hint);
+      } else if (res.status === "alternative") {
+        const dropped = res.dropped ?? [];
+        setItems((prev) => prev.filter((it) => !dropped.includes(it.id)));
+        setExcluded((prev) => ({ ...prev, [item.id]: res.excluded ?? [] }));
+        setSpeech(null);
       } else if (res.status === "miss" || res.status === "heard") {
         setSpeech({
           itemId: item.id,
           phase: "revealed",
           answer: res.answer ?? "",
+          alternatives: res.alternatives,
           transcript: res.transcript,
           heard: res.status === "heard",
         });
@@ -307,6 +316,7 @@ function PracticeSession() {
         itemId: item.id,
         phase: "revealed",
         answer: res.answer,
+        alternatives: res.alternatives,
         transcript: "",
         heard: false,
       });
@@ -458,6 +468,16 @@ function PracticeSession() {
             <>
               <div className="mt-2 text-sm text-gray-500">Say it in Polish:</div>
               <div className="mt-1 text-3xl font-bold">{item.gloss}</div>
+              {excluded[item.id] && (
+                <>
+                  {!speech && (
+                    <p className="mt-2 text-green-700">✓ Giusto — c'è un'altra parola.</p>
+                  )}
+                  <p className="mt-1 text-gray-600">
+                    Non: <em>{excluded[item.id].join(", ")}</em>
+                  </p>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -502,6 +522,11 @@ function PracticeSession() {
             <div className="mt-6">
               <div className="rounded border border-gray-300 bg-gray-50 px-4 py-3">
                 <div className="text-2xl font-bold">{speech.answer}</div>
+                {speech.alternatives && speech.alternatives.length > 0 && (
+                  <div className="text-sm text-gray-600">
+                    anche: <em>{speech.alternatives.join(", ")}</em>
+                  </div>
+                )}
                 {speech.transcript ? (
                   <div
                     className={`mt-1 text-sm ${speech.heard ? "text-green-700" : "text-gray-500"}`}

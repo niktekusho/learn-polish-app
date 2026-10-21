@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { phoneticKey, spokenRecall, transcriptMatches } from "./spoken-recall";
+import { matchedAlternative, phoneticKey, spokenRecall, transcriptMatches } from "./spoken-recall";
 
 const r = (text: string, lemmas: string[]) => ({
   transcriptText: text,
@@ -93,4 +93,28 @@ test("appliesTo excludes proper nouns (name-guessing is not retrieval)", () => {
       gloss: "prontuario (nome proprio)",
     }),
   ).toBe(false);
+});
+
+test("alternatives: other lemmas with the same primary gloss, names and duplicates left out", () => {
+  const target = { lemmaId: 1, lemma: "kolejny", pos: "ADJ", gloss: "successivo" };
+  const pool = [
+    target,
+    { lemmaId: 2, lemma: "następny", pos: "ADJ", gloss: " Successivo " },
+    { lemmaId: 3, lemma: "Kolejny", pos: "ADJ", gloss: "successivo" },
+    { lemmaId: 4, lemma: "Następny", pos: "PROPN", gloss: "successivo" },
+    { lemmaId: 5, lemma: "dalszy", pos: "ADJ", gloss: "ulteriore" },
+  ];
+  const item = spokenRecall.generate(target, pool);
+  expect(item?.alternatives).toEqual([{ lemmaId: 2, lemma: "następny" }]);
+});
+
+test("matchedAlternative skips alternatives already named", () => {
+  const item = spokenRecall.generate(
+    { lemmaId: 1, lemma: "kolejny", pos: "ADJ", gloss: "successivo" },
+    [{ lemmaId: 2, lemma: "następny", pos: "ADJ", gloss: "successivo" }],
+  )!;
+  const said = r("następny", ["następny"]);
+  expect(matchedAlternative(item, said, [])?.lemmaId).toBe(2);
+  expect(matchedAlternative(item, said, ["następny"])).toBeUndefined();
+  expect(spokenRecall.grade(item, said)).toBe(spokenRecall.grade(item, r("", [])));
 });

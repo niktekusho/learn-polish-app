@@ -399,3 +399,82 @@ test('spoken recall "I didn\'t" queues a Retry that grades nothing; "I said it" 
   revealItem(session.sessionId, second.id);
   expect(selfGradeItem(db, session.sessionId, second.id, true).retry).toBeUndefined();
 });
+
+/** kolejny and następny share "successivo"; kolejny's recall comes first. */
+function seedSuccessivo(db: ReturnType<typeof freshDb>, nastepnyDue: Date) {
+  const kolejny = seed(db, "kolejny", "successivo");
+  const nastepny = seed(db, "następny", "successivo");
+  for (const [id, due] of [
+    [kolejny, new Date("2026-01-01T00:00:00Z")],
+    [nastepny, nastepnyDue],
+  ] as const) {
+    db.insert(schema.knowledge)
+      .values({ lemmaId: id, track: "productive", ...initialKnowledgeFields(due) })
+      .run();
+  }
+  const session = buildSession(db, { limit: 20, mic: true });
+  const recalls = session.items.filter((i) => i.kind === "spoken-recall");
+  return { kolejny, nastepny, session, recalls };
+}
+
+const productiveLogs = (db: ReturnType<typeof freshDb>) =>
+  db
+    .select()
+    .from(schema.reviewLog)
+    .all()
+    .filter((l) => l.track === "productive");
+
+test("an Alternative answer grades its own lemma and asks again for the target", async () => {
+  const db = freshDb();
+  const { kolejny, nastepny, session, recalls } = seedSuccessivo(db, new Date("2099-01-01Z"));
+  expect(recalls).toHaveLength(1);
+  const item = recalls[0];
+
+  mockTranscript("następny", ["następny"]);
+  const res = await answerSpeechItem(db, session.sessionId, item.id, asAudio());
+  expect(res).toMatchObject({ status: "alternative", excluded: ["następny"] });
+  expect(res.answer).toBeUndefined(); // target stays hidden
+  expect(productiveLogs(db).map((l) => l.lemmaId)).toEqual([nastepny]);
+
+  mockTranscript("kolejny", ["kolejny"]);
+  const res2 = await answerSpeechItem(db, session.sessionId, item.id, asAudio());
+  expect(res2.status).toBe("correct");
+  expect(productiveLogs(db).map((l) => l.lemmaId)).toEqual([nastepny, kolejny]);
+});
+
+test("repeating the named alternative is a miss that reveals the target with it", async () => {
+  const db = freshDb();
+  const { nastepny, session, recalls } = seedSuccessivo(db, new Date("2099-01-01Z"));
+  const item = recalls[0];
+
+  mockTranscript("następny", ["następny"]);
+  await answerSpeechItem(db, session.sessionId, item.id, asAudio());
+  const res = await answerSpeechItem(db, session.sessionId, item.id, asAudio());
+  expect(res).toMatchObject({ status: "miss", answer: "kolejny", alternatives: ["następny"] });
+  expect(productiveLogs(db).map((l) => l.lemmaId)).toEqual([nastepny]); // no second credit
+});
+
+test("the alternative's own recall item leaves the session once it is named", async () => {
+  const db = freshDb();
+  const { session, recalls } = seedSuccessivo(db, new Date("2026-01-02T00:00:00Z"));
+  expect(recalls).toHaveLength(2);
+
+  mockTranscript("następny", ["następny"]);
+  const res = await answerSpeechItem(db, session.sessionId, recalls[0].id, asAudio());
+  expect(res.status).toBe("alternative");
+  expect(res.dropped).toEqual([recalls[1].id]);
+});
+
+test("a Retry credits no alternative", async () => {
+  const db = freshDb();
+  const { session, recalls } = seedSuccessivo(db, new Date("2099-01-01Z"));
+  revealItem(session.sessionId, recalls[0].id);
+  const { retry } = selfGradeItem(db, session.sessionId, recalls[0].id, false);
+  if (!retry) throw new Error("no retry");
+  const before = productiveLogs(db).length;
+
+  mockTranscript("następny", ["następny"]);
+  const res = await answerSpeechItem(db, session.sessionId, retry.id, asAudio());
+  expect(res.status).toBe("alternative");
+  expect(productiveLogs(db)).toHaveLength(before);
+});

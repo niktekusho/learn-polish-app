@@ -8,6 +8,7 @@ export interface SpokenRecallItem {
   lemmaId: number;
   lemma: string; // the Polish tracked unit to say
   gloss: string; // the Italian prompt
+  alternatives: { lemmaId: number; lemma: string }[]; // **Alternative answers** (CONTEXT.md)
 }
 export interface SpokenRecallClientItem {
   id: string;
@@ -110,6 +111,19 @@ export function transcriptMatches(target: string, response: SpokenResponse): boo
   return words.some((w) => w && keysMatch(targetKey, phoneticKey(w)));
 }
 
+/** The first not-yet-named Alternative answer the learner said, if any. */
+export function matchedAlternative(
+  item: SpokenRecallItem,
+  response: SpokenResponse,
+  excluded: string[],
+): SpokenRecallItem["alternatives"][number] | undefined {
+  return item.alternatives.find(
+    (alt) => !excluded.includes(alt.lemma) && transcriptMatches(alt.lemma, response),
+  );
+}
+
+const glossKey = (g: string) => g.trim().toLowerCase();
+
 /**
  * Spoken recall (roadmap Slice 1): Italian gloss shown → say the Polish
  * tracked unit. The productive track's first feeder. ASR-miss fallback
@@ -127,13 +141,23 @@ export const spokenRecall: Exercise<SpokenRecallItem, SpokenRecallClientItem, Sp
   // not vocabulary retrieval.
   appliesTo: (c) => typeof c.gloss === "string" && c.gloss.length > 0 && !isName(c.pos),
 
-  generate(target) {
+  generate(target, pool) {
     if (!target.gloss) return null;
+    const key = glossKey(target.gloss);
+    const said = new Set([normalize(target.lemma)]);
+    const alternatives = [];
+    for (const c of pool) {
+      if (isName(c.pos) || !c.gloss || glossKey(c.gloss) !== key) continue;
+      if (said.has(normalize(c.lemma))) continue; // same spelling as the target or a listed one
+      said.add(normalize(c.lemma));
+      alternatives.push({ lemmaId: c.lemmaId, lemma: c.lemma });
+    }
     return {
       id: crypto.randomUUID(),
       lemmaId: target.lemmaId,
       lemma: target.lemma,
       gloss: target.gloss,
+      alternatives,
     };
   },
 

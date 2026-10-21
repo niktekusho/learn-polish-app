@@ -14,7 +14,7 @@ import type {
   SpokenRecallItem,
   SpokenResponse,
 } from "#/exercises/spoken-recall";
-import { spokenRecall } from "#/exercises/spoken-recall";
+import { matchedAlternative, spokenRecall } from "#/exercises/spoken-recall";
 import type { ExerciseCandidate, PassageQuestion } from "#/exercises/types";
 import {
   type DueLemma,
@@ -61,11 +61,13 @@ export type ClientPracticeItem = (
  * blind (retrieval); once `revealed`, every attempt is a **Visible attempt**
  * (CONTEXT.md). Read-aloud attempts are always visible. `misses`/`hit` count
  * visible attempts only — they become the Pronunciation rating (ADR-0005).
+ * `excluded`: **Alternative answers** already said, named in the prompt.
  */
 interface SpeechAttempts {
   revealed: boolean;
   misses: number;
   hit: boolean;
+  excluded: string[];
 }
 
 interface StoredSession {
@@ -170,17 +172,20 @@ function sentenceFor(db: DB, lemmaId: number, avoid = new Set<string>()): string
 
 /** Glossed lemmas only — exercise targets + MCQ distractor source. */
 function glossedCandidates(db: DB): ExerciseCandidate[] {
-  return db
-    .select({
-      lemmaId: lemma.id,
-      lemma: lemma.lemma,
-      pos: lemma.pos,
-      gloss: gloss.italian,
-    })
-    .from(lemma)
-    .innerJoin(gloss, and(eq(gloss.lemmaId, lemma.id), eq(gloss.sense, "")))
-    .where(isNull(lemma.flaggedAt)) // a reported gloss mustn't leak in as a distractor
-    .all();
+  return (
+    db
+      .select({
+        lemmaId: lemma.id,
+        lemma: lemma.lemma,
+        pos: lemma.pos,
+        gloss: gloss.italian,
+      })
+      .from(lemma)
+      .innerJoin(gloss, and(eq(gloss.lemmaId, lemma.id), eq(gloss.sense, "")))
+      // a reported gloss mustn't leak in as a distractor or an Alternative answer
+      .where(and(isNull(lemma.flaggedAt), eq(lemma.suppressed, false)))
+      .all()
+  );
 }
 
 function passagesByLemma(db: DB): Map<number, PassageQuestion[]> {
@@ -429,12 +434,18 @@ export interface SpeechAnswerResult {
   /**
    * correct — item done. miss — not heard; answer revealed, retry or
    * self-grade. heard — spoken recall retry after the reveal was heard; the
-   * pre-reveal attempt still needs its self-grade.
+   * pre-reveal attempt still needs its self-grade. alternative — an
+   * Alternative answer was said; the target is asked again, `excluded` named.
    */
-  status: "correct" | "miss" | "heard" | "alreadyAnswered";
+  status: "correct" | "miss" | "heard" | "alternative" | "alreadyAnswered";
   transcript: string;
   /** The target: on miss so the learner can self-grade, on hit for listen-back. */
   answer?: string;
+  /** Spoken recall's Alternative answers, shown beside a revealed target. */
+  alternatives?: string[];
+  excluded?: string[];
+  /** Item ids removed from the session: the alternative's own recall items. */
+  dropped?: string[];
   hint?: PronunciationHint;
 }
 
@@ -446,7 +457,7 @@ function asSpeechItem(stored: StoredItem): SpeechStored {
 function attemptsFor(s: StoredSession, itemId: string): SpeechAttempts {
   let a = s.attempts.get(itemId);
   if (!a) {
-    a = { revealed: false, misses: 0, hit: false };
+    a = { revealed: false, misses: 0, hit: false, excluded: [] };
     s.attempts.set(itemId, a);
   }
   return a;
@@ -467,9 +478,38 @@ function gradePronunciation(db: DB, item: SpeechStored["item"], rating: Grade): 
   return { lemma: item.lemma, difficulty: next.difficulty, due: nextPracticeDue(next.due) };
 }
 
+/** Spoken recall's Alternative answers, as lemmas; none for read-aloud. */
+function alternativesOf(speech: SpeechStored): string[] | undefined {
+  return speech.exercise === "spoken-recall"
+    ? speech.item.alternatives.map((alt) => alt.lemma)
+    : undefined;
+}
+
+/**
+ * The learner said an Alternative answer before the reveal: it is retrieval
+ * of that lemma, so it grades its productive track (once per session). Its own
+ * pending recall items are dropped: the prompt now names it.
+ */
+function creditAlternative(
+  db: DB,
+  s: StoredSession,
+  speech: Extract<SpeechStored, { exercise: "spoken-recall" }>,
+  alt: { lemmaId: number; lemma: string },
+): string[] {
+  const recallOfAlt = (i: StoredItem) =>
+    i.exercise === "spoken-recall" && i.item.lemmaId === alt.lemmaId;
+  const graded = s.items.some((i) => recallOfAlt(i) && s.answered.has(i.item.id));
+  if (!speech.retry && !graded) gradeLemma(db, alt.lemmaId, "productive", Rating.Good);
+  const pending = (i: StoredItem) => recallOfAlt(i) && !s.answered.has(i.item.id);
+  const dropped = s.items.filter(pending).map((i) => i.item.id);
+  s.items = s.items.filter((i) => !pending(i));
+  return dropped;
+}
+
 /**
  * Grade one spoken attempt. Spoken recall's first attempt is retrieval: a hit
- * grades productive Good and closes the item; a miss reveals the answer and
+ * grades productive Good and closes the item; an Alternative answer grades
+ * that lemma instead and asks again for the target; a miss reveals the answer and
  * writes nothing (whisper misfires on short non-native words — the learner
  * self-grades instead). Every later attempt, and every read-aloud attempt, is
  * a visible attempt: misses are counted, a read-aloud hit closes the item with
@@ -487,7 +527,9 @@ export async function answerSpeechItem(
   const a = attemptsFor(s, itemId);
   const answer = speech.item.lemma;
   const isRecall = speech.exercise === "spoken-recall";
-  if (a.hit) return { status: "heard", transcript: "", answer }; // already heard, awaiting self-grade
+  // already heard, awaiting self-grade
+  if (a.hit)
+    return { status: "heard", transcript: "", answer, alternatives: alternativesOf(speech) };
 
   const text = (await transcribe(audio)).trim();
   const response: SpokenResponse = {
@@ -506,16 +548,26 @@ export async function answerSpeechItem(
       checkFinished(db, s);
       return { status: "correct", transcript: text, answer };
     }
+    const alt =
+      speech.exercise === "spoken-recall"
+        ? matchedAlternative(speech.item, response, a.excluded)
+        : undefined;
+    if (alt && speech.exercise === "spoken-recall") {
+      a.excluded.push(alt.lemma);
+      const dropped = creditAlternative(db, s, speech, alt);
+      return { status: "alternative", transcript: text, excluded: a.excluded, dropped };
+    }
     a.revealed = true;
-    return { status: "miss", transcript: text, answer };
+    return { status: "miss", transcript: text, answer, alternatives: alternativesOf(speech) };
   }
 
   if (!hit) {
     a.misses++;
-    return { status: "miss", transcript: text, answer };
+    return { status: "miss", transcript: text, answer, alternatives: alternativesOf(speech) };
   }
   a.hit = true;
-  if (isRecall) return { status: "heard", transcript: text, answer };
+  if (isRecall)
+    return { status: "heard", transcript: text, answer, alternatives: alternativesOf(speech) };
   const hint = speech.retry
     ? undefined
     : gradePronunciation(db, speech.item, pronunciationRating(a) as Grade);
@@ -537,10 +589,14 @@ async function transcriptLemmas(text: string): Promise<string[]> {
  * The learner then self-grades, same as after an ASR miss; spoken-recall
  * attempts from here on are visible attempts.
  */
-export function revealItem(sessionId: string, itemId: string): { answer: string } {
+export function revealItem(
+  sessionId: string,
+  itemId: string,
+): { answer: string; alternatives?: string[] } {
   const { s, stored } = heldItem(sessionId, itemId);
   attemptsFor(s, itemId).revealed = true;
-  return { answer: asSpeechItem(stored).item.lemma };
+  const speech = asSpeechItem(stored);
+  return { answer: speech.item.lemma, alternatives: alternativesOf(speech) };
 }
 
 /**

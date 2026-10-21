@@ -139,10 +139,19 @@ _Avoid_: function word (as a data term), ambiguous word
 
 **Spoken recall**:
 The **Exercise** that proves **Productive knowledge**: given the Italian meaning, say the
-Polish lemma; the spoken answer is checked against the target. Only the attempt made
+Polish lemma; the spoken answer is checked against the target and its **Alternative
+answers**. Only the attempt made
 before the answer is revealed (or the learner's self-grade of it) grades **Productive**;
 retries after the reveal grade **Pronunciation** only.
 _Avoid_: speaking exercise (ambiguous with **Read-aloud**)
+
+**Alternative answer**:
+A lemma other than the target that also answers a **Spoken recall** prompt, because its
+primary **Gloss** is the same Italian: _następny_ for "successivo" when the target is
+_kolejny_. Saying one grades that lemma's **Productive knowledge**, then the target is
+asked again with the alternative named. Only lemmas the learner has met count; the
+reveal lists them beside the target.
+_Avoid_: synonym (Polish near-synonyms with other glosses don't count)
 
 **Read-aloud**:
 The **Exercise** of reading a displayed Polish sentence out loud. Grades **Pronunciation
