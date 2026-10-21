@@ -65,9 +65,9 @@ attempt to say a word says nothing about understanding it. Listening here means 
 nothing, since the learner asks for it precisely because they don't know the sound.
 
 **Productive knowledge**:
-Ability to _produce_ a lemma from memory when speaking. Fed only by exercises that require
-retrieval — producing the lemma without seeing it (**Spoken recall**, spoken grammar
-drills). Reading a word off the screen, even aloud, never grades this track. Tracked
+Ability to _produce_ a lemma from memory when speaking. Fed only by retrieval — producing
+the lemma without seeing it (**Spoken recall**, spoken grammar drills, free turns in a
+**Conversation**). Reading a word off the screen, even aloud, never grades this track. Tracked
 separately because comprehension precedes production.
 
 **Pronunciation knowledge**:
@@ -83,7 +83,8 @@ track's FSRS difficulty)
 
 **Visible attempt**:
 A spoken attempt at a lemma made while the lemma is on screen — any **Read-aloud**
-attempt, or a **Spoken recall** retry after the answer was revealed. The only evidence
+attempt, a **Spoken recall** retry after the answer was revealed, or a **Model line**
+read out in a **Conversation**. The only evidence
 that grades **Pronunciation knowledge**; never evidence of retrieval.
 
 **Mature**:
@@ -165,6 +166,58 @@ An LLM-generated serial fiction at the learner's level, built from known lemmas 
 one of the proposed premises.
 
 **Episode**:
-One installment of a **Story**, stored and read as a normal imported text. One Episode
-plus one **Practice** session make the daily routine.
+One installment of a **Story**, stored and read as a normal imported text. Episodes and
+**Conversations** alternate day by day; one of them plus one **Practice** session make the
+daily routine.
 _Avoid_: chapter, chunk
+
+**Conversation**:
+A spoken role-play with an LLM character from the current **Story**, set right after the
+last **Episode** read and played toward a **Goal**. Open: the character follows wherever the learner takes it. Not an **Exercise**:
+the learner steers it, though the character is nudged to make due **Productive** lemmas
+the natural answer. Counts for the daily once the learner reaches the **Debrief** having
+spoken at least 3 turns, whether or not the **Goal** was met.
+_Avoid_: dialogue, chat, scene
+
+**Goal**:
+The Italian task card a **Conversation** is played toward: _buy two rolls, ask if
+there is fresh poppy-seed cake, pay_.
+_Avoid_: mission, quest, objective
+
+**Learner profile**:
+A few facts about the learner (name, job, city, partner, hobbies), written once in
+Italian. In a **Conversation** the learner plays themself from this profile, unless the
+**Goal** assigns a role, in which case the card states the role's facts.
+
+**Character memory**:
+What a **Story** character knows about the learner from past **Conversations** in that
+story: a few lines updated after each **Debrief**. Story-scoped: what carries across
+stories belongs in the **Learner profile**.
+
+**Help ladder**:
+What a stuck learner climbs during a **Conversation** turn: try freely, then a **Hint**,
+then a **Model line**. Each rung grades differently: a free turn is retrieval (**Productive**
+Good for the lemmas said), a hinted lemma then said is failed retrieval (**Productive**
+Again), a **Model line** read out is a **Visible attempt**.
+
+**Hint**:
+The key Polish words for what the learner likely wants to say on a **Conversation** turn.
+
+**Model line**:
+A full Polish sentence the learner reads aloud when a **Hint** was not enough.
+
+**Debrief**:
+The end of a **Conversation**: up to 10 corrections of the learner's utterances, recurring
+patterns first, each with the corrected form and one Italian line. The only place
+mistakes are pointed out: in the scene, the character reacts like a patient native,
+understanding or asking again, and may repeat what it heard as people do, but never
+flags an error.
+_Avoid_: review (that is an FSRS review), feedback, report
+
+**Heard line**:
+A character line in a **Conversation** the learner followed by ear, without revealing its
+text. Counted as listening progress, never graded.
+
+**Echo**:
+A lemma the character used in its last line or two, repeated by the learner. Never graded:
+parroting is not retrieval.

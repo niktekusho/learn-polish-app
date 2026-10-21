@@ -101,6 +101,56 @@ the **Comprehension check** (text-level, ungraded).
 - **Selection**: receptive due with both MCQ and Passage applicable → 50/50 random.
   **Context-bound lemmas** always get Passage: their first receptive feeder.
 
+## Slice 0.6 — Conversation (designed 2026-10-21)
+
+Dogfood signal: 16 straight days, *giornata completa* every day since Slice 0.5 shipped.
+The gap to the goal (talking with the partner's family) is that the app never makes the
+learner hold a conversation: speaking stops at single lemmas. **Conversation**, **Goal**,
+**Help ladder**, **Hint**, **Model line**, **Echo**, **Heard line**, **Debrief**,
+**Learner profile** and **Character memory** are defined in [CONTEXT.md](../CONTEXT.md).
+Live per-turn LLM: [ADR-0007](./adr/0007-live-conversation-turns-on-a-warm-cli-session.md).
+Piper voices: [ADR-0004](./adr/0004-sidecar-hosts-asr-and-tts.md) amendment.
+
+- **Rotation**: story-locked. Episode N → Conversation set right after it → Episode N+1.
+  The daily is Practice + whichever is next. A 10-episode story spans ~20 days. No mic
+  that day: Practice alone keeps the streak, the Conversation waits.
+- **Start**: one Sonnet call writes the Goal and the character's opening from the last
+  Episode, the **Learner profile**, **Character memory** and the due **Productive** lemmas
+  (the character is nudged to make them the natural answer). Reroll allowed.
+- **Character lines**: Piper, one voice per character (auto-assigned from the labeled
+  voice catalog; the active story gets voices on its first Conversation). Audio first;
+  tap reveals the Polish (word panel works), tap again for Italian. Reveal count goes to
+  the recap as heard lines.
+- **Learner turn**: push-to-talk → Whisper → `/analyze` → live character turn. The turn
+  output also carries "Goal met?" and "understood?" flags. No in-scene corrections and
+  no prompt rule against natural repetition.
+- **Help ladder**: Hint on tap (separate call with the transcript, not in the character
+  session) → Model line read aloud.
+- **Grading**: free-turn lemmas → Productive Good; hinted lemmas then said → Productive
+  Again; Model line → Pronunciation of the hinted lemmas. Only met lemmas, **Echo**
+  excluded, first evidence per lemma per track per day wins. No Receptive grading.
+- **End**: Goal met, ~15 learner turns, or quit → **Debrief** (≤10 corrections, recurring
+  patterns first). Counts for the daily at the Debrief with ≥3 turns, Goal met or not.
+- **Storage**: transcript + Debrief per Conversation; Character memory updated by the
+  Debrief call.
+- **LLM**: warm `claude -p` stream-json session per Conversation, 30s timeout + 1 retry,
+  no API fallback. Model/effort env knobs.
+
+**Benchmark** (picks the character model): Haiku and Sonnet × effort low/medium/high on
+replayed canned scenes (including garbled turns and Italian slips). Metrics: turn latency
+p50/p90; level fit (share of the character's lemmas already known, via `/analyze`); flag
+accuracy against the known answers; blind naturalness rating 1–3 by the learner. Winner:
+cheapest cell with p90 ≤ 10s, level fit ≥ 85%, flag accuracy ≥ 90%; rating breaks ties.
+Spike 2026-10-21 (n=1): warm turns 0.8–1.9s Haiku, 1.4–3.5s Sonnet; cold spawns 2.5–5.4s.
+
+Ship order (each shippable): 1) warm session + benchmark harness 2) Piper `/speak` +
+voice catalog 3) Conversation + grading + Help ladder + Debrief 4) Character memory +
+recap line.
+
+Parked: Goals built around recurring Debrief patterns · cross-story character memory.
+Reverse-flow note: feature parity would need Italian ASR, Italian voices and a second
+Learner profile.
+
 ## Slice 1 — Speaking (opens the productive track; designed 2026-07-12)
 
 Sidecar gains a **faster-whisper** ASR endpoint (audio in → transcript out). See
@@ -169,7 +219,7 @@ mixing + mic toggle 5) read-aloud plugin.
 
 ## Slice 2 — Listening dictation
 
-Sidecar gains a **Piper** TTS endpoint with audio caching (ADR-0004). Exercise: hear a
+Reuses the **Piper** TTS endpoint and audio cache shipped in Slice 0.6 (ADR-0004). Exercise: hear a
 Polish word/sentence, type or choose what was heard. Grades receptive. First audio-input
 training in the app — the listening half of the comprehension goal.
 

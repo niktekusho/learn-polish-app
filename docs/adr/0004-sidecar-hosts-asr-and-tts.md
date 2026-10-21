@@ -34,3 +34,12 @@ above: on the daily phone the voice proved good enough, and it costs no sidecar
 endpoint, no audio cache and no network round trip. Piper stays the plan for Slice 2
 listening dictation, where the audio is the test itself and per-device voice variance
 would skew grading.
+
+## Amendment (2026-10-21): Conversation character voices use Piper
+
+**Conversation** character lines are spoken by Piper, not browser TTS. The audio is not
+graded, so the per-device variance argument above does not apply. The reason is the cast:
+each **Story** character gets its own voice, picked from a catalog the learner labels once
+(5 single-speaker Polish voices: `bass`, `darkman`, `gosia`, `mc_speech`, `mls_6892`), and
+browser TTS offers one Polish voice per device. This brings the sidecar TTS endpoint and
+its audio cache forward from Slice 2; dictation reuses them.
