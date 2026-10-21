@@ -3,6 +3,7 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { knowledge, lemma, mweOccurrence, sourceText, token } from "#/db/schema";
 import { detectMwes, loadMweHeadwords, type MweToken } from "#/dictionary/mwe";
+import { correctLemma } from "#/dictionary/lemma-correction";
 import { initialKnowledgeFields } from "#/fsrs/index";
 import type { AnalyzeResponse, AnalyzedToken } from "./sidecar";
 
@@ -57,8 +58,10 @@ export function persistAnalysis(
     for (let s = 0; s < analysis.sentences.length; s++) {
       for (const tok of analysis.sentences[s].tokens) {
         let lemmaId: number | null = null;
+        let lemmaText: string | null = null;
         if (isVocab(tok)) {
-          lemmaId = upsertLemma(tx, tok.lemma, tok.pos);
+          lemmaText = correctLemma(tx, tok.surface, tok.lemma, tok.pos);
+          lemmaId = upsertLemma(tx, lemmaText, tok.pos);
           if (!seen.has(lemmaId)) {
             seen.add(lemmaId);
             ensureReceptiveKnowledge(tx, lemmaId, now);
@@ -77,7 +80,7 @@ export function persistAnalysis(
         if (!tok.is_space) {
           collected.push({
             surface: tok.surface,
-            lemma: lemmaId != null ? tok.lemma : null,
+            lemma: lemmaText,
             position,
             sentenceIndex: s,
             isSpace: false,

@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
+import { insertEntryBatch } from "#/dictionary/loader";
 import { persistAnalysis } from "./pipeline";
 import type { AnalyzeResponse } from "./sidecar";
 
@@ -127,4 +128,89 @@ test("no headwords: zero MWE occurrences, pipeline unchanged", () => {
   const res = persistAnalysis(db, { content: "x" }, ANALYSIS, new Date(), new Map());
   expect(res.mweCount).toBe(0);
   expect(db.select().from(schema.mweOccurrence).all()).toHaveLength(0);
+});
+
+function entry(word: string, pos: string, forms: string[]) {
+  return {
+    word,
+    pos,
+    ipa: null,
+    etymology: null,
+    isMwe: false,
+    senses: [],
+    forms: forms.map((form) => ({ form, tags: [] })),
+  };
+}
+
+function oneSentence(...tokens: ReturnType<typeof w>[]): AnalyzeResponse {
+  return { sentences: [{ tokens }] };
+}
+
+function lemmaOf(db: ReturnType<typeof freshDb>, surface: string) {
+  const tok = db
+    .select()
+    .from(schema.token)
+    .all()
+    .find((t) => t.surface === surface);
+  return db
+    .select()
+    .from(schema.lemma)
+    .all()
+    .find((l) => l.id === tok?.lemmaId)?.lemma;
+}
+
+test("sidecar lemmas are corrected to the single dictionary headword for the surface and POS", () => {
+  const db = freshDb();
+  insertEntryBatch(db, [
+    entry("pracować", "verb", ["pracujesz"]),
+    entry("myśleć", "verb", ["myśli"]),
+    entry("myśl", "noun", ["myśli"]),
+    entry("słuchać", "verb", ["słucha"]),
+    entry("słuch", "noun", ["słuchu"]),
+  ]);
+  persistAnalysis(
+    db,
+    { content: "x" },
+    oneSentence(
+      w("pracujesz", "pracujesz", "VERB"),
+      w("Myśli", "myśli", "VERB"),
+      w("słucha ", "słuch", "VERB"),
+    ),
+  );
+  expect(lemmaOf(db, "pracujesz")).toBe("pracować");
+  expect(lemmaOf(db, "Myśli")).toBe("myśleć");
+  expect(lemmaOf(db, "słucha ")).toBe("słuchać");
+});
+
+test("an empty dictionary leaves sidecar lemmas unchanged", () => {
+  const db = freshDb();
+  persistAnalysis(db, { content: "x" }, oneSentence(w("słucha", "słuch", "VERB")));
+  expect(lemmaOf(db, "słucha")).toBe("słuch");
+});
+
+test("a surface matching two headwords for the same POS keeps the sidecar lemma", () => {
+  const db = freshDb();
+  insertEntryBatch(db, [entry("mieć", "verb", ["mają"]), entry("majać", "verb", ["mają"])]);
+  persistAnalysis(db, { content: "x" }, oneSentence(w("mają", "mają", "VERB")));
+  expect(lemmaOf(db, "mają")).toBe("mają");
+});
+
+test("a sidecar lemma that is a headword for its POS is never replaced", () => {
+  const db = freshDb();
+  insertEntryBatch(db, [entry("robić", "verb", []), entry("robieć", "verb", ["robię"])]);
+  persistAnalysis(db, { content: "x" }, oneSentence(w("robię", "robić", "VERB")));
+  expect(lemmaOf(db, "robię")).toBe("robić");
+});
+
+test("MWE detection sees the corrected lemma", () => {
+  const db = freshDb();
+  insertEntryBatch(db, [entry("słuchać", "verb", ["słucha"])]);
+  const res = persistAnalysis(
+    db,
+    { content: "x" },
+    oneSentence(w("słucha", "słuch", "VERB"), sp(" "), w("muzyki", "muzyka", "NOUN")),
+    new Date(),
+    new Map([["słuchać", ["słuchać muzyki"]]]),
+  );
+  expect(res.mweCount).toBe(1);
 });

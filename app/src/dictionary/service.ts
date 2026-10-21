@@ -74,12 +74,7 @@ export function lookupDictionary(
 
   for (const word of [lemma, lemma.toLowerCase()]) {
     if (mapped.length > 0) {
-      const rows = db
-        .select()
-        .from(dictEntry)
-        .where(eq(dictEntry.word, word))
-        .all()
-        .filter((r) => mapped.includes(r.pos));
+      const rows = entriesForPos(db, word, mapped);
       if (rows.length > 0) return { matchedBy: "lemma+pos", entries: hydrate(db, rows, lemmaId) };
     }
     const rows = db.select().from(dictEntry).where(eq(dictEntry.word, word)).all();
@@ -87,6 +82,16 @@ export function lookupDictionary(
     if (word === lemma.toLowerCase()) break; // no second iteration needed
   }
   return { matchedBy: null, entries: [] };
+}
+
+/** Dictionary entries with this exact headword under one of the kaikki POS codes. */
+export function entriesForPos(db: DB, word: string, kaikkiPos: string[]) {
+  return db
+    .select()
+    .from(dictEntry)
+    .where(eq(dictEntry.word, word))
+    .all()
+    .filter((r) => kaikkiPos.includes(r.pos));
 }
 
 function hydrate(

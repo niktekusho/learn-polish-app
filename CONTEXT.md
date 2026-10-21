@@ -12,7 +12,9 @@ _Avoid_: token, word (when precision matters)
 
 **Lemma**:
 The dictionary/base form of a word that groups all its surface forms. _kot_ is the lemma
-of _kota_, _kotu_, _kotem_. The unit at which knowledge is tracked.
+of _kota_, _kotu_, _kotem_. The unit at which knowledge is tracked. Assigned at text
+import by the morphology analyzer, corrected by the **Home dictionary**'s inflected forms
+when the analyzer's lemma is not a headword for the word's part of speech.
 _Avoid_: root, stem, base word
 
 **Multi-word expression (MWE)**:

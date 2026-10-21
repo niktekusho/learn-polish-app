@@ -31,6 +31,9 @@ Diki is link-only — it has no dump or API, and scraping it is against its ToS.
   matters only if the app is ever distributed.
 - The kaikki dictionary complements the morphology sidecar (ADR-0001): the analyzer parses
   running text (form → lemma); Wiktionary supplies the inflection tables for drills.
+  At import those tables also correct the analyzer's lemma: when it is not a headword for
+  the token's POS and the surface is a form of exactly one headword for that POS, the
+  headword wins (spaCy gives _słuch_ for _słucha_, the dictionary gives _słuchać_).
 
 ## Amendment (2026-07-11): interim gloss source until kaikki lands
 
