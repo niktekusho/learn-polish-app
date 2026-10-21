@@ -159,7 +159,7 @@ export function listSuppressedMwes(db: DB): ContextBoundLemma[] {
   return db
     .select({ lemmaId: lemma.id, lemma: lemma.lemma, pos: lemma.pos })
     .from(lemma)
-    .where(eq(lemma.suppressed, true))
+    .where(and(eq(lemma.suppressed, true), eq(lemma.pos, "MWE")))
     .orderBy(asc(lemma.lemma))
     .all();
 }

@@ -72,7 +72,8 @@ export const lemma = sqliteTable(
     // Meaning only exists in a sentence (CONTEXT.md "Context-bound lemma"):
     // never asked as a single word, still read aloud.
     contextBound: integer("context_bound", { mode: "boolean" }).notNull().default(false),
-    // pos='MWE' only (CONTEXT.md "Suppressed MWE"): never detected at import.
+    // MWEs and Formulas only (CONTEXT.md "Suppressed MWE", "Suppressed formula"):
+    // never detected at import.
     suppressed: integer("suppressed", { mode: "boolean" }).notNull().default(false),
   },
   (t) => [
@@ -211,6 +212,36 @@ export const gloss = sqliteTable(
       .$defaultFn(() => new Date()),
   },
   (t) => [uniqueIndex("gloss_lemma_sense_uq").on(t.lemmaId, t.sense)],
+);
+
+/**
+ * What one occurrence means in its sentence (CONTEXT.md "Occurrence gloss"),
+ * cached per (token, unit). An MWE occurrence is keyed by its first token.
+ */
+export const occurrenceGloss = sqliteTable(
+  "occurrence_gloss",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    tokenId: integer("token_id")
+      .notNull()
+      .references(() => token.id, { onDelete: "cascade" }),
+    lemmaId: integer("lemma_id")
+      .notNull()
+      .references(() => lemma.id, { onDelete: "cascade" }),
+    // senseKey of the fitting dictionary sense; null = free Italian, no sense fits.
+    sense: text("sense"),
+    italian: text("italian").notNull(),
+    provider: text("provider", {
+      enum: ["stub", "claude-cli", "codex-cli", "ollama", "api", "manual"],
+    }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("occurrence_gloss_token_lemma_uq").on(t.tokenId, t.lemmaId),
+    index("occurrence_gloss_lemma_idx").on(t.lemmaId),
+  ],
 );
 
 /**

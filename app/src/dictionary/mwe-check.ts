@@ -8,10 +8,12 @@ import {
   knowledge,
   lemma,
   mweOccurrence,
+  occurrenceGloss,
   passageQuestion,
   reviewLog,
   token,
 } from "#/db/schema";
+import { FORMULA_POS } from "#/import/classify";
 import { ensureReceptiveKnowledge } from "#/import/pipeline";
 import type { GlossProvider, MweCheckItem } from "#/llm/provider";
 import { detectMwes, type MweMatch, type MweToken } from "./mwe";
@@ -25,19 +27,25 @@ const ATTEMPTS = 3;
  * Judge each candidate in its sentence (CONTEXT.md "Multi-word expression",
  * "Formula") with ONE provider call, retried. Throws, naming the provider and
  * the cause, when the check cannot run; no candidates means no call.
+ * A candidate's `meaning` overrides the one looked up for its headword.
  */
 export async function checkInContext(
   db: DB,
   checker: MweChecker,
   kind: "MWE" | "Formula",
-  candidates: { headword: string; sentence: string }[],
+  candidates: { headword: string; sentence: string; meaning?: string }[],
 ): Promise<boolean[]> {
   if (candidates.length === 0) return [];
   if (!checker.checkMwes) {
     throw new Error(`Provider "${checker.name}" cannot run the ${kind} check.`);
   }
-  const filter = kind === "MWE" ? eq(dictEntry.isMwe, true) : eq(dictEntry.pos, "intj");
-  const { items, itemOf } = checkItems(candidates, (headword) => sensesOf(db, headword, filter));
+  // A formula found by a click has no interjection senses: its gloss is its meaning.
+  const meaning =
+    kind === "MWE"
+      ? (headword: string) => sensesOf(db, headword, eq(dictEntry.isMwe, true))
+      : (headword: string) =>
+          sensesOf(db, headword, eq(dictEntry.pos, "intj")) || formulaGloss(db, headword);
+  const { items, itemOf } = checkItems(candidates, meaning);
   let cause: unknown;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     try {
@@ -118,11 +126,17 @@ export function suppressMwe(db: DB, lemmaId: number): void {
       .run();
     if (changes === 0) return;
     tx.delete(mweOccurrence).where(eq(mweOccurrence.lemmaId, lemmaId)).run();
-    tx.delete(gloss).where(eq(gloss.lemmaId, lemmaId)).run();
-    tx.delete(passageQuestion).where(eq(passageQuestion.lemmaId, lemmaId)).run();
-    tx.delete(knowledge).where(eq(knowledge.lemmaId, lemmaId)).run();
-    tx.delete(reviewLog).where(eq(reviewLog.lemmaId, lemmaId)).run();
+    forgetUnit(tx, lemmaId);
   });
+}
+
+/** Delete what Practice and the reader know of a unit: glosses, questions, knowledge, history. */
+export function forgetUnit(db: DB, lemmaId: number): void {
+  db.delete(gloss).where(eq(gloss.lemmaId, lemmaId)).run();
+  db.delete(occurrenceGloss).where(eq(occurrenceGloss.lemmaId, lemmaId)).run();
+  db.delete(passageQuestion).where(eq(passageQuestion.lemmaId, lemmaId)).run();
+  db.delete(knowledge).where(eq(knowledge.lemmaId, lemmaId)).run();
+  db.delete(reviewLog).where(eq(reviewLog.lemmaId, lemmaId)).run();
 }
 
 /**
@@ -212,21 +226,33 @@ export function sentenceText(db: DB, textId: number, sentenceIndex: number): str
  * share one verdict, and each candidate's item index.
  */
 function checkItems(
-  candidates: { headword: string; sentence: string }[],
+  candidates: { headword: string; sentence: string; meaning?: string }[],
   meaning: (headword: string) => string,
 ): { items: MweCheckItem[]; itemOf: number[] } {
   const items: MweCheckItem[] = [];
   const index = new Map<string, number>();
-  const itemOf = candidates.map(({ headword, sentence }) => {
+  const itemOf = candidates.map((c) => {
+    const { headword, sentence } = c;
     const key = `${headword}\n${sentence}`;
     let i = index.get(key);
     if (i === undefined) {
-      i = items.push({ headword, meaning: meaning(headword), sentence }) - 1;
+      i = items.push({ headword, meaning: c.meaning ?? meaning(headword), sentence }) - 1;
       index.set(key, i);
     }
     return i;
   });
   return { items, itemOf };
+}
+
+/** The inline gloss of a formula unit, or "" when it has none. */
+function formulaGloss(db: DB, word: string): string {
+  const [row] = db
+    .select({ italian: gloss.italian })
+    .from(gloss)
+    .innerJoin(lemma, eq(gloss.lemmaId, lemma.id))
+    .where(and(eq(lemma.lemma, word), eq(lemma.pos, FORMULA_POS), eq(gloss.sense, "")))
+    .all();
+  return row?.italian ?? "";
 }
 
 /** The headword's dictionary senses under `filter`, joined for a check prompt. */

@@ -7,6 +7,8 @@ import type {
   GlossProvider,
   GlossRequest,
   MweCheckItem,
+  OccurrenceRequest,
+  OccurrenceResult,
   PassageQuestionRequest,
   PassageRequest,
   ProviderName,
@@ -34,7 +36,13 @@ export class StubProvider implements GlossProvider, StoryProvider {
         italian: `IT:${s.gloss}`,
       })),
       bestIndex: 0,
+      occurrence: { index: 0 },
     };
+  }
+
+  async glossOccurrence(req: OccurrenceRequest): Promise<OccurrenceResult> {
+    if (req.senses.length > 0) return { index: 0 };
+    return { italian: `«${req.surface}» — occorrenza stub`, fixed: false, note: null };
   }
 
   async checkMwes(items: MweCheckItem[]): Promise<boolean[]> {

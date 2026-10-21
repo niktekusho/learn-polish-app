@@ -72,27 +72,75 @@ export function parseGloss(stdout: string): string {
 export interface SenseGlossRequest {
   lemma: string;
   pos: string;
+  surface: string; // the clicked form, judged for a fixed use
   sentence: string;
   senses: { index: number; gloss: string }[]; // English Wiktionary senses
 }
 
+/**
+ * What one occurrence means in its sentence (CONTEXT.md "Occurrence gloss"):
+ * the fitting sense, or free Italian with whether the form is a fixed use.
+ */
+export type OccurrenceResult =
+  | { index: number }
+  | { italian: string; fixed: boolean; note: string | null };
+
 export interface SenseGlossResult {
   translations: { index: number; italian: string }[]; // ALL senses translated
-  bestIndex: number; // sense fitting the sentence
+  bestIndex: number; // sense fitting the sentence, always a dictionary sense
+  occurrence: OccurrenceResult;
 }
+
+export interface OccurrenceRequest {
+  lemma: string;
+  pos: string;
+  surface: string;
+  sentence: string;
+  senses: { index: number; gloss: string; italian: string }[];
+}
+
+const OCCURRENCE_RULE =
+  "Per la forma nella frase: se uno dei sensi si adatta, rispondi " +
+  '{"index":N}; se nessuno si adatta, rispondi {"italian":"...","fixed":true|false,' +
+  '"note":"..."|null} con la traduzione italiana in questa frase (1-4 parole). ' +
+  "fixed è true solo se la forma flessa è usata come espressione fissa, e allora " +
+  'note è una breve nota d\'uso. Esempio: "Poproszę" in "Poproszę chleb." = ' +
+  '{"italian":"vorrei","fixed":true,"note":"ordinando, cortese"}.';
 
 // Shared prompt for the CLI providers, same hardened tone as buildGlossPrompt.
 export function buildSenseGlossPrompt(req: SenseGlossRequest): string {
   return (
     "Sei un dizionario polacco-italiano. Il lemma polacco ha i seguenti sensi " +
     "(dal Wiktionary inglese). Traduci OGNI senso in una glossa italiana breve " +
-    "(1-4 parole, forma base di dizionario). Poi indica quale senso è quello " +
-    "usato nella frase data. Rispondi SOLO con JSON valido, senza testo attorno, " +
-    'nel formato: {"translations":[{"index":0,"italian":"..."}],"bestIndex":0}\n\n' +
-    `Lemma: ${req.lemma}\nPOS: ${req.pos}\nFrase: ${req.sentence}\nSensi:\n` +
+    "(1-4 parole, forma base di dizionario). Poi indica in bestIndex il senso più " +
+    "vicino a quello usato nella frase data. " +
+    OCCURRENCE_RULE +
+    " Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
+    '{"translations":[{"index":0,"italian":"..."}],"bestIndex":0,"occurrence":{"index":0}}\n\n' +
+    `Lemma: ${req.lemma}\nPOS: ${req.pos}\nForma: ${req.surface}\nFrase: ${req.sentence}\nSensi:\n` +
     req.senses.map((s) => `${s.index}. ${s.gloss}`).join("\n")
   );
 }
+
+export function buildOccurrencePrompt(req: OccurrenceRequest): string {
+  return (
+    "Sei un dizionario polacco-italiano. Ecco i sensi del lemma polacco (inglese, " +
+    "con la glossa italiana). " +
+    OCCURRENCE_RULE +
+    " Rispondi SOLO con JSON valido, senza testo attorno.\n\n" +
+    `Lemma: ${req.lemma}\nPOS: ${req.pos}\nForma: ${req.surface}\nFrase: ${req.sentence}\nSensi:\n` +
+    (req.senses.map((s) => `${s.index}. ${s.gloss} (${s.italian})`).join("\n") || "(nessuno)")
+  );
+}
+
+const occurrenceResponse = z.union([
+  z.object({ index: z.number().int().min(0) }),
+  z.object({
+    italian: z.string().trim().min(1).max(60),
+    fixed: z.boolean(),
+    note: z.string().trim().min(1).max(60).nullable(),
+  }),
+]);
 
 const senseGlossResponse = z.object({
   translations: z
@@ -104,7 +152,15 @@ const senseGlossResponse = z.object({
     )
     .min(1),
   bestIndex: z.number().int().min(0),
+  occurrence: occurrenceResponse,
 });
+
+function checkOccurrence(occurrence: OccurrenceResult, senseCount: number): OccurrenceResult {
+  if ("index" in occurrence && occurrence.index >= senseCount) {
+    throw new Error(`occurrence index ${occurrence.index} out of range (${senseCount})`);
+  }
+  return occurrence;
+}
 
 // Validate the raw CLI output. Throws on junk so nothing gets cached — a bad
 // gloss written to the cache becomes permanent (#6).
@@ -118,7 +174,12 @@ export function parseSenseGlossJson(stdout: string, senseCount: number): SenseGl
   if (!parsed.translations.some((t) => t.index === parsed.bestIndex)) {
     throw new Error(`bestIndex ${parsed.bestIndex} not among translations`);
   }
+  checkOccurrence(parsed.occurrence, senseCount);
   return parsed;
+}
+
+export function parseOccurrenceJson(stdout: string, senseCount: number): OccurrenceResult {
+  return checkOccurrence(parseJsonOutput(stdout, "occurrence", occurrenceResponse), senseCount);
 }
 
 // --- MWE and Formula check (CONTEXT.md "Multi-word expression", "Formula") ---
@@ -408,6 +469,9 @@ export interface GlossProvider {
   // Optional capability: providers without it fall back to sentence-context
   // glossing even for in-dictionary lemmas.
   glossSenses?(req: SenseGlossRequest): Promise<SenseGlossResult>;
+  // Optional capability: the occurrence gloss of a lemma already glossed.
+  // Providers without it show the lemma gloss for later occurrences.
+  glossOccurrence?(req: OccurrenceRequest): Promise<OccurrenceResult>;
   // Optional capability: comprehension-check MCQ generation for a whole text.
   comprehension?(req: ComprehensionRequest): Promise<ComprehensionResult>;
   // Optional capabilities: Passage exercise preparation, run in the background.

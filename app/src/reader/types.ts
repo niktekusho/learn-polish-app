@@ -3,6 +3,7 @@
 // server-decided receptive-knowledge verdicts (see reader/knowledge.ts) — the
 // UI renders on these booleans, never on a raw FSRS state enum.
 export interface ReaderToken {
+  id: number;
   surface: string;
   isSpace: boolean;
   position: number;

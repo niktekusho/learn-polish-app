@@ -1,10 +1,12 @@
 import { expect, test } from "vitest";
 import {
   buildComprehensionPrompt,
+  buildOccurrencePrompt,
   buildSenseGlossPrompt,
   parseComprehensionJson,
   parseEpisodeText,
   parseMweCheckJson,
+  parseOccurrenceJson,
   parsePassageJson,
   parsePassageQuestionJson,
   parsePremisesJson,
@@ -18,12 +20,62 @@ const good = JSON.stringify({
     { index: 1, italian: "serratura" },
   ],
   bestIndex: 1,
+  occurrence: { index: 1 },
 });
 
 test("parses plain JSON", () => {
   const res = parseSenseGlossJson(good, 2);
   expect(res.bestIndex).toBe(1);
   expect(res.translations).toHaveLength(2);
+  expect(res.occurrence).toEqual({ index: 1 });
+});
+
+test("parses a free-text occurrence with its fixed flag and note", () => {
+  const free = JSON.stringify({
+    translations: [{ index: 0, italian: "chiedere a qualcuno" }],
+    bestIndex: 0,
+    occurrence: { italian: "vorrei", fixed: true, note: "ordinando, cortese" },
+  });
+  expect(parseSenseGlossJson(free, 1).occurrence).toEqual({
+    italian: "vorrei",
+    fixed: true,
+    note: "ordinando, cortese",
+  });
+});
+
+test("throws on an occurrence sense index out of range", () => {
+  const bad = JSON.stringify({
+    translations: [{ index: 0, italian: "castello" }],
+    bestIndex: 0,
+    occurrence: { index: 4 },
+  });
+  expect(() => parseSenseGlossJson(bad, 1)).toThrow(/occurrence index 4 out of range/);
+});
+
+test("occurrence call: parses a sense pointer or free text", () => {
+  expect(parseOccurrenceJson('{"index":1}', 2)).toEqual({ index: 1 });
+  expect(parseOccurrenceJson('{"italian":"in","fixed":false,"note":null}', 2)).toEqual({
+    italian: "in",
+    fixed: false,
+    note: null,
+  });
+  expect(() => parseOccurrenceJson('{"index":0}', 0)).toThrow(/out of range/);
+  expect(() => parseOccurrenceJson('{"italian":""}', 2)).toThrow();
+});
+
+test("occurrence prompt names the surface and lists senses with their Italian", () => {
+  const prompt = buildOccurrencePrompt({
+    lemma: "do",
+    pos: "ADP",
+    surface: "do",
+    sentence: "Marco idzie do piekarni.",
+    senses: [
+      { index: 0, gloss: "to, towards", italian: "a" },
+      { index: 1, gloss: "for", italian: "per" },
+    ],
+  });
+  expect(prompt).toContain("Forma: do");
+  expect(prompt).toContain("1. for (per)");
 });
 
 test("strips markdown fences", () => {
@@ -39,6 +91,7 @@ test("throws when bestIndex is not among translations", () => {
   const bad = JSON.stringify({
     translations: [{ index: 0, italian: "castello" }],
     bestIndex: 3,
+    occurrence: { index: 0 },
   });
   expect(() => parseSenseGlossJson(bad, 5)).toThrow(/not among/);
 });
@@ -103,6 +156,7 @@ test("prompt lists senses with their indexes and demands JSON", () => {
   const prompt = buildSenseGlossPrompt({
     lemma: "zamek",
     pos: "NOUN",
+    surface: "Zamek",
     sentence: "Zamek w drzwiach.",
     senses: [
       { index: 0, gloss: "castle" },

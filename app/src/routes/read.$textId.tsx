@@ -25,6 +25,7 @@ const getText = createServerFn()
 
     const rows = db
       .select({
+        id: schema.token.id,
         surface: schema.token.surface,
         isSpace: schema.token.isSpace,
         position: schema.token.position,
@@ -295,6 +296,7 @@ function Reader() {
             // Swap the panel to a synthetic token for the MWE tracked unit.
             // Surface is the span as written in the text, which can differ from the headword.
             setSelected({
+              id: tokens.find((t) => t.position === occ?.startPosition)?.id ?? selected.id,
               surface: occ
                 ? tokens
                     .filter((t) => t.position >= occ.startPosition && t.position <= occ.endPosition)
@@ -315,6 +317,10 @@ function Reader() {
           }}
           onSuppressed={() => {
             setSelected(null);
+            router.invalidate();
+          }}
+          onPromoted={(formula) => {
+            setSelected({ ...selected, ...formula, known: false, stillLearning: false });
             router.invalidate();
           }}
           onGraded={markGraded}

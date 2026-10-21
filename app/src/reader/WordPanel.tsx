@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { z } from "zod";
 import { ListenButton } from "#/audio/speak";
 import type { DictLookupResult } from "#/dictionary/service";
+import type { GlossResult } from "#/gloss/service";
 import { nameLabel } from "./name";
 import type { KnowledgeFlags, ReaderToken } from "./types";
 
@@ -16,6 +17,7 @@ const lookupGloss = createServerFn({ method: "POST" })
         lemma: z.string(),
         pos: z.string(),
         sentence: z.string().min(1),
+        token: z.object({ id: z.number().int(), surface: z.string() }),
       })
       .parse(d),
   )
@@ -25,7 +27,8 @@ const lookupGloss = createServerFn({ method: "POST" })
     return getGloss(db, data);
   });
 
-// Server-only: discard the cached gloss and generate a fresh one from context.
+// Server-only: discard the lemma's cached glosses, occurrence glosses included,
+// and generate fresh ones from context.
 const regenerateGlossFn = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
     z
@@ -34,6 +37,7 @@ const regenerateGlossFn = createServerFn({ method: "POST" })
         lemma: z.string(),
         pos: z.string(),
         sentence: z.string().min(1),
+        token: z.object({ id: z.number().int(), surface: z.string() }),
       })
       .parse(d),
   )
@@ -99,6 +103,15 @@ const suppressMweFn = createServerFn({ method: "POST" })
     suppressMwe(db, data.lemmaId);
   });
 
+// Server-only: mark a formula never-detect (CONTEXT.md "Suppressed formula").
+const suppressFormulaFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => z.object({ lemmaId: z.number().int() }).parse(d))
+  .handler(async ({ data }) => {
+    const { db } = await import("#/db/index");
+    const { suppressFormula } = await import("#/dictionary/formula");
+    suppressFormula(db, data.lemmaId);
+  });
+
 // ts-fsrs Rating values used by the two learner actions.
 const RATING_KNOWN = 4; // Easy: long interval, marks the word learned
 const RATING_LEARNING = 1; // Again: short interval, keep it in rotation
@@ -109,6 +122,7 @@ export function WordPanel({
   mwe = null,
   onSelectMwe,
   onSuppressed,
+  onPromoted,
   onGraded,
   onClose,
 }: {
@@ -118,10 +132,15 @@ export function WordPanel({
   mwe?: { lemmaId: number; headword: string } | null;
   onSelectMwe?: (mwe: { lemmaId: number; headword: string }) => void;
   onSuppressed?: () => void;
+  // The clicked token moved to a new Formula unit.
+  onPromoted?: (formula: { lemmaId: number; lemma: string; pos: string }) => void;
   onGraded: (lemmaId: number, flags: KnowledgeFlags) => void;
   onClose: () => void;
 }) {
   const [gloss, setGloss] = useState<string | null>(null);
+  const [occurrence, setOccurrence] = useState<string | null>(null);
+  const [occurrenceError, setOccurrenceError] = useState<string | null>(null);
+  const [suppressError, setSuppressError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [marking, setMarking] = useState(false);
@@ -145,15 +164,27 @@ export function WordPanel({
         lemma: token.lemma,
         pos: token.pos ?? "",
         sentence,
+        token: { id: token.id, surface: token.surface },
       },
     })
-      .then((r) => alive && setGloss(r.italian))
+      .then((r) => {
+        if (!alive) return;
+        showGloss(r);
+        if (r.formula) onPromoted?.(r.formula);
+      })
       .catch(() => alive && setError(true))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [token.lemmaId, token.lemma, token.pos, sentence]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token.id, token.lemmaId, token.lemma, token.pos, token.surface, sentence]);
+
+  function showGloss(r: GlossResult) {
+    setGloss(r.italian);
+    setOccurrence(r.occurrence);
+    setOccurrenceError(r.occurrenceError ?? null);
+  }
 
   useEffect(() => runLookup(), [runLookup]);
 
@@ -187,9 +218,11 @@ export function WordPanel({
           lemma: token.lemma,
           pos: token.pos ?? "",
           sentence,
+          token: { id: token.id, surface: token.surface },
         },
       });
-      setGloss(r.italian);
+      showGloss(r);
+      if (r.formula) onPromoted?.(r.formula);
     } catch {
       setError(true);
     } finally {
@@ -294,7 +327,24 @@ export function WordPanel({
               </div>
             ) : (
               <div className="flex items-center justify-between gap-2">
-                <span>{gloss ?? "—"}</span>
+                <span>
+                  {occurrence ?? gloss ?? "—"}
+                  {occurrence && gloss && occurrence !== gloss && (
+                    <span className="block text-xs font-normal text-gray-500">{gloss}</span>
+                  )}
+                  {occurrenceError && (
+                    <span className="block text-xs font-normal text-red-600">
+                      {occurrenceError}{" "}
+                      <button
+                        type="button"
+                        onClick={runLookup}
+                        className="underline hover:text-red-700"
+                      >
+                        Riprova
+                      </button>
+                    </span>
+                  )}
+                </span>
                 {token.lemmaId != null && (
                   <span className="flex gap-2 text-xs text-gray-400">
                     <button
@@ -359,6 +409,35 @@ export function WordPanel({
           Non è un'espressione
         </button>
       )}
+
+      {token.pos === "INTJ" && token.lemmaId != null && (
+        <button
+          type="button"
+          disabled={marking}
+          onClick={async () => {
+            if (
+              !window.confirm(
+                `«${token.lemma}» non verrà più riconosciuta come formula: torna al verbo.`,
+              )
+            )
+              return;
+            setMarking(true);
+            setSuppressError(null);
+            try {
+              await suppressFormulaFn({ data: { lemmaId: token.lemmaId as number } });
+              onSuppressed?.();
+            } catch (err) {
+              setSuppressError(err instanceof Error ? err.message : "Non riuscito.");
+            } finally {
+              setMarking(false);
+            }
+          }}
+          className="mt-4 text-sm text-gray-500 underline hover:text-gray-700 disabled:opacity-50"
+        >
+          Non è una formula
+        </button>
+      )}
+      {suppressError && <p className="mt-1 text-sm text-red-600">{suppressError}</p>}
 
       {dict && dict.matchedBy !== null && <DictSection dict={dict} />}
 

@@ -3,6 +3,7 @@ import {
   buildEpisodePrompt,
   buildGlossPrompt,
   buildMweCheckPrompt,
+  buildOccurrencePrompt,
   buildPassagePrompt,
   buildPassageQuestionPrompt,
   buildPremisesPrompt,
@@ -17,10 +18,13 @@ import {
   type GlossRequest,
   type LlmTask,
   type MweCheckItem,
+  type OccurrenceRequest,
+  type OccurrenceResult,
   parseComprehensionJson,
   parseEpisodeText,
   parseGloss,
   parseMweCheckJson,
+  parseOccurrenceJson,
   parsePassageJson,
   parsePassageQuestionJson,
   parsePremisesJson,
@@ -53,6 +57,13 @@ export abstract class CliProvider implements GlossProvider, StoryProvider {
   async glossSenses(req: SenseGlossRequest): Promise<SenseGlossResult> {
     return parseSenseGlossJson(
       await this.exec(buildSenseGlossPrompt(req), "gloss"),
+      req.senses.length,
+    );
+  }
+
+  async glossOccurrence(req: OccurrenceRequest): Promise<OccurrenceResult> {
+    return parseOccurrenceJson(
+      await this.exec(buildOccurrencePrompt(req), "gloss"),
       req.senses.length,
     );
   }
