@@ -40,13 +40,20 @@ What the user's knowledge is recorded against: a **Lemma** (plus the set of **Su
 forms** encountered) or a **Multi-word expression**. Never a raw surface form, never a **Name**.
 
 **Formula**:
-An inflected word used as a fixed interjection: _proszę_ ("prego", "ecco a lei"),
-_dziękuję_, _przepraszam_. A **Tracked unit** in its own right, separate from the verb it
-is a form of: _Proszę o chleb_ is still _prosić_. A candidate when the surface form is an
-interjection headword in the **Home dictionary** and the analyzer gave it a different
-lemma; each occurrence is checked in its sentence like a **Multi-word expression** match.
-No word list: the dictionary decides the candidates.
+An inflected word used as a fixed expression: _proszę_ ("prego", "ecco a lei"),
+_dziękuję_, _przepraszam_, _poproszę_ ("vorrei" when ordering). A **Tracked unit** in its
+own right, separate from the verb it is a form of: _Proszę o chleb_ is still _prosić_.
+Found two ways: the surface form is an interjection headword in the **Home dictionary**
+and the analyzer gave it a different lemma, or an **Occurrence gloss** found no
+dictionary sense fitting and judged the use fixed. Either way each occurrence is checked
+in its sentence like a **Multi-word expression** match. No word list: the dictionary and
+accepted occurrences decide the candidates.
 _Avoid_: politeness word, set phrase
+
+**Suppressed formula**:
+A **Formula** the learner has marked as never-detect, for when a word was wrongly judged a
+fixed use. Its occurrences go back to the verb they are a form of; its **Knowledge
+state** is removed.
 
 **Name**:
 A proper noun in a text: a person (_Kasia_) or a place (_Warszawa_). Never a **Tracked
@@ -67,6 +74,12 @@ in the **Home dictionary**, one LLM call translates every Wiktionary sense and f
 one fitting the sentence (the inline gloss); out-of-dictionary lemmas fall back to
 sentence-context generation. Machine-generated glosses are provisional; a **Manual
 gloss** overrides them.
+
+**Occurrence gloss**:
+What one occurrence of a word means in its sentence, shown while reading beside the
+lemma's **Gloss**. One of the lemma's word-senses, or free Italian when none fits
+(_Poproszę chleb_ → "vorrei"). Never becomes the lemma's **Gloss** and is never practised
+itself: a fixed use worth practising becomes a **Formula**.
 
 **Manual gloss**:
 A **Gloss** written or corrected by the learner. The highest-trust tier: never overwritten

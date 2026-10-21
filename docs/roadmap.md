@@ -285,7 +285,8 @@ Future notes (explicitly wanted, not v1):
   ADR-0002 "Amendment resolved"). The word panel now shows every sense with its Italian,
   so the *przedmiot*/"oggetto" trap is visible and fixable. Inline display is still
   first-pick-wins until WSD (below) is picked up.
-- **Word-sense disambiguation, accent scoring (tier-3), IPA exercises, native audio
-  (v2)** — unchanged, still parked. (WSD = auto-picking the right sense per occurrence;
-  a later layer on top of per-sense glosses above.) Dogfood signal (2026-10-15): *do*
-  glossed "per" inline in *Marco idzie do piekarni*, where it means "in".
+- ~~**Word-sense disambiguation**~~ — **promoted (2026-10-21)** to issue #5 as
+  occurrence glosses (ADR-0002 amendment, 2026-10-21). Dogfood signals: *do* glossed
+  "per" in *Marco idzie do piekarni*, where it means "in" (2026-10-15); *poproszę*
+  glossed "chiedere a qualcuno" where it means "vorrei" (2026-10-21).
+- **Accent scoring (tier-3), IPA exercises, native audio (v2)** — unchanged, still parked.

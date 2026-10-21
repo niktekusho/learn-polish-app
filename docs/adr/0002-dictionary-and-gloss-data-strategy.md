@@ -80,3 +80,27 @@ Per-sense glosses diverge slightly from the original two-wave plan:
   lemmas absent from the dump.
 - WSD (auto-picking the right sense per occurrence) remains parked; inline display is
   first-pick-wins, with manual edit/regenerate as recourse.
+
+## Amendment (2026-10-21): occurrence glosses and click-found formulas
+
+Inline display stops being first-pick-wins. Dogfood signal: *Poproszę chleb* showed
+*poprosić*'s only sense, "chiedere a qualcuno", where the sentence means "vorrei"; no
+Wiktionary sense carries that meaning, so picking a sense per occurrence alone cannot fix it.
+
+- **Occurrence gloss** (CONTEXT.md): generated lazily on the first click of a token and
+  cached per token. It points to one of the lemma's senses, or is free Italian when none
+  fits. Out-of-dictionary lemmas always get free text. The lemma's own gloss (`sense = ''`)
+  stays a dictionary sense: occurrence free text never moves up to it, because Practice
+  asks the lemma gloss with no sentence.
+- Cost: the first click of a lemma folds the occurrence answer into the existing hybrid
+  call; later occurrences cost one small call each, then nothing.
+- **Formulas found by a click**: when no sense fits an inflected form, the same answer
+  judges whether the use is fixed and gives a short usage note ("vorrei (ordinando,
+  cortese)"). A fixed use becomes a **Formula** with that gloss, and past occurrences of
+  the surface are re-checked at once (one call, 3 retries, loud failure). Later imports
+  add surfaces of existing formulas to the Formula check, which stays one call per text.
+- Rejected: detecting such formulas at import, which needs a check on every inflected
+  token since no dictionary entry marks the candidates; asking the learner to confirm
+  each promotion, which a sub-A1 learner cannot judge. A wrong promotion is undone by
+  suppressing the formula.
+- Word-sense disambiguation (roadmap, parked) is covered by the sense pointer.
