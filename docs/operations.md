@@ -45,6 +45,10 @@ on the phone.
   names as vocabulary (#2), with the sidecar up. It cleans names imported before then and
   re-analyzes older texts to store their morph tags; texts the sidecar could not analyze
   are reported, and running it again retries them. Otherwise a rerun changes nothing.
+- **Repair formulas** (maintenance page): run once on prod after the deploy that tracks
+  _proszę_, _dziękuję_, _przepraszam_ as formulas (#3), with the LLM provider reachable. It
+  checks past uses in their sentences; a verb left with no uses is deleted with its
+  knowledge. A failed check changes nothing; a rerun only re-checks the remaining verb uses.
 - **Refresh the dev DB with real data:**
   `sqlite3 ~/Library/Application\ Support/learn-polish/app.db ".backup app/data/app.db"`
   (stop `pnpm dev` first).

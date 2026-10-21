@@ -121,13 +121,13 @@ export function parseSenseGlossJson(stdout: string, senseCount: number): SenseGl
   return parsed;
 }
 
-// --- MWE check (CONTEXT.md "Multi-word expression") -------------------------
+// --- MWE and Formula check (CONTEXT.md "Multi-word expression", "Formula") ---
 // ONE call per batch: a dictionary match can be a compositional phrase
-// (*To jest chleb*), so each match is judged in its sentence.
+// (*To jest chleb*) or a verb (*Proszę o chleb*), so each is judged in its sentence.
 
 export interface MweCheckItem {
   headword: string;
-  meaning: string; // English dictionary senses of the MWE
+  meaning: string; // English dictionary senses of the MWE or interjection
   sentence: string;
 }
 
@@ -136,7 +136,9 @@ export function buildMweCheckPrompt(items: MweCheckItem[]): string {
     "Sei un linguista polacco. Per ogni voce, decidi se nella frase le parole " +
     "indicate sono usate come espressione fissa con il significato dato (true) " +
     "oppure come parole separate con il loro senso normale (false). Esempio: " +
-    '"to jest" = "that is to say" in "To jest chleb." è false. Rispondi SOLO con ' +
+    '"to jest" = "that is to say" in "To jest chleb." è false. Un\'espressione può ' +
+    'essere una sola parola: "proszę" = "please" in "Proszę o chleb." è false (verbo ' +
+    '"chiedere"), in "Proszę – mówi Marco." è true. Rispondi SOLO con ' +
     'JSON valido, senza testo attorno, nel formato: {"keep":[true,false]} con un ' +
     "valore per voce, nello stesso ordine.\n\n" +
     items
@@ -411,7 +413,8 @@ export interface GlossProvider {
   // Optional capabilities: Passage exercise preparation, run in the background.
   passage?(req: PassageRequest): Promise<GeneratedPassage>;
   passageQuestion?(req: PassageQuestionRequest): Promise<ChoiceQuestion>;
-  // Optional capability: providers without it keep every MWE match unchecked.
+  // Optional capability: providers without it keep every MWE match unchecked
+  // and fail any import with a Formula candidate.
   checkMwes?(items: MweCheckItem[]): Promise<boolean[]>;
 }
 

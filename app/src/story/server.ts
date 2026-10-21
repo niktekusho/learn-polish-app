@@ -8,6 +8,6 @@ export function appStoryService() {
   return storyService(db, {
     provider: getStoryProvider(),
     analyze,
-    mweChecker: getGlossProvider(),
+    checker: getGlossProvider(),
   });
 }

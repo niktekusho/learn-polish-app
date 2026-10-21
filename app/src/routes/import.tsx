@@ -20,10 +20,20 @@ const importText = createServerFn({ method: "POST" })
     const { persistAnalysis } = await import("#/import/pipeline");
     const { db } = await import("#/db/index");
     const { checkMweOccurrences } = await import("#/dictionary/mwe-check");
+    const { resolveFormulas } = await import("#/dictionary/formula");
     const { getGlossProvider } = await import("#/llm/index");
+    const provider = getGlossProvider();
     const analysis = await analyze(content);
-    const result = persistAnalysis(db, { title: data.title || null, content }, analysis);
-    const dropped = await checkMweOccurrences(db, getGlossProvider(), { textId: result.textId });
+    const formulas = await resolveFormulas(db, provider, analysis);
+    const result = persistAnalysis(
+      db,
+      { title: data.title || null, content },
+      analysis,
+      new Date(),
+      undefined,
+      formulas,
+    );
+    const dropped = await checkMweOccurrences(db, provider, { textId: result.textId });
     return { ...result, mweCount: result.mweCount - dropped };
   });
 

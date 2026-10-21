@@ -13,6 +13,9 @@ export type Classified =
   | { kind: "name"; lemma: string }
   | { kind: "skip" };
 
+// A Formula is tracked under the interjection POS (CONTEXT.md "Formula").
+export const FORMULA_POS = "INTJ";
+
 // UPOS tags that are layout/noise, not vocabulary worth tracking.
 const SKIP_POS = new Set(["PUNCT", "SYM", "SPACE", "X"]);
 const LETTER = /\p{L}/u;

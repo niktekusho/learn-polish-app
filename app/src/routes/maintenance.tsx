@@ -65,6 +65,7 @@ const actionInput = z.object({
     "clear-dictionary",
     "recheck-mwes",
     "repair-names",
+    "repair-formulas",
   ]),
 });
 
@@ -95,6 +96,12 @@ const runAction = createServerFn({ method: "POST" })
           deleted: r.deleted,
           note: `Names: ${r.merged} variants merged, ${r.commonWords} common words relinked, ${r.cleared} knowledge/gloss/review rows cleared. Morph tags: ${b.filled} texts filled, ${b.skipped} skipped (tokens differ), ${b.failed} failed (sidecar unreachable or erroring).`,
         };
+      }
+      case "repair-formulas": {
+        const { repairFormulas } = await import("#/dictionary/formula");
+        const { getGlossProvider } = await import("#/llm/index");
+        const r = await repairFormulas(db, getGlossProvider());
+        return { deleted: r.deletedLemmas, note: `${r.moved} occurrences moved to their formula.` };
       }
     }
   });
@@ -399,6 +406,20 @@ function Maintenance() {
               "repair-names",
               "Repair names and backfill morph tags? Names' knowledge, glosses and review history are deleted.",
               "emoji/fragment lemmas",
+            )
+          }
+        />
+        <ActionRow
+          title="Repair formulas"
+          description="Checks words like proszę or dziękuję in their sentences and moves interjection uses to their own formula, which starts with fresh knowledge. A verb left with no uses is deleted with its knowledge, reviews and glosses. Fails without changes if the provider cannot run the check."
+          button="Repair formulas"
+          pending={pending === "repair-formulas"}
+          disabled={pending !== null}
+          onClick={() =>
+            run(
+              "repair-formulas",
+              "Repair formulas? Verbs left with no uses lose their knowledge, review history and glosses.",
+              "verb lemmas left without uses",
             )
           }
         />

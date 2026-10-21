@@ -3,7 +3,8 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { sourceText, story } from "#/db/schema";
 import { knownLemmas } from "#/fsrs/index";
-import { checkMweOccurrences, type MweChecker } from "#/dictionary/mwe-check";
+import { type FormulaChecker, resolveFormulas } from "#/dictionary/formula";
+import { checkMweOccurrences } from "#/dictionary/mwe-check";
 import { persistAnalysis } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import type { StoryPremise, StoryProvider } from "#/llm/provider";
@@ -24,7 +25,8 @@ export interface StoryDeps {
   provider: StoryProvider;
   analyze: (text: string) => Promise<AnalyzeResponse>;
   mweHeadwords?: Map<string, string[]>; // tests skip the dictionary lookup
-  mweChecker?: MweChecker; // absent: MWE matches are kept unchecked
+  // Absent: MWE matches are kept unchecked, and an episode with a Formula candidate fails.
+  checker?: FormulaChecker;
 }
 
 export interface Episode {
@@ -102,6 +104,8 @@ export function storyService(db: DB, deps: StoryDeps) {
       if (share >= NEW_SHARE_MIN && share <= NEW_SHARE_MAX) break;
     }
     const chosen = best as NonNullable<typeof best>;
+    const formulaChecker = deps.checker ?? { name: deps.provider.name };
+    const formulas = await resolveFormulas(db, formulaChecker, chosen.analysis);
     const { textId } = persistAnalysis(
       db,
       {
@@ -113,8 +117,9 @@ export function storyService(db: DB, deps: StoryDeps) {
       chosen.analysis,
       new Date(),
       deps.mweHeadwords,
+      formulas,
     );
-    if (deps.mweChecker) await checkMweOccurrences(db, deps.mweChecker, { textId });
+    if (deps.checker) await checkMweOccurrences(db, deps.checker, { textId });
   }
 
   /** Generate episode `n` unless it exists or is already being generated. */

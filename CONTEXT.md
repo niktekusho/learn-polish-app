@@ -39,6 +39,15 @@ state** are removed. Restoring it rechecks past texts and starts its knowledge f
 What the user's knowledge is recorded against: a **Lemma** (plus the set of **Surface
 forms** encountered) or a **Multi-word expression**. Never a raw surface form, never a **Name**.
 
+**Formula**:
+An inflected word used as a fixed interjection: _proszę_ ("prego", "ecco a lei"),
+_dziękuję_, _przepraszam_. A **Tracked unit** in its own right, separate from the verb it
+is a form of: _Proszę o chleb_ is still _prosić_. A candidate when the surface form is an
+interjection headword in the **Home dictionary** and the analyzer gave it a different
+lemma; each occurrence is checked in its sentence like a **Multi-word expression** match.
+No word list: the dictionary decides the candidates.
+_Avoid_: politeness word, set phrase
+
 **Name**:
 A proper noun in a text: a person (_Kasia_) or a place (_Warszawa_). Never a **Tracked
 unit**: it has no Italian meaning to learn. Only its inflection is of interest, so the

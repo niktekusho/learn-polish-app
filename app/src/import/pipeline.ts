@@ -6,7 +6,7 @@ import { detectMwes, loadMweHeadwords, type MweToken } from "#/dictionary/mwe";
 import { correctLemma } from "#/dictionary/lemma-correction";
 import { initialKnowledgeFields } from "#/fsrs/index";
 import { NAME_POS } from "#/reader/name";
-import { classifyToken } from "./classify";
+import { classifyToken, FORMULA_POS } from "./classify";
 import type { AnalyzeResponse } from "./sidecar";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -36,6 +36,8 @@ export function persistAnalysis(
   now = new Date(),
   // Injectable so pipeline tests stay sidecar- and dictionary-free.
   mweHeadwords?: Map<string, string[]>,
+  // Accepted Formula positions from resolveFormulas, with their headword.
+  formulas = new Map<number, string>(),
 ): ImportResult {
   return db.transaction((tx) => {
     const [{ id: textId }] = tx
@@ -61,8 +63,9 @@ export function persistAnalysis(
           lemmaText = classified.lemma;
           lemmaId = upsertLemma(tx, lemmaText, NAME_POS);
         } else if (classified.kind === "unit") {
-          lemmaText = correctLemma(tx, tok.surface, classified.lemma, classified.pos);
-          lemmaId = upsertLemma(tx, lemmaText, classified.pos);
+          const formula = formulas.get(position);
+          lemmaText = formula ?? correctLemma(tx, tok.surface, classified.lemma, classified.pos);
+          lemmaId = upsertLemma(tx, lemmaText, formula ? FORMULA_POS : classified.pos);
           if (!seen.has(lemmaId)) {
             seen.add(lemmaId);
             ensureReceptiveKnowledge(tx, lemmaId, now);

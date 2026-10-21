@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, notExists } from "drizzle-orm";
+import { and, asc, eq, inArray, notExists, type SQL } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "#/db/schema";
 import {
@@ -50,19 +50,13 @@ export async function checkMweOccurrences(
     .all();
   if (occurrences.length === 0) return 0;
 
-  // Identical (headword, sentence) pairs share one verdict.
-  const items: MweCheckItem[] = [];
-  const itemIndex = new Map<string, number>();
-  const occurrenceItem = occurrences.map((o) => {
-    const sentence = sentenceText(db, o.textId, o.sentenceIndex);
-    const key = `${o.headword}\n${sentence}`;
-    let i = itemIndex.get(key);
-    if (i === undefined) {
-      i = items.push({ headword: o.headword, meaning: meaningOf(db, o.headword), sentence }) - 1;
-      itemIndex.set(key, i);
-    }
-    return i;
-  });
+  const { items, itemOf: occurrenceItem } = checkItems(
+    occurrences.map((o) => ({
+      headword: o.headword,
+      sentence: sentenceText(db, o.textId, o.sentenceIndex),
+    })),
+    (headword) => sensesOf(db, headword, eq(dictEntry.isMwe, true)),
+  );
 
   let keep: boolean[];
   try {
@@ -177,7 +171,7 @@ export async function restoreMwe(db: DB, provider: MweChecker, lemmaId: number):
   await checkMweOccurrences(db, provider, { lemmaId });
 }
 
-function sentenceText(db: DB, textId: number, sentenceIndex: number): string {
+export function sentenceText(db: DB, textId: number, sentenceIndex: number): string {
   return db
     .select({ surface: token.surface })
     .from(token)
@@ -189,12 +183,35 @@ function sentenceText(db: DB, textId: number, sentenceIndex: number): string {
     .trim();
 }
 
-function meaningOf(db: DB, headword: string): string {
+/**
+ * One check item per distinct (headword, sentence) pair, since identical pairs
+ * share one verdict, and each candidate's item index.
+ */
+export function checkItems(
+  candidates: { headword: string; sentence: string }[],
+  meaning: (headword: string) => string,
+): { items: MweCheckItem[]; itemOf: number[] } {
+  const items: MweCheckItem[] = [];
+  const index = new Map<string, number>();
+  const itemOf = candidates.map(({ headword, sentence }) => {
+    const key = `${headword}\n${sentence}`;
+    let i = index.get(key);
+    if (i === undefined) {
+      i = items.push({ headword, meaning: meaning(headword), sentence }) - 1;
+      index.set(key, i);
+    }
+    return i;
+  });
+  return { items, itemOf };
+}
+
+/** The headword's dictionary senses under `filter`, joined for a check prompt. */
+export function sensesOf(db: DB, headword: string, filter: SQL): string {
   return db
     .select({ gloss: dictSense.gloss })
     .from(dictSense)
     .innerJoin(dictEntry, eq(dictSense.entryId, dictEntry.id))
-    .where(and(eq(dictEntry.word, headword), eq(dictEntry.isMwe, true)))
+    .where(and(eq(dictEntry.word, headword), filter))
     .orderBy(asc(dictEntry.id), asc(dictSense.senseIndex))
     .all()
     .map((s) => s.gloss)

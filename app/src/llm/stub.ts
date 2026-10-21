@@ -6,6 +6,7 @@ import type {
   GeneratedPassage,
   GlossProvider,
   GlossRequest,
+  MweCheckItem,
   PassageQuestionRequest,
   PassageRequest,
   ProviderName,
@@ -34,6 +35,10 @@ export class StubProvider implements GlossProvider, StoryProvider {
       })),
       bestIndex: 0,
     };
+  }
+
+  async checkMwes(items: MweCheckItem[]): Promise<boolean[]> {
+    return items.map(() => true);
   }
 
   async comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {
