@@ -1,5 +1,6 @@
 import {
   buildComprehensionPrompt,
+  buildCorrectionPrompt,
   buildEpisodePrompt,
   buildGlossPrompt,
   buildMweCheckPrompt,
@@ -7,6 +8,7 @@ import {
   buildPassagePrompt,
   buildPassageQuestionPrompt,
   buildPremisesPrompt,
+  buildProofreadPrompt,
   buildSenseGlossPrompt,
   buildStoryOutlinePrompt,
   type ChoiceQuestion,
@@ -21,6 +23,7 @@ import {
   type OccurrenceRequest,
   type OccurrenceResult,
   parseComprehensionJson,
+  parseCorrectedText,
   parseEpisodeText,
   parseGloss,
   parseMweCheckJson,
@@ -28,10 +31,12 @@ import {
   parsePassageJson,
   parsePassageQuestionJson,
   parsePremisesJson,
+  parseProofreadJson,
   parseSenseGlossJson,
   parseStoryOutlineJson,
   type PassageQuestionRequest,
   type PassageRequest,
+  type ProofreadFlag,
   type ProviderName,
   type SenseGlossRequest,
   type SenseGlossResult,
@@ -82,6 +87,14 @@ export abstract class CliProvider implements GlossProvider, StoryProvider {
 
   async checkMwes(items: MweCheckItem[]): Promise<boolean[]> {
     return parseMweCheckJson(await this.exec(buildMweCheckPrompt(items), "gloss"), items.length);
+  }
+
+  async proofread(text: string): Promise<ProofreadFlag[]> {
+    return parseProofreadJson(await this.exec(buildProofreadPrompt(text), "story"), text);
+  }
+
+  async correct(text: string, flags: ProofreadFlag[]): Promise<string> {
+    return parseCorrectedText(await this.exec(buildCorrectionPrompt(text, flags), "story"));
   }
 
   async premises(): Promise<StoryPremise[]> {

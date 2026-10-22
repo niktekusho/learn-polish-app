@@ -1,15 +1,19 @@
 import { expect, test } from "vitest";
 import {
   buildComprehensionPrompt,
+  buildCorrectionPrompt,
+  buildProofreadPrompt,
   buildOccurrencePrompt,
   buildSenseGlossPrompt,
   parseComprehensionJson,
+  parseCorrectedText,
   parseEpisodeText,
   parseMweCheckJson,
   parseOccurrenceJson,
   parsePassageJson,
   parsePassageQuestionJson,
   parsePremisesJson,
+  parseProofreadJson,
   parseSenseGlossJson,
   parseStoryOutlineJson,
 } from "./provider";
@@ -215,4 +219,32 @@ test("MWE check: one verdict per item, in order", () => {
   expect(parseMweCheckJson('```json\n{"keep":[false]}\n```', 1)).toEqual([false]);
   expect(() => parseMweCheckJson(JSON.stringify({ keep: [true] }), 2)).toThrow(/2/);
   expect(() => parseMweCheckJson(JSON.stringify({ keep: ["yes"] }), 1)).toThrow();
+});
+
+test("proofread: parses flagged spans, an empty list is valid", () => {
+  const text = "Duża torta jest gotowa.";
+  const errors = [{ span: "Duża torta", reason: "tort è maschile" }];
+  expect(parseProofreadJson(JSON.stringify({ errors }), text)).toEqual(errors);
+  expect(parseProofreadJson('```json\n{"errors":[]}\n```', text)).toEqual([]);
+  expect(() => parseProofreadJson(JSON.stringify({ errors: [{ span: "x" }] }), text)).toThrow();
+});
+
+test("proofread: a span missing from the text is junk", () => {
+  const errors = [{ span: "duży tort", reason: "?" }];
+  expect(() => parseProofreadJson(JSON.stringify({ errors }), "Duża torta.")).toThrow(/not in/);
+});
+
+test("proofread and correction prompts carry the text and every flagged span", () => {
+  const text = "Duża torta jest gotowa.";
+  expect(buildProofreadPrompt(text)).toContain(text);
+  const prompt = buildCorrectionPrompt(text, [
+    { span: "torta", reason: "not in the home dictionary" },
+  ]);
+  expect(prompt).toContain(text);
+  expect(prompt).toContain("«torta»: not in the home dictionary");
+});
+
+test("corrected text: trims fences, rejects empty output", () => {
+  expect(parseCorrectedText("```\nDuży tort.\n```")).toBe("Duży tort.");
+  expect(() => parseCorrectedText(" ")).toThrow();
 });

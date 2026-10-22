@@ -49,6 +49,11 @@ on the phone.
   _proszę_, _dziękuję_, _przepraszam_ as formulas (#3), with the LLM provider reachable. It
   checks past uses in their sentences; a verb left with no uses is deleted with its
   knowledge. A failed check changes nothing; a rerun only re-checks the remaining verb uses.
+- **Proofread episodes** (maintenance page): run once on prod after the deploy that
+  proofreads generated Polish (#6), with the sidecar up and the LLM provider reachable. It
+  corrects episodes with non-Polish words or grammar errors (_torta_ → _tort_) in place and
+  lists every change; an episode whose correction fails is listed and left unchanged, and a
+  rerun retries it. Try it on a copy of the prod DB first.
 - **Refresh the dev DB with real data:**
   `sqlite3 ~/Library/Application\ Support/learn-polish/app.db ".backup app/data/app.db"`
   (stop `pnpm dev` first).

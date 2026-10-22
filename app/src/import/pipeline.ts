@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
-import { knowledge, lemma, mweOccurrence, sourceText, token } from "#/db/schema";
+import { knowledge, lemma, mweOccurrence, passageQuestion, sourceText, token } from "#/db/schema";
 import { detectMwes, loadMweHeadwords, type MweMatch, type MweToken } from "#/dictionary/mwe";
 import { correctLemma } from "#/dictionary/lemma-correction";
 import { initialKnowledgeFields } from "#/fsrs/index";
@@ -18,12 +18,21 @@ export interface ImportResult {
   mweCount: number; // MWE occurrences detected in this text
 }
 
+interface TextInput {
+  title?: string | null;
+  content: string;
+  storyId?: number;
+  episodeNumber?: number;
+}
+
 /**
  * Persist an analyzed document: one `source_text`, its `token`s in reading
  * order, upserted `lemma`s, and a receptive `knowledge` row (default "new") per
  * newly-seen lemma. A Name links to its lemma but gets no knowledge row
  * (see classifyToken). Idempotent on lemmas/knowledge: re-importing links to the
- * existing lemmas instead of duplicating them.
+ * existing lemmas instead of duplicating them. With `textId`, the stored text
+ * keeps its row and gets the new content, tokens and MWE occurrences; its
+ * passage questions go, to be cut again from the new content.
  *
  * ponytail: only the receptive track is seeded here — it's the only one the
  * MVP reads/exercises. gradeLemma() lazily creates the productive row if a
@@ -31,7 +40,7 @@ export interface ImportResult {
  */
 export function persistAnalysis(
   db: DB,
-  input: { title?: string | null; content: string; storyId?: number; episodeNumber?: number },
+  input: TextInput & { textId?: number },
   analysis: AnalyzeResponse,
   now = new Date(),
   // Injectable so pipeline tests stay sidecar- and dictionary-free.
@@ -42,16 +51,13 @@ export function persistAnalysis(
   mwes = analysisMwes(db, analysis, formulas, mweHeadwords),
 ): ImportResult {
   return db.transaction((tx) => {
-    const [{ id: textId }] = tx
-      .insert(sourceText)
-      .values({
-        title: input.title ?? null,
-        content: input.content,
-        storyId: input.storyId,
-        episodeNumber: input.episodeNumber,
-      })
-      .returning({ id: sourceText.id })
-      .all();
+    const textId = input.textId ?? insertText(tx, input);
+    if (input.textId !== undefined) {
+      tx.update(sourceText).set({ content: input.content }).where(eq(sourceText.id, textId)).run();
+      tx.delete(token).where(eq(token.textId, textId)).run();
+      tx.delete(mweOccurrence).where(eq(mweOccurrence.textId, textId)).run();
+      tx.delete(passageQuestion).where(eq(passageQuestion.textId, textId)).run();
+    }
 
     const seen = new Set<number>();
     let position = 0;
@@ -102,6 +108,19 @@ export function persistAnalysis(
       mweCount: mwes.length,
     };
   });
+}
+
+function insertText(db: DB, input: TextInput): number {
+  return db
+    .insert(sourceText)
+    .values({
+      title: input.title ?? null,
+      content: input.content,
+      storyId: input.storyId,
+      episodeNumber: input.episodeNumber,
+    })
+    .returning({ id: sourceText.id })
+    .all()[0].id;
 }
 
 /** The lemma and POS a token is saved under, or null when it is no word. */

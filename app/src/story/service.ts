@@ -7,6 +7,7 @@ import type { MweChecker } from "#/dictionary/mwe-check";
 import { importAnalysis } from "#/import/checked-import";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import type { StoryPremise, StoryProvider } from "#/llm/provider";
+import { proofreadText } from "#/proofread/proofread";
 import { episodeLine, recordActivity } from "#/recap/service";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -78,7 +79,8 @@ export function storyService(db: DB, deps: StoryDeps) {
 
   /**
    * Write episode `n`: draft, analyze, accept when the new-lemma share is in
-   * range, else redraft (LEVEL_RETRIES times) and keep the closest draft.
+   * range, else redraft (LEVEL_RETRIES times) and keep the closest draft, then
+   * proofread and correct it.
    */
   async function generateEpisode(s: StoryRow, n: number): Promise<void> {
     const known = knownLemmas(db);
@@ -103,16 +105,17 @@ export function storyService(db: DB, deps: StoryDeps) {
       if (share >= NEW_SHARE_MIN && share <= NEW_SHARE_MAX) break;
     }
     const chosen = best as NonNullable<typeof best>;
+    const checked = await proofreadText(db, deps, chosen.text, chosen.analysis);
     await importAnalysis(
       db,
       deps.checker ?? { name: deps.provider.name },
       {
         title: `${s.title} · episodio ${n}`,
-        content: chosen.text,
+        content: checked.text,
         storyId: s.id,
         episodeNumber: n,
       },
-      chosen.analysis,
+      checked.analysis,
       deps.mweHeadwords,
     );
   }

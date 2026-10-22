@@ -7,7 +7,7 @@ import * as schema from "#/db/schema";
 import { initialKnowledgeFields } from "#/fsrs/index";
 import { persistAnalysis } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import type { GlossProvider, PassageQuestionRequest } from "#/llm/provider";
+import type { GlossProvider, PassageQuestionRequest, ProofreadFlag } from "#/llm/provider";
 import { passagePrepTargets, preparePassages } from "./service";
 
 function freshDb() {
@@ -65,10 +65,31 @@ function lemmaId(db: DB, word: string) {
   return id;
 }
 
-function fakeProvider(opts: { junk?: boolean } = {}) {
+// Every word a NOUN lemmatized to itself.
+async function analyze(text: string): Promise<AnalyzeResponse> {
+  return {
+    sentences: [
+      {
+        tokens: text
+          .split(" ")
+          .map((w) => ({ surface: `${w} `, lemma: w, pos: "NOUN", tags: [], is_space: false })),
+      },
+    ],
+  };
+}
+
+function fakeProvider(opts: { junk?: boolean; reviews?: ProofreadFlag[][]; fix?: string } = {}) {
   return {
     name: "stub" as const,
     calls: { passage: 0, question: 0 },
+    proofreadTexts: [] as string[],
+    async proofread(text: string) {
+      this.proofreadTexts.push(text);
+      return opts.reviews?.shift() ?? [];
+    },
+    async correct(text: string) {
+      return opts.fix ?? text;
+    },
     questionRequests: [] as PassageQuestionRequest[],
     async gloss() {
       return "unused";
@@ -85,6 +106,7 @@ function fakeProvider(opts: { junk?: boolean } = {}) {
     },
   } satisfies GlossProvider & {
     calls: Record<string, number>;
+    proofreadTexts: string[];
     questionRequests: PassageQuestionRequest[];
   };
 }
@@ -99,7 +121,7 @@ test("a real passage is cut around the shortest sentence holding the lemma", asy
   ]);
   const provider = fakeProvider();
 
-  expect(await preparePassages(db, [lemmaId(db, "do")], provider)).toBe(1);
+  expect(await preparePassages(db, [lemmaId(db, "do")], provider, analyze)).toBe(1);
   expect(provider.calls).toEqual({ passage: 0, question: 1 });
   expect(provider.questionRequests[0]).toMatchObject({
     passage: "Ala ma kota. Idę do sklepu. Kot śpi.",
@@ -128,11 +150,36 @@ test("without a read sentence the passage is generated", async () => {
   importText(db, ["Idę za domem."], { storyId, episodeNumber: 1 });
   const provider = fakeProvider();
 
-  await preparePassages(db, [lemmaId(db, "za")], provider);
+  await preparePassages(db, [lemmaId(db, "za")], provider, analyze);
   expect(provider.calls).toEqual({ passage: 1, question: 1 });
   expect(db.select().from(schema.passageQuestion).all()).toMatchObject([
     { source: "generated", textId: null, passage: "Idę za domu.", target: "za" },
   ]);
+});
+
+test("a generated passage is proofread and corrected before it is cached", async () => {
+  const db = freshDb();
+  const reviews = [[{ span: "za domu", reason: "za regge lo strumentale" }], []];
+  const provider = fakeProvider({ reviews, fix: "Idę za domem." });
+
+  expect(await preparePassages(db, [lemmaId(db, "za")], provider, analyze)).toBe(1);
+  expect(provider.proofreadTexts).toEqual(["Idę za domu.", "Idę za domem."]);
+  expect(provider.questionRequests[0].passage).toBe("Idę za domem.");
+  expect(db.select().from(schema.passageQuestion).all()).toMatchObject([
+    { source: "generated", passage: "Idę za domem.", target: "za" },
+  ]);
+});
+
+test("a generated passage still flagged, or corrected without its target, caches nothing", async () => {
+  const db = freshDb();
+  const flag = [{ span: "domu", reason: "caso" }];
+  const stillFlagged = fakeProvider({ reviews: [flag, flag], fix: "Idę za domu." });
+  expect(await preparePassages(db, [lemmaId(db, "za")], stillFlagged, analyze)).toBe(0);
+
+  const targetGone = fakeProvider({ reviews: [flag, []], fix: "Idę przed domem." });
+  expect(await preparePassages(db, [lemmaId(db, "za")], targetGone, analyze)).toBe(0);
+  expect(targetGone.calls.question).toBe(0);
+  expect(db.select().from(schema.passageQuestion).all()).toHaveLength(0);
 });
 
 test("a junk question response caches nothing; a prepared lemma is skipped", async () => {
@@ -140,12 +187,12 @@ test("a junk question response caches nothing; a prepared lemma is skipped", asy
   importText(db, ["Idę do sklepu."]);
   const id = lemmaId(db, "do");
 
-  expect(await preparePassages(db, [id], fakeProvider({ junk: true }))).toBe(0);
+  expect(await preparePassages(db, [id], fakeProvider({ junk: true }), analyze)).toBe(0);
   expect(db.select().from(schema.passageQuestion).all()).toHaveLength(0);
 
-  await preparePassages(db, [id], fakeProvider());
+  await preparePassages(db, [id], fakeProvider(), analyze);
   const again = fakeProvider();
-  await preparePassages(db, [id], again);
+  await preparePassages(db, [id], again, analyze);
   expect(again.calls).toEqual({ passage: 0, question: 0 });
   expect(db.select().from(schema.passageQuestion).all()).toHaveLength(1);
 });
@@ -159,7 +206,7 @@ test("prep targets: receptive dues of the next 2 days without a passage, capped"
   ids.forEach((id, i) =>
     db.update(schema.knowledge).set({ due: dues[i] }).where(eq(schema.knowledge.lemmaId, id)).run(),
   );
-  await preparePassages(db, [ids[3]], fakeProvider()); // d already has one
+  await preparePassages(db, [ids[3]], fakeProvider(), analyze); // d already has one
 
   expect(passagePrepTargets(db, now)).toEqual([ids[0], ids[1]]);
   expect(passagePrepTargets(db, now, 1)).toEqual([ids[0]]);

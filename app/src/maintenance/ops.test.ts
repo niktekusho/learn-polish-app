@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { eq } from "drizzle-orm";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import { persistAnalysis } from "#/import/pipeline";
@@ -13,6 +14,7 @@ import {
   pruneOrphanLemmas,
   purgeStubGlosses,
   repairNames,
+  proofreadEpisodes,
 } from "./ops";
 
 function freshDb() {
@@ -262,4 +264,252 @@ test("backfillTokenTags counts an unreachable sidecar as failed and writes nothi
   };
   expect(await backfillTokenTags(db, down)).toEqual({ filled: 0, skipped: 0, failed: 1 });
   expect(tagsOf(db)).toEqual([null, null, null]);
+});
+
+type DB = ReturnType<typeof freshDb>;
+
+const LEMMAS: Record<string, [string, string]> = {
+  duża: ["duży", "ADJ"],
+  duży: ["duży", "ADJ"],
+  torta: ["torta", "NOUN"],
+  tortę: ["tortę", "NOUN"],
+  tort: ["tort", "NOUN"],
+  jest: ["być", "AUX"],
+  gotowa: ["gotowy", "ADJ"],
+  gotowy: ["gotowy", "ADJ"],
+  pani: ["pani", "NOUN"],
+  hanna: ["Hanna", "PROPN"],
+  kroi: ["kroić", "VERB"],
+  i: ["i", "CCONJ"],
+  ciasto: ["ciasto", "NOUN"],
+  kotta: ["kotta", "NOUN"],
+  śpi: ["spać", "VERB"],
+};
+
+// Sentences end in "."; words are looked up in LEMMAS.
+async function analyzeStory(text: string): Promise<AnalyzeResponse> {
+  return {
+    sentences: text.split(/(?<=\.) /).map((sentence, s, sentences) => ({
+      tokens: sentence.split(/(?=\.)| /).flatMap((word, i, all) => {
+        if (word === ".") return [w(s < sentences.length - 1 ? ". " : ".", ".", "PUNCT")];
+        const [lemma, pos] = LEMMAS[word.toLowerCase()];
+        const ws = all[i + 1] === "." ? "" : " ";
+        return [w(word + ws, lemma, pos)];
+      }),
+    })),
+  };
+}
+
+// The episode 6 sentences, as the model wrote and as a Correction fixes them.
+const EP6 = "Duża torta jest gotowa. Pani Hanna kroi tortę i ciasto.";
+const EP6_FIXED = "Duży tort jest gotowy. Pani Hanna kroi tort.";
+
+function seedHomeDictionary(db: DB) {
+  const entries: [string, string, string[]][] = [
+    ["duży", "adj", ["duży", "duża"]],
+    ["tort", "noun", ["tort", "tortu"]],
+    ["być", "verb", ["jest"]],
+    ["gotowy", "adj", ["gotowy", "gotowa"]],
+    ["pani", "noun", ["pani"]],
+    ["Hanna", "name", ["Hanna"]],
+    ["kroić", "verb", ["kroi"]],
+    ["i", "conj", ["i"]],
+    ["ciasto", "noun", ["ciasto"]],
+    ["spać", "verb", ["śpi"]],
+  ];
+  for (const [word, pos, forms] of entries) {
+    const [{ id }] = db
+      .insert(schema.dictEntry)
+      .values({ word, pos })
+      .returning({ id: schema.dictEntry.id })
+      .all();
+    for (const form of forms)
+      db.insert(schema.dictForm).values({ entryId: id, form, tags: [] }).run();
+  }
+}
+
+async function seedEpisode(
+  db: DB,
+  episodeNumber: number,
+  content: string,
+  readAt: Date | null,
+  analysis?: AnalyzeResponse,
+) {
+  const [s] = db.select().from(schema.story).all();
+  const storyId =
+    s?.id ??
+    db
+      .insert(schema.story)
+      .values({
+        title: "La panetteria di Pani Hanna",
+        genre: "quotidiano",
+        hook: "h",
+        outline: { plot: "p", characters: [], beats: ["b"] },
+        plannedEpisodes: 10,
+        status: "active",
+      })
+      .returning({ id: schema.story.id })
+      .all()[0].id;
+  const { textId } = persistAnalysis(
+    db,
+    { title: `La panetteria · episodio ${episodeNumber}`, content, storyId, episodeNumber },
+    analysis ?? (await analyzeStory(content)),
+    new Date(),
+    new Map(),
+  );
+  db.update(schema.sourceText).set({ readAt }).where(eq(schema.sourceText.id, textId)).run();
+  return textId;
+}
+
+const lemmaRow = (db: DB, word: string) =>
+  db
+    .select()
+    .from(schema.lemma)
+    .all()
+    .find((l) => l.lemma === word);
+
+function practise(db: DB, word: string) {
+  const id = lemmaRow(db, word)!.id;
+  db.insert(schema.reviewLog)
+    .values({ lemmaId: id, track: "receptive", rating: 3, stateBefore: 0, stateAfter: 1 })
+    .run();
+  db.insert(schema.gloss)
+    .values({ lemmaId: id, italian: "torta (dolce)", provider: "claude-cli" })
+    .run();
+  return id;
+}
+
+const proofreader = {
+  name: "stub" as const,
+  async proofread() {
+    return [];
+  },
+  async correct(text: string) {
+    return text === EP6 ? EP6_FIXED : text;
+  },
+};
+
+function repairDeps() {
+  return {
+    provider: proofreader,
+    analyze: analyzeStory,
+    checker: proofreader,
+    mweHeadwords: new Map(),
+  };
+}
+
+test("repair replaces a flagged episode's content and tokens in place", async () => {
+  const db = freshDb();
+  seedHomeDictionary(db);
+  const readAt = new Date("2026-10-20T10:00:00Z");
+  const textId = await seedEpisode(db, 6, EP6, readAt);
+  db.insert(schema.passageQuestion)
+    .values({
+      lemmaId: lemmaRow(db, "ciasto")!.id,
+      passage: "Duża torta jest gotowa.",
+      target: "ciasto",
+      source: "text",
+      textId,
+      question: "?",
+      choices: ["a", "b", "c"],
+      correctIndex: 0,
+      provider: "stub",
+    })
+    .run();
+
+  const report = await proofreadEpisodes(db, repairDeps());
+
+  expect(report.failed).toEqual([]);
+  expect(report.repaired).toEqual([
+    {
+      textId,
+      label: "La panetteria · episodio 6",
+      changes: [
+        '"Duża torta jest gotowa." → "Duży tort jest gotowy."',
+        '"tortę i ciasto." → "tort."',
+      ],
+    },
+  ]);
+  const [text] = db.select().from(schema.sourceText).all();
+  expect(text).toMatchObject({ id: textId, content: EP6_FIXED, readAt, episodeNumber: 6 });
+  const tokens = db.select().from(schema.token).all();
+  expect(tokens.map((t) => t.surface).join("")).toBe(EP6_FIXED);
+  expect(db.select().from(schema.passageQuestion).all()).toEqual([]);
+});
+
+test("repair deletes out-of-dictionary lemmas left without tokens, and keeps dictionary ones", async () => {
+  const db = freshDb();
+  seedHomeDictionary(db);
+  await seedEpisode(db, 6, EP6, new Date());
+  const torta = practise(db, "torta");
+  const ciasto = practise(db, "ciasto");
+
+  const report = await proofreadEpisodes(db, repairDeps());
+
+  expect(report.deletedLemmas).toBe(2);
+  expect(lemmaRow(db, "torta")).toBeUndefined();
+  expect(lemmaRow(db, "tortę")).toBeUndefined();
+  for (const t of [schema.knowledge, schema.reviewLog, schema.gloss]) {
+    expect(db.select().from(t).where(eq(t.lemmaId, torta)).all()).toEqual([]);
+  }
+  const tort = lemmaRow(db, "tort")!;
+  expect(
+    db.select().from(schema.token).where(eq(schema.token.lemmaId, tort.id)).all(),
+  ).toHaveLength(2);
+  expect(lemmaRow(db, "ciasto")).toBeDefined();
+  expect(
+    db.select().from(schema.knowledge).where(eq(schema.knowledge.lemmaId, ciasto)).all(),
+  ).toHaveLength(1);
+  expect(
+    db.select().from(schema.reviewLog).where(eq(schema.reviewLog.lemmaId, ciasto)).all(),
+  ).toHaveLength(1);
+});
+
+test("repair keeps an analyzer slip whose word is still in the text", async () => {
+  const db = freshDb();
+  // Imported before the dictionary, the analyzer's non-headword "kroi" stayed uncorrected.
+  const slipped = await analyzeStory(EP6);
+  for (const t of slipped.sentences[1].tokens) if (t.surface === "kroi ") t.lemma = "kroi";
+  await seedEpisode(db, 6, EP6, new Date(), slipped);
+  seedHomeDictionary(db);
+  const kroi = practise(db, "kroi");
+
+  await proofreadEpisodes(db, repairDeps());
+
+  expect(lemmaRow(db, "kroi")).toBeDefined();
+  expect(
+    db.select().from(schema.reviewLog).where(eq(schema.reviewLog.lemmaId, kroi)).all(),
+  ).toHaveLength(1);
+});
+
+test("repair refuses to run without a home dictionary", async () => {
+  const db = freshDb();
+  await seedEpisode(db, 6, EP6, new Date());
+  await expect(proofreadEpisodes(db, repairDeps())).rejects.toThrow(/home dictionary/);
+  expect(db.select().from(schema.sourceText).all()[0].content).toBe(EP6);
+});
+
+test("a text failing the repair stays unchanged while the others are corrected", async () => {
+  const db = freshDb();
+  seedHomeDictionary(db);
+  const ep6 = await seedEpisode(db, 6, EP6, new Date());
+  const ep7 = await seedEpisode(db, 7, "Kotta śpi.", null);
+  await seedEpisode(db, 8, "Pani Hanna śpi.", null);
+  const ep7Tokens = db.select().from(schema.token).where(eq(schema.token.textId, ep7)).all();
+
+  const report = await proofreadEpisodes(db, repairDeps());
+
+  expect(report.repaired.map((r) => r.textId)).toEqual([ep6]);
+  expect(report.failed).toEqual([
+    {
+      textId: ep7,
+      label: "La panetteria · episodio 7",
+      cause: expect.stringMatching(/"stub".*«Kotta»: not in the home dictionary/),
+    },
+  ]);
+  const [text7] = db.select().from(schema.sourceText).where(eq(schema.sourceText.id, ep7)).all();
+  expect(text7.content).toBe("Kotta śpi.");
+  expect(db.select().from(schema.token).where(eq(schema.token.textId, ep7)).all()).toEqual(
+    ep7Tokens,
+  );
 });

@@ -11,6 +11,7 @@ import type {
   OccurrenceResult,
   PassageQuestionRequest,
   PassageRequest,
+  ProofreadFlag,
   ProviderName,
   SenseGlossRequest,
   SenseGlossResult,
@@ -59,6 +60,19 @@ export class StubProvider implements GlossProvider, StoryProvider {
         },
       ],
     };
+  }
+
+  async proofread(): Promise<ProofreadFlag[]> {
+    return [];
+  }
+
+  // ponytail: drops the flagged spans; a stub cannot know the right Polish word.
+  async correct(text: string, flags: ProofreadFlag[]): Promise<string> {
+    return flags
+      .reduce((t, f) => t.replaceAll(f.span, ""), text)
+      .replace(/ {2,}/g, " ")
+      .replace(/ ([.,!?])/g, "$1")
+      .trim();
   }
 
   async premises(): Promise<StoryPremise[]> {

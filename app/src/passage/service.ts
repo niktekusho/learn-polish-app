@@ -3,8 +3,11 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { knowledge, lemma, mweOccurrence, passageQuestion, sourceText, token } from "#/db/schema";
 import { knownLemmas } from "#/fsrs/index";
+import type { AnalyzeResponse } from "#/import/sidecar";
 import type { GlossProvider } from "#/llm/provider";
+import { proofreadText } from "#/proofread/proofread";
 import { NAME_POS } from "#/reader/name";
+import { wordPattern } from "#/reader/word-pattern";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -91,6 +94,21 @@ function realPassage(db: DB, lemmaId: number) {
   };
 }
 
+/** An LLM-written passage for the lemma, proofread and corrected with its target intact. */
+async function generatedPassage(
+  db: DB,
+  provider: GlossProvider,
+  analyze: (text: string) => Promise<AnalyzeResponse>,
+  l: { lemma: string; pos: string },
+) {
+  const p = await provider.passage!({ lemma: l.lemma, pos: l.pos, knownLemmas: knownLemmas(db) });
+  const { text } = await proofreadText(db, { provider, analyze }, p.passage);
+  if (!wordPattern(p.target).test(text)) {
+    throw new Error(`passage target ${JSON.stringify(p.target)} lost in correction`);
+  }
+  return { passage: text, target: p.target };
+}
+
 /**
  * Prepare one passage question per lemma lacking one: a real passage if a
  * read text has the lemma, else an LLM-written one, then one LLM call for the
@@ -100,6 +118,7 @@ export async function preparePassages(
   db: DB,
   lemmaIds: number[],
   provider: GlossProvider,
+  analyze: (text: string) => Promise<AnalyzeResponse>,
 ): Promise<number> {
   if (!provider.passage || !provider.passageQuestion) return 0;
   let written = 0;
@@ -122,9 +141,7 @@ export async function preparePassages(
     if (!l) continue;
     try {
       const real = realPassage(db, lemmaId);
-      const p =
-        real ??
-        (await provider.passage({ lemma: l.lemma, pos: l.pos, knownLemmas: knownLemmas(db) }));
+      const p = real ?? (await generatedPassage(db, provider, analyze, l));
       const q = await provider.passageQuestion({
         passage: p.passage,
         lemma: l.lemma,
@@ -189,11 +206,15 @@ let preparing = false;
  * Background run after a Practice session: fire-and-forget, one at a time
  * (a second trigger while one runs is dropped).
  */
-export async function prepareUpcomingPassages(db: DB, provider: GlossProvider): Promise<void> {
+export async function prepareUpcomingPassages(
+  db: DB,
+  provider: GlossProvider,
+  analyze: (text: string) => Promise<AnalyzeResponse>,
+): Promise<void> {
   if (preparing) return;
   preparing = true;
   try {
-    await preparePassages(db, passagePrepTargets(db), provider);
+    await preparePassages(db, passagePrepTargets(db), provider, analyze);
   } finally {
     preparing = false;
   }

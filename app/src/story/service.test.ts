@@ -1,11 +1,12 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import * as schema from "#/db/schema";
 import { initialKnowledgeFields } from "#/fsrs/index";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import type { EpisodeRequest, StoryOutline, StoryProvider } from "#/llm/provider";
+import { StubProvider } from "#/llm/stub";
 import { storyService } from "./service";
 
 function freshDb() {
@@ -76,6 +77,12 @@ function fakeProvider(beats: number, drafts: (string | Error)[] = []) {
       const next = drafts.shift() ?? draft(2, `e${req.episodeNumber}`);
       if (next instanceof Error) throw next;
       return next;
+    },
+    async proofread() {
+      return [];
+    },
+    async correct(text: string) {
+      return text;
     },
   } satisfies StoryProvider & { calls: Record<string, number>; episodeRequests: EpisodeRequest[] };
 }
@@ -195,4 +202,62 @@ test("one active story at a time; abandoning keeps its episodes as texts", async
       .all()
       .map((s) => s.status),
   ).toEqual(["abandoned", "active"]);
+});
+
+function seedDictionary(db: DB, words: string[]) {
+  for (const word of words) {
+    const [{ id }] = db
+      .insert(schema.dictEntry)
+      .values({ word, pos: "noun" })
+      .returning({ id: schema.dictEntry.id })
+      .all();
+    db.insert(schema.dictForm).values({ entryId: id, form: word, tags: [] }).run();
+  }
+}
+
+// draft(2) with a non-Polish word; the dictionary has every other word.
+function tortaSetup() {
+  const db = freshDb();
+  seedKnown(db);
+  seedDictionary(db, [...KNOWN, "nowea0", "nowea1"]);
+  const provider = new StubProvider();
+  provider.outline = async () => ({ plot: "p", characters: [], beats: ["b1", "b2"] });
+  provider.episode = async () => `${draft(2)} torta`;
+  return { db, provider };
+}
+
+test("a drafted episode with a non-Polish word is stored corrected", async () => {
+  const { db, provider } = tortaSetup();
+  const correct = vi.spyOn(provider, "correct");
+  const svc = storyService(db, { provider, analyze: fakeAnalyze, mweHeadwords: new Map() });
+  const ep = await svc.startStory(PREMISE);
+
+  expect(correct).toHaveBeenCalledTimes(1);
+  expect(ep?.content).toBe(draft(2));
+  const surfaces = db
+    .select()
+    .from(schema.token)
+    .all()
+    .map((t) => t.surface);
+  expect(surfaces).not.toContain("torta");
+});
+
+test("a clean episode makes one proofread call and no correction", async () => {
+  const { db, provider } = tortaSetup();
+  provider.episode = async () => draft(2);
+  const proofread = vi.spyOn(provider, "proofread");
+  const correct = vi.spyOn(provider, "correct");
+  await storyService(db, { provider, analyze: fakeAnalyze, mweHeadwords: new Map() }).startStory(
+    PREMISE,
+  );
+  expect(proofread).toHaveBeenCalledTimes(1);
+  expect(correct).not.toHaveBeenCalled();
+});
+
+test("an episode still flagged after correction stores nothing", async () => {
+  const { db, provider } = tortaSetup();
+  provider.correct = async (text) => text;
+  const svc = storyService(db, { provider, analyze: fakeAnalyze, mweHeadwords: new Map() });
+  await expect(svc.startStory(PREMISE)).rejects.toThrow(/"stub".*«torta»/);
+  expect(db.select().from(schema.sourceText).all()).toEqual([]);
 });

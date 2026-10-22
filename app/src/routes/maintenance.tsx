@@ -66,6 +66,7 @@ const actionInput = z.object({
     "recheck-mwes",
     "repair-names",
     "repair-formulas",
+    "proofread-episodes",
   ]),
 });
 
@@ -102,6 +103,18 @@ const runAction = createServerFn({ method: "POST" })
         const { getGlossProvider } = await import("#/llm/index");
         const r = await repairFormulas(db, getGlossProvider());
         return { deleted: r.deletedLemmas, note: `${r.moved} occurrences moved to their formula.` };
+      }
+      case "proofread-episodes": {
+        const { getGlossProvider } = await import("#/llm/index");
+        const { analyze } = await import("#/import/sidecar");
+        const provider = getGlossProvider();
+        const r = await ops.proofreadEpisodes(db, { provider, analyze, checker: provider });
+        const lines = [
+          `${r.repaired.length} episodes corrected, ${r.failed.length} failed.`,
+          ...r.repaired.flatMap((t) => t.changes.map((c) => `${t.label}: ${c}`)),
+          ...r.failed.map((t) => `${t.label} failed: ${t.cause}`),
+        ];
+        return { deleted: r.deletedLemmas, note: lines.join("\n") };
       }
     }
   });
@@ -427,6 +440,20 @@ function Maintenance() {
           }
         />
         <ActionRow
+          title="Proofread episodes"
+          description="Proofreads every story episode against the home dictionary and the LLM, and corrects the flagged ones in place: read state is kept, passage questions are re-prepared. Non-words the correction removed are deleted with their knowledge, reviews and glosses. An episode whose correction fails stays unchanged."
+          button="Proofread"
+          pending={pending === "proofread-episodes"}
+          disabled={pending !== null}
+          onClick={() =>
+            run(
+              "proofread-episodes",
+              "Proofread and correct every episode? Non-words removed by a correction lose their knowledge, review history and glosses.",
+              "non-word lemmas",
+            )
+          }
+        />
+        <ActionRow
           title="Clear dictionary"
           description="Deletes the whole home dictionary (entries, senses, forms). Re-import from the kaikki file to restore it."
           button="Clear dictionary"
@@ -442,7 +469,11 @@ function Maintenance() {
         />
       </div>
 
-      {message && <p className="mt-6 rounded bg-green-50 p-3 text-sm text-green-800">{message}</p>}
+      {message && (
+        <p className="mt-6 rounded bg-green-50 p-3 text-sm whitespace-pre-line text-green-800">
+          {message}
+        </p>
+      )}
       {error && <p className="mt-6 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     </div>
   );

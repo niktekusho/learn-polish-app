@@ -1,4 +1,4 @@
-import { and, asc, count, eq, isNotNull, isNull, notExists } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, isNull, notExists } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import * as schema from "#/db/schema";
@@ -16,10 +16,14 @@ import {
   token,
 } from "#/db/schema";
 import { wipeDictionary } from "#/dictionary/loader";
+import { forgetUnit, type MweChecker } from "#/dictionary/mwe-check";
+import { lookupDictionary } from "#/dictionary/service";
 import { setManualGloss } from "#/gloss/service";
 import { classifyToken } from "#/import/classify";
+import { importAnalysis } from "#/import/checked-import";
 import { upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
+import { type ProofreadDeps, proofreadText, textChanges } from "#/proofread/proofread";
 import { NAME_POS } from "#/reader/name";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -290,4 +294,103 @@ export async function backfillTokenTags(
     out.filled++;
   }
   return out;
+}
+
+export interface EpisodeRepair {
+  repaired: { textId: number; label: string; changes: string[] }[];
+  failed: { textId: number; label: string; cause: string }[];
+  deletedLemmas: number; // non-words the corrections removed
+}
+
+/**
+ * Proofread every Episode and correct the flagged ones in place, keeping id,
+ * read_at and episode number. A text that fails stays unchanged.
+ */
+export async function proofreadEpisodes(
+  db: DB,
+  deps: ProofreadDeps & { checker: MweChecker; mweHeadwords?: Map<string, string[]> },
+): Promise<EpisodeRepair> {
+  // Without a dictionary every lemma looks like a non-word and would be deleted.
+  if (getStats(db).dictEntries === 0) throw new Error("Load the home dictionary first.");
+  const out: EpisodeRepair = { repaired: [], failed: [], deletedLemmas: 0 };
+  const episodes = db
+    .select()
+    .from(sourceText)
+    .where(isNotNull(sourceText.storyId))
+    .orderBy(asc(sourceText.id))
+    .all();
+  for (const t of episodes) {
+    const label = t.title ?? `text ${t.id}`;
+    let checked: Awaited<ReturnType<typeof proofreadText>>;
+    const before = textWords(db, t.id);
+    try {
+      checked = await proofreadText(db, deps, t.content);
+      if (checked.flags.length === 0) continue;
+      await importAnalysis(
+        db,
+        deps.checker,
+        { textId: t.id, content: checked.text },
+        checked.analysis,
+        deps.mweHeadwords,
+      );
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
+      out.failed.push({ textId: t.id, label, cause });
+      continue;
+    }
+    out.deletedLemmas += dropRemovedNonWords(db, before, surfaces(checked.analysis));
+    out.repaired.push({ textId: t.id, label, changes: textChanges(t.content, checked.text) });
+  }
+  return out;
+}
+
+function surfaces(analysis: AnalyzeResponse): Set<string> {
+  return new Set(
+    analysis.sentences.flatMap((s) => s.tokens.map((t) => t.surface.trim().toLowerCase())),
+  );
+}
+
+/** Each lemma a text's tokens use, with their surfaces. */
+function textWords(db: DB, textId: number): Map<number, string[]> {
+  const words = new Map<number, string[]>();
+  for (const t of db.select().from(token).where(eq(token.textId, textId)).all()) {
+    if (t.lemmaId === null) continue;
+    words.set(t.lemmaId, [...(words.get(t.lemmaId) ?? []), t.surface.trim().toLowerCase()]);
+  }
+  return words;
+}
+
+/**
+ * Delete, with knowledge, history and glosses, the non-words a Correction removed:
+ * unused lemmas absent from the home dictionary whose surfaces left the text.
+ * One whose surface stays is an analyzer slip the re-import relinked: it is kept.
+ */
+function dropRemovedNonWords(
+  db: DB,
+  before: Map<number, string[]>,
+  correctedSurfaces: Set<string>,
+): number {
+  const ids = [...before]
+    .filter(([, words]) => !words.some((w) => correctedSurfaces.has(w)))
+    .map(([id]) => id);
+  if (ids.length === 0) return 0;
+  return db.transaction((tx) => {
+    const unused = tx
+      .select()
+      .from(lemma)
+      .where(
+        and(
+          inArray(lemma.id, ids),
+          eq(lemma.suppressed, false),
+          notExists(tx.select().from(token).where(eq(token.lemmaId, lemma.id))),
+        ),
+      )
+      .all()
+      .filter((l) => lookupDictionary(tx, l.lemma, l.pos).matchedBy === null);
+    for (const l of unused) {
+      forgetUnit(tx, l.id);
+      tx.delete(lemma).where(eq(lemma.id, l.id)).run();
+    }
+    return unused.length;
+  });
 }
