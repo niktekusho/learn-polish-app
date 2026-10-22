@@ -257,6 +257,26 @@ test("a sidecar lemma that is a headword for its POS is never replaced", () => {
   expect(lemmaOf(db, "robię")).toBe("robić");
 });
 
+test("a lemma that is no headword moves to the one headword of another POS with the surface", () => {
+  const db = freshDb();
+  insertEntryBatch(db, [entry("pieczywo", "noun", ["pieczywa"])]);
+  persistAnalysis(db, { content: "x" }, oneSentence(w("pieczywa", "pieczywać", "VERB")));
+  const tok = db.select().from(schema.token).all()[0];
+  const lemma = db
+    .select()
+    .from(schema.lemma)
+    .all()
+    .find((l) => l.id === tok.lemmaId);
+  expect(lemma).toMatchObject({ lemma: "pieczywo", pos: "NOUN" });
+});
+
+test("a sidecar lemma that is a headword for another POS is not replaced across POS", () => {
+  const db = freshDb();
+  insertEntryBatch(db, [entry("słuch", "noun", []), entry("słuchawka", "noun", ["słucha"])]);
+  persistAnalysis(db, { content: "x" }, oneSentence(w("słucha", "słuch", "VERB")));
+  expect(lemmaOf(db, "słucha")).toBe("słuch");
+});
+
 test("MWE detection sees the corrected lemma", () => {
   const db = freshDb();
   insertEntryBatch(db, [entry("słuchać", "verb", ["słucha"])]);

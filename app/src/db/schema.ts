@@ -189,6 +189,20 @@ export const dailyActivity = sqliteTable(
   (t) => [uniqueIndex("daily_activity_day_kind_uq").on(t.day, t.kind)],
 );
 
+/**
+ * A repaired Lemma slip (CONTEXT.md), shown once to the learner as
+ * "myśli → myśleć". Text, not FKs: the slip row is deleted by the repair.
+ */
+export const lemmaSlipRepair = sqliteTable("lemma_slip_repair", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  slip: text("slip").notNull(),
+  target: text("target").notNull(),
+  repairedAt: integer("repaired_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  seenAt: integer("seen_at", { mode: "timestamp" }),
+});
+
 /** Italian gloss cached per lemma (optionally per sense). See ADR-0002. */
 export const gloss = sqliteTable(
   "gloss",

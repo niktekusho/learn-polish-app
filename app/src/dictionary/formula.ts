@@ -48,7 +48,7 @@ export async function resolveFormulas(
       const classified = classifyToken(db, tok);
       if (classified.kind === "unit") {
         const corrected = correctLemma(db, tok.surface, classified.lemma, classified.pos);
-        const headword = formulaHeadword(db, tok.surface, corrected);
+        const headword = formulaHeadword(db, tok.surface, corrected.lemma);
         if (headword) candidates.push({ position, headword, sentence });
       }
       position++;
@@ -143,11 +143,11 @@ export function suppressFormula(db: DB, lemmaId: number): void {
     .all();
   if (!unit) return;
   const verb = correctLemma(db, unit.word, unit.word, "VERB");
-  if (verb === unit.word) {
+  if (verb.lemma === unit.word || verb.pos !== "VERB") {
     throw new Error(`«${unit.word}» non è forma di un verbo del dizionario: non è una formula.`);
   }
   db.transaction((tx) => {
-    const verbId = upsertLemma(tx, verb, "VERB");
+    const verbId = upsertLemma(tx, verb.lemma, "VERB");
     ensureReceptiveKnowledge(tx, verbId, new Date());
     tx.update(token).set({ lemmaId: verbId }).where(eq(token.lemmaId, lemmaId)).run();
     tx.update(lemma).set({ suppressed: true }).where(eq(lemma.id, lemmaId)).run();

@@ -1,4 +1,4 @@
-import { and, asc, count, eq, inArray, isNotNull, isNull, notExists } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, isNull, ne, notExists } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 import * as schema from "#/db/schema";
@@ -9,7 +9,9 @@ import {
   gloss,
   knowledge,
   lemma,
+  lemmaSlipRepair,
   mweOccurrence,
+  occurrenceGloss,
   passageQuestion,
   reviewLog,
   sourceText,
@@ -17,14 +19,15 @@ import {
 } from "#/db/schema";
 import { wipeDictionary } from "#/dictionary/loader";
 import { forgetUnit, type MweChecker } from "#/dictionary/mwe-check";
-import { lookupDictionary } from "#/dictionary/service";
+import { slipTarget } from "#/dictionary/lemma-correction";
+import { entriesForPos, lookupDictionary, UPOS_TO_KAIKKI } from "#/dictionary/service";
 import { setManualGloss } from "#/gloss/service";
 import { classifyToken } from "#/import/classify";
 import { importAnalysis } from "#/import/checked-import";
-import { upsertLemma } from "#/import/pipeline";
+import { ensureReceptiveKnowledge, upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import { type ProofreadDeps, proofreadText, textChanges } from "#/proofread/proofread";
-import { NAME_POS } from "#/reader/name";
+import { isName, NAME_POS } from "#/reader/name";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -242,6 +245,108 @@ export function repairNames(db: DB): NameRepair {
     }
   });
   return out;
+}
+
+export interface SlipRepair {
+  slip: string;
+  target: string;
+}
+
+/**
+ * Repair every Lemma slip the Home dictionary settles (ADR-0008): its tokens and
+ * occurrence glosses move to the target, and the slip is deleted with its knowledge,
+ * history and glosses. Each repair is recorded for the learner to see.
+ */
+export function repairLemmaSlips(db: DB, now = new Date()): SlipRepair[] {
+  // Without a dictionary every lemma looks like a slip.
+  if (getStats(db).dictEntries === 0) return [];
+  return db.transaction((tx) => {
+    const out: SlipRepair[] = [];
+    for (const l of tx.select().from(lemma).where(ne(lemma.pos, NAME_POS)).all()) {
+      const surfaces = tx
+        .selectDistinct({ surface: token.surface })
+        .from(token)
+        .where(eq(token.lemmaId, l.id))
+        .all()
+        .map((r) => r.surface);
+      const target = surfaces.length > 0 && slipTarget(tx, l.lemma, l.pos, surfaces);
+      if (!target) continue;
+      const targetId = upsertLemma(tx, target.lemma, target.pos);
+      ensureReceptiveKnowledge(tx, targetId, now);
+      tx.update(token).set({ lemmaId: targetId }).where(eq(token.lemmaId, l.id)).run();
+      tx.update(occurrenceGloss)
+        .set({ lemmaId: targetId })
+        .where(eq(occurrenceGloss.lemmaId, l.id))
+        .run();
+      forgetUnit(tx, l.id);
+      tx.delete(lemma).where(eq(lemma.id, l.id)).run();
+      tx.insert(lemmaSlipRepair)
+        .values({ slip: l.lemma, target: target.lemma, repairedAt: now })
+        .run();
+      out.push({ slip: l.lemma, target: target.lemma });
+    }
+    return out;
+  });
+}
+
+// Form tags that make a word of its own, not an inflection (pani in pan's forms).
+const DERIVATION_TAGS = new Set(["feminine", "diminutive", "augmentative", "noun-from-verb"]);
+
+/**
+ * Tokens of a derived word (pani) that import linked to its base (pan) move to
+ * their own lemma. Import did this while the Home dictionary dropped derived
+ * words as headwords. The base keeps its state. Returns the tokens moved.
+ */
+export function relinkDerivedWords(db: DB, now = new Date()): number {
+  return db.transaction((tx) => {
+    let moved = 0;
+    const pairs = tx
+      .selectDistinct({
+        lemmaId: lemma.id,
+        lemma: lemma.lemma,
+        pos: lemma.pos,
+        surface: token.surface,
+      })
+      .from(token)
+      .innerJoin(lemma, eq(token.lemmaId, lemma.id))
+      .all();
+    for (const p of pairs) {
+      const word = p.surface.trim().toLowerCase();
+      const mapped = isName(p.pos) ? [] : (UPOS_TO_KAIKKI[p.pos] ?? []);
+      if (word === p.lemma || mapped.length === 0) continue;
+      if (entriesForPos(tx, word, mapped).length === 0) continue;
+      const rows = tx
+        .select({ tags: dictForm.tags })
+        .from(dictForm)
+        .innerJoin(dictEntry, eq(dictForm.entryId, dictEntry.id))
+        .where(
+          and(eq(dictEntry.word, p.lemma), inArray(dictEntry.pos, mapped), eq(dictForm.form, word)),
+        )
+        .all();
+      const derived = rows.every(
+        (r) => r.tags.length > 0 && r.tags.every((t) => DERIVATION_TAGS.has(t)),
+      );
+      if (rows.length === 0 || !derived) continue;
+      const targetId = upsertLemma(tx, word, p.pos);
+      ensureReceptiveKnowledge(tx, targetId, now);
+      const ids = tx
+        .select({ id: token.id })
+        .from(token)
+        .where(and(eq(token.lemmaId, p.lemmaId), eq(token.surface, p.surface)))
+        .all()
+        .map((r) => r.id);
+      tx.update(occurrenceGloss)
+        .set({ lemmaId: targetId })
+        .where(and(eq(occurrenceGloss.lemmaId, p.lemmaId), inArray(occurrenceGloss.tokenId, ids)))
+        .run();
+      moved += tx
+        .update(token)
+        .set({ lemmaId: targetId })
+        .where(inArray(token.id, ids))
+        .run().changes;
+    }
+    return moved;
+  });
 }
 
 export interface TagBackfill {

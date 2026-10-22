@@ -13,6 +13,8 @@ import {
   getStats,
   pruneOrphanLemmas,
   purgeStubGlosses,
+  relinkDerivedWords,
+  repairLemmaSlips,
   repairNames,
   proofreadEpisodes,
 } from "./ops";
@@ -305,7 +307,7 @@ const EP6 = "Duża torta jest gotowa. Pani Hanna kroi tortę i ciasto.";
 const EP6_FIXED = "Duży tort jest gotowy. Pani Hanna kroi tort.";
 
 function seedHomeDictionary(db: DB) {
-  const entries: [string, string, string[]][] = [
+  insertDict(db, [
     ["duży", "adj", ["duży", "duża"]],
     ["tort", "noun", ["tort", "tortu"]],
     ["być", "verb", ["jest"]],
@@ -316,15 +318,20 @@ function seedHomeDictionary(db: DB) {
     ["i", "conj", ["i"]],
     ["ciasto", "noun", ["ciasto"]],
     ["spać", "verb", ["śpi"]],
-  ];
+  ]);
+}
+
+function insertDict(db: DB, entries: [string, string, (string | [string, string[]])[]][]) {
   for (const [word, pos, forms] of entries) {
     const [{ id }] = db
       .insert(schema.dictEntry)
       .values({ word, pos })
       .returning({ id: schema.dictEntry.id })
       .all();
-    for (const form of forms)
-      db.insert(schema.dictForm).values({ entryId: id, form, tags: [] }).run();
+    for (const f of forms) {
+      const [form, tags] = typeof f === "string" ? [f, []] : f;
+      db.insert(schema.dictForm).values({ entryId: id, form, tags }).run();
+    }
   }
 }
 
@@ -512,4 +519,153 @@ test("a text failing the repair stays unchanged while the others are corrected",
   expect(db.select().from(schema.token).where(eq(schema.token.textId, ep7)).all()).toEqual(
     ep7Tokens,
   );
+});
+
+function importWords(db: DB, ...tokens: ReturnType<typeof w>[]) {
+  return persistAnalysis(db, { content: "x" }, { sentences: [{ tokens }] }).textId;
+}
+
+const tokensOf = (db: DB, lemmaId: number) =>
+  db.select().from(schema.token).where(eq(schema.token.lemmaId, lemmaId)).all();
+
+test("a slip moves to its twin and is deleted with its own data; the twin keeps its state", () => {
+  const db = freshDb();
+  importWords(db, w("myśli", "myśli", "VERB"), w("Myśli", "myśli", "VERB"));
+  importWords(db, w("myśleć", "myśleć", "VERB"));
+  const slip = practise(db, "myśli");
+  db.insert(schema.gloss)
+    .values({ lemmaId: slip, sense: "s", italian: "pensa", provider: "manual" })
+    .run();
+  const [slipToken] = tokensOf(db, slip);
+  db.insert(schema.occurrenceGloss)
+    .values({ tokenId: slipToken.id, lemmaId: slip, italian: "pensa", provider: "claude-cli" })
+    .run();
+  const twin = lemmaRow(db, "myśleć")!.id;
+  db.update(schema.knowledge)
+    .set({ reps: 4, state: 2 })
+    .where(eq(schema.knowledge.lemmaId, twin))
+    .run();
+  const twinKnowledge = db
+    .select()
+    .from(schema.knowledge)
+    .where(eq(schema.knowledge.lemmaId, twin))
+    .all();
+  insertDict(db, [
+    ["myśleć", "verb", ["myśli"]],
+    ["myśl", "noun", ["myśli"]],
+  ]);
+
+  expect(repairLemmaSlips(db)).toEqual([{ slip: "myśli", target: "myśleć" }]);
+
+  expect(lemmaRow(db, "myśli")).toBeUndefined();
+  expect(tokensOf(db, twin).map((t) => t.surface)).toEqual(["myśli", "Myśli", "myśleć"]);
+  for (const t of [schema.knowledge, schema.reviewLog, schema.gloss]) {
+    expect(db.select().from(t).where(eq(t.lemmaId, slip)).all()).toEqual([]);
+  }
+  expect(
+    db.select().from(schema.knowledge).where(eq(schema.knowledge.lemmaId, twin)).all(),
+  ).toEqual(twinKnowledge);
+  expect(db.select().from(schema.occurrenceGloss).all()).toMatchObject([
+    { tokenId: slipToken.id, lemmaId: twin },
+  ]);
+  expect(db.select().from(schema.lemmaSlipRepair).all()).toMatchObject([
+    { slip: "myśli", target: "myśleć", seenAt: null },
+  ]);
+});
+
+test("a slip whose twin does not exist creates it as New", () => {
+  const db = freshDb();
+  importWords(db, w("pieczywa", "pieczywać", "VERB"));
+  insertDict(db, [["pieczywo", "noun", ["pieczywo", "pieczywa"]]]);
+
+  expect(repairLemmaSlips(db)).toEqual([{ slip: "pieczywać", target: "pieczywo" }]);
+
+  const target = db.select().from(schema.lemma).all();
+  expect(target).toMatchObject([{ lemma: "pieczywo", pos: "NOUN" }]);
+  expect(tokensOf(db, target[0].id)).toHaveLength(1);
+  expect(db.select().from(schema.knowledge).all()).toMatchObject([
+    { lemmaId: target[0].id, track: "receptive", state: 0, reps: 0 },
+  ]);
+});
+
+test("a slip whose surfaces fit two headwords, or none, is untouched", () => {
+  const db = freshDb();
+  importWords(
+    db,
+    w("mają", "mają", "VERB"),
+    w("torta", "torta", "NOUN"),
+    w("tortę", "torta", "NOUN"),
+  );
+  insertDict(db, [
+    ["mieć", "verb", ["mają"]],
+    ["majać", "verb", ["mają"]],
+    ["tort", "noun", ["tort", "torta"]],
+  ]);
+  const before = db.select().from(schema.lemma).all();
+
+  expect(repairLemmaSlips(db)).toEqual([]);
+  expect(db.select().from(schema.lemma).all()).toEqual(before);
+});
+
+test("headword lemmas, MWEs and Names are never candidates", () => {
+  const db = freshDb();
+  importWords(db, w("robię", "robić", "VERB"), w("Kasi", "Kasia", "PROPN"));
+  const mwe = db
+    .insert(schema.lemma)
+    .values({ lemma: "na pewno", pos: "MWE" })
+    .returning()
+    .all()[0];
+  db.update(schema.token).set({ lemmaId: mwe.id }).where(eq(schema.token.surface, "robię")).run();
+  importWords(db, w("robię", "robić", "VERB"));
+  insertDict(db, [
+    ["robić", "verb", []],
+    ["robieć", "verb", ["robię"]],
+    ["kasa", "noun", ["kasi"]],
+    ["pewno", "adv", ["robię"]],
+  ]);
+  const before = db.select().from(schema.lemma).all();
+
+  expect(repairLemmaSlips(db)).toEqual([]);
+  expect(db.select().from(schema.lemma).all()).toEqual(before);
+});
+
+test("the sweep does nothing without a home dictionary", () => {
+  const db = freshDb();
+  importWords(db, w("pracujesz", "pracujesz", "VERB"));
+  expect(repairLemmaSlips(db)).toEqual([]);
+  expect(lemmaRow(db, "pracujesz")).toBeDefined();
+});
+
+test("tokens of a derived word move from its base to their own lemma; inflections stay", () => {
+  const db = freshDb();
+  insertDict(db, [
+    ["pan", "noun", ["pan", ["pani", ["feminine"]], ["pana", ["genitive", "singular"]]]],
+    ["on", "pron", [["ona", ["feminine", "nominative", "singular"]]]],
+  ]);
+  importWords(db, w("Pani", "pani", "NOUN"), w("pana", "pan", "NOUN"), w("ona", "on", "PRON"));
+  const pan = lemmaRow(db, "pan")!.id;
+  const [paniToken] = tokensOf(db, pan).filter((t) => t.surface === "Pani");
+  db.insert(schema.occurrenceGloss)
+    .values({ tokenId: paniToken.id, lemmaId: pan, italian: "signora", provider: "claude-cli" })
+    .run();
+  db.update(schema.knowledge).set({ reps: 4 }).where(eq(schema.knowledge.lemmaId, pan)).run();
+  insertDict(db, [
+    ["pani", "noun", ["pani"]],
+    ["ona", "pron", ["ona"]],
+  ]);
+
+  expect(relinkDerivedWords(db)).toBe(1);
+
+  const pani = lemmaRow(db, "pani")!;
+  expect(pani.pos).toBe("NOUN");
+  expect(tokensOf(db, pani.id).map((t) => t.surface)).toEqual(["Pani"]);
+  expect(tokensOf(db, pan).map((t) => t.surface)).toEqual(["pana"]);
+  expect(tokensOf(db, lemmaRow(db, "on")!.id).map((t) => t.surface)).toEqual(["ona"]);
+  expect(db.select().from(schema.occurrenceGloss).all()).toMatchObject([{ lemmaId: pani.id }]);
+  expect(db.select().from(schema.knowledge).all()).toMatchObject([
+    { lemmaId: pan, reps: 4 },
+    { lemmaId: lemmaRow(db, "on")!.id, reps: 0 },
+    { lemmaId: pani.id, state: 0, reps: 0 },
+  ]);
+  expect(relinkDerivedWords(db)).toBe(0);
 });

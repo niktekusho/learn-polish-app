@@ -133,10 +133,7 @@ function tokenLemma(
   if (classified.kind === "name") return { lemma: classified.lemma, pos: NAME_POS };
   if (classified.kind === "skip") return null;
   if (formula) return { lemma: formula, pos: FORMULA_POS };
-  return {
-    lemma: correctLemma(db, tok.surface, classified.lemma, classified.pos),
-    pos: classified.pos,
-  };
+  return correctLemma(db, tok.surface, classified.lemma, classified.pos);
 }
 
 /**
