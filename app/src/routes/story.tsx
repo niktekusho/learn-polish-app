@@ -146,7 +146,7 @@ function PremisePicker() {
             key={i}
             type="button"
             onClick={() => start(p)}
-            className="block w-full rounded border border-gray-300 px-4 py-3 text-left hover:bg-gray-50"
+            className="block w-full rounded border border-gray-300 px-4 py-3 text-left font-serif hover:bg-gray-50"
           >
             <div className="font-semibold">{p.title}</div>
             <div className="text-xs uppercase text-gray-500">{p.genre}</div>

@@ -16,11 +16,11 @@ export const Route = createRootRoute({
         content: "width=device-width, initial-scale=1",
       },
       {
-        title: "Learn Polish",
+        title: "Impara il polacco",
       },
       {
         name: "theme-color",
-        content: "#ffffff",
+        content: "#f6f1e8",
       },
       {
         name: "color-scheme",
@@ -47,7 +47,7 @@ export const Route = createRootRoute({
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="it">
       <head>
         <HeadContent />
       </head>

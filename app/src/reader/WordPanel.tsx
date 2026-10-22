@@ -378,7 +378,7 @@ export function WordPanel({
           <button
             type="button"
             onClick={() => onSelectMwe?.(mwe)}
-            className="font-semibold text-blue-600 underline"
+            className="font-serif font-semibold text-blue-600 underline"
           >
             {mwe.headword}
           </button>

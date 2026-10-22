@@ -116,7 +116,7 @@ export function ComprehensionCheck({
                     type="button"
                     disabled={graded}
                     onClick={() => setAnswers((prev) => ({ ...prev, [qi]: ci }))}
-                    className={`block w-full rounded border px-4 py-2 text-left text-sm ${cls}`}
+                    className={`block w-full rounded border px-4 py-2 text-left font-serif text-sm ${cls}`}
                   >
                     {choice}
                   </button>
