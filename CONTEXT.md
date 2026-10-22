@@ -18,6 +18,15 @@ analyzer, corrected by the **Home dictionary**'s inflected forms when the analyz
 is not a headword for the word's part of speech.
 _Avoid_: root, stem, base word
 
+**Lemma slip**:
+A **Lemma** that is no word: the analyzer returned a surface form (_pracujesz_), a
+misspelling (_pączk_) or the wrong part of speech (_pieczywa_ → _pieczywać_ instead of
+_pieczywo_). Repaired from the **Home dictionary** alone: its occurrences move to the one
+headword whose forms contain them all, and it is deleted with its **Knowledge state**,
+review history and glosses. That state was earned on a non-word: the real lemma keeps its
+own, or starts as new.
+_Avoid_: bogus lemma, wrong lemma
+
 **Multi-word expression (MWE)**:
 A fixed expression whose meaning is not derivable from its parts — _na pewno_ (di sicuro),
 _dzień dobry_, _zdawać sobie sprawę_ (rendersi conto). A lexical unit in its own right and
@@ -154,10 +163,28 @@ _Avoid_: redo, relearning step (FSRS term for a same-day scheduled review)
 A lemma whose Italian meaning cannot be given without a sentence: _do_ is "a", "fino a",
 "in" or "per" depending on the sentence, and "per" alone points just as well to _dla_.
 Marked by the learner, one lemma at a time, never by word type: _też_ and _podczas_ are
-function words that translate fine alone. Never asked as a single word (recognition,
+function words that translate fine alone. A beginner's mark can be wrong, so each one
+gets a **Report review**. Never asked as a single word (recognition,
 **Spoken recall**); still practised through **Read-aloud**, where the sentence carries
 the meaning.
 _Avoid_: function word (as a data term), ambiguous word
+
+**Report**:
+The learner telling Practice that an item's lemma is broken. Two kinds: _wrong_ (wrong
+meaning, garbled gloss, not a word at all), which takes the lemma out of **Practice**
+until its **Report review**, and _needs context_, which makes it **Context-bound** at
+once. No **Knowledge state** is graded: a broken item says nothing about memory.
+_Avoid_: flag (code term), bug report
+
+**Report review**:
+The automatic answer to a **Report**, batched when a **Practice** session ends. A
+**Lemma slip** is repaired from the **Home dictionary**. Any other lemma gets two
+independent decisions, its primary **Gloss** (kept or replaced) and its **Context-bound**
+mark (on or off), with a one-line reason. A **Manual gloss** is never replaced. Shown at
+the start of the next **Practice**, and undoable at any time while what it wrote is still
+current. Undoing a review that changed nothing is a new **Report**, and the next review
+sees the old one.
+_Avoid_: correction (that is a fix to generated text), moderation
 
 **Spoken recall**:
 The **Exercise** that proves **Productive knowledge**: given the Italian meaning, say the
