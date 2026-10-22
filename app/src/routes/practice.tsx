@@ -109,11 +109,15 @@ const getSummary = createServerFn()
     const summary = sessionSummary(db, data.sessionId);
     if (summary?.first) {
       const { relinkDerivedWords, repairLemmaSlips } = await import("#/maintenance/ops");
-      try {
-        relinkDerivedWords(db);
-        repairLemmaSlips(db);
-      } catch (err) {
-        console.error("[slips] repair failed:", err);
+      const { getImportStatus } = await import("#/dictionary/import-job");
+      // A half-loaded dictionary makes real lemmas look like slips. The import repairs once it ends.
+      if (getImportStatus().state !== "importing") {
+        try {
+          relinkDerivedWords(db);
+          repairLemmaSlips(db);
+        } catch (err) {
+          console.error("[slips] repair failed:", err);
+        }
       }
       // Prepare passage questions for the coming days, off the request path.
       const { prepareUpcomingPassages } = await import("#/passage/service");

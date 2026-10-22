@@ -104,3 +104,29 @@ Wiktionary sense carries that meaning, so picking a sense per occurrence alone c
   each promotion, which a sub-A1 learner cannot judge. A wrong promotion is undone by
   suppressing the formula.
 - Word-sense disambiguation (roadmap, parked) is covered by the sense pointer.
+
+## Amendment (2026-10-22): the app downloads the dump itself
+
+The manual download and path field are gone. One maintenance action fetches
+`https://kaikki.org/dictionary/Polish/kaikki.org-dictionary-Polish.jsonl.gz`, keeps it
+beside the DB with its `ETag` and `Last-Modified`, and imports it. The learner triggers
+it: an import wipes the dictionary for minutes and can reword senses, so it never runs
+unattended.
+
+- **Deprecated file on purpose.** kaikki marks the per-language files deprecated, but
+  they are still refreshed (2026-10-21). The `.gz` is ~89 MB; the non-deprecated raw
+  dump holds every language and runs to tens of GB per refresh. When the URL stops
+  answering, the download fails loudly and the raw dump becomes its own change.
+- **Disk first.** The import wipes before it reads, and a partly loaded dictionary makes
+  real lemmas look like **Lemma slips**. The file is complete on disk, checked against
+  `Content-Length`, before the wipe starts. The daily slip repair skips while an import
+  runs.
+- **Conditional download.** A `304` with a loaded dictionary does nothing; with an empty
+  one it reimports the kept file, so the network is needed only for a new version.
+- **After an import**, the derived-word relink and Lemma slip repair run once, as they
+  do after the first Practice of a day. Name and Formula repairs stay manual: they
+  delete knowledge and the Formula one calls the LLM.
+- Rejected: a scheduled refresh, which would swap the dictionary under a running
+  session; translating senses a refresh adds, which would gloss them without a
+  sentence (the onboarding-wave problem above). Such a sense has no Italian until the
+  lemma is regenerated, and occurrence glosses cannot point to it.

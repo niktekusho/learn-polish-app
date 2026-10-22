@@ -16,7 +16,8 @@ const DB_PATH =
 const MIGRATIONS_DIR =
   process.env.MIGRATIONS_DIR ?? fileURLToPath(new URL("../../drizzle", import.meta.url));
 
-mkdirSync(dirname(DB_PATH), { recursive: true });
+export const DATA_DIR = dirname(DB_PATH);
+mkdirSync(DATA_DIR, { recursive: true });
 
 const sqlite = new Database(DB_PATH);
 sqlite.pragma("journal_mode = WAL");

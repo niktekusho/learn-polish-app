@@ -2,7 +2,7 @@ import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { z } from "zod";
-import type { DictImportStatus } from "#/dictionary/import-job";
+import type { DictImportStatus, DictVersion } from "#/dictionary/import-job";
 import type { ContextBoundLemma, FlaggedLemma, MaintenanceStats } from "#/maintenance/ops";
 
 const loadStats = createServerFn().handler(async (): Promise<MaintenanceStats> => {
@@ -119,13 +119,17 @@ const runAction = createServerFn({ method: "POST" })
     }
   });
 
-const startDictImport = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ filePath: z.string().min(1) }).parse(d))
-  .handler(async ({ data }) => {
-    const { db } = await import("#/db/index");
-    const { startImport } = await import("#/dictionary/import-job");
-    return startImport(db, data.filePath);
-  });
+const startDictUpdate = createServerFn({ method: "POST" }).handler(async () => {
+  const { db, DATA_DIR } = await import("#/db/index");
+  const { startUpdate } = await import("#/dictionary/import-job");
+  return startUpdate(db, DATA_DIR);
+});
+
+const loadDictVersion = createServerFn().handler(async (): Promise<DictVersion | null> => {
+  const { DATA_DIR } = await import("#/db/index");
+  const { readDictVersion } = await import("#/dictionary/import-job");
+  return readDictVersion(DATA_DIR);
+});
 
 const getDictImportStatus = createServerFn().handler(async (): Promise<DictImportStatus> => {
   const { getImportStatus } = await import("#/dictionary/import-job");
@@ -135,29 +139,33 @@ const getDictImportStatus = createServerFn().handler(async (): Promise<DictImpor
 export const Route = createFileRoute("/maintenance")({
   component: Maintenance,
   loader: async () => {
-    const [stats, flagged, contextBound, suppressed] = await Promise.all([
+    const [stats, flagged, contextBound, suppressed, dictVersion] = await Promise.all([
       loadStats(),
       loadFlagged(),
       loadContextBound(),
       loadSuppressed(),
+      loadDictVersion(),
     ]);
-    return { stats, flagged, contextBound, suppressed };
+    return { stats, flagged, contextBound, suppressed, dictVersion };
   },
 });
 
 type Action = z.infer<typeof actionInput>["action"];
 
 function Maintenance() {
-  const { stats, flagged, contextBound, suppressed } = Route.useLoaderData();
+  const { stats, flagged, contextBound, suppressed, dictVersion } = Route.useLoaderData();
   const [restoring, setRestoring] = useState<number | null>(null);
   const router = useRouter();
   const [pending, setPending] = useState<Action | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dictPath, setDictPath] = useState("");
   const [dictStatus, setDictStatus] = useState<DictImportStatus | null>(null);
 
-  const importing = dictStatus?.state === "running";
+  const importing = dictStatus?.state === "downloading" || dictStatus?.state === "importing";
+  const progress =
+    dictStatus && dictStatus.totalBytes > 0
+      ? Math.round((100 * dictStatus.readBytes) / dictStatus.totalBytes)
+      : 0;
 
   // Fetch once on mount (reattaches to a job after a page reload), then poll
   // every second while an import runs; refresh stats when it settles.
@@ -173,31 +181,26 @@ function Maintenance() {
     const id = setInterval(async () => {
       const s = await getDictImportStatus();
       setDictStatus(s);
-      if (s.state !== "running") await router.invalidate();
+      if (s.state !== "downloading" && s.state !== "importing") await router.invalidate();
     }, 1000);
     return () => clearInterval(id);
   }, [importing, router]);
 
-  async function runImport() {
-    const filePath = dictPath.trim();
-    if (!filePath) return;
+  async function runUpdate() {
     if (
       !window.confirm(
-        "Import the kaikki dictionary? The current dictionary is wiped and reloaded from the file.",
+        "Download the latest kaikki dictionary? If kaikki has a newer dump, the current dictionary is wiped and reloaded from it.",
       )
     )
       return;
     setError(null);
     setMessage(null);
-    const res = await startDictImport({ data: { filePath } });
+    const res = await startDictUpdate();
     if (!res.started) {
-      setError(res.reason ?? "Import did not start.");
+      setError(res.reason ?? "Update did not start.");
       return;
     }
-    const s = await getDictImportStatus();
-    setDictStatus(s);
-    // Tiny files can finish before the first poll tick — refresh stats now.
-    if (s.state !== "running") await router.invalidate();
+    setDictStatus(await getDictImportStatus());
   }
 
   async function run(action: Action, confirmText: string, noun: string) {
@@ -320,39 +323,38 @@ function Maintenance() {
       <div className="mt-8 rounded border border-gray-200 p-4">
         <h2 className="font-semibold">Home dictionary</h2>
         <p className="mt-1 text-sm text-gray-600">
-          Import the kaikki.org Polish JSONL dump (see docs/adr/0002). Download it manually, then
-          paste the absolute file path (no ~).
+          The kaikki.org Polish dump (see docs/adr/0002), downloaded only when kaikki has a newer
+          one. Current version:{" "}
+          {dictVersion?.lastModified
+            ? new Date(dictVersion.lastModified).toLocaleDateString()
+            : "none downloaded"}
+          .
         </p>
-        <div className="mt-3 flex gap-2">
-          <input
-            type="text"
-            value={dictPath}
-            onChange={(e) => setDictPath(e.target.value)}
-            placeholder="/absolute/path/to/kaikki.org-dictionary-Polish.jsonl"
-            disabled={importing}
-            className="w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-          />
+        <div className="mt-3">
           <button
             type="button"
-            onClick={runImport}
-            disabled={importing || dictPath.trim() === ""}
-            className="shrink-0 rounded border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            onClick={runUpdate}
+            disabled={importing}
+            className="rounded border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
           >
-            {importing ? "Importing…" : "Import"}
+            {importing ? "Updating…" : "Download latest and import"}
           </button>
         </div>
         {dictStatus && dictStatus.state !== "idle" && (
           <p className="mt-2 text-sm text-gray-600">
-            {dictStatus.state === "running" &&
-              `Imported ${dictStatus.importedEntries} entries — ${
-                dictStatus.totalBytes > 0
-                  ? Math.round((100 * dictStatus.readBytes) / dictStatus.totalBytes)
-                  : 0
-              }%`}
+            {dictStatus.state === "downloading" && `Downloading — ${progress}%`}
+            {dictStatus.state === "importing" &&
+              `Imported ${dictStatus.importedEntries} entries — ${progress}%`}
             {dictStatus.state === "done" &&
-              `Done: ${dictStatus.importedEntries} entries imported (${dictStatus.processedLines} lines).`}
+              (dictStatus.upToDate
+                ? "Up to date: kaikki has no newer dump."
+                : `Done: ${dictStatus.importedEntries} entries imported (${dictStatus.processedLines} lines).${
+                    dictStatus.repairs
+                      ? ` ${dictStatus.repairs.slips} lemma slips repaired, ${dictStatus.repairs.relinkedTokens} tokens relinked to derived words.`
+                      : ""
+                  }`)}
             {dictStatus.state === "error" && (
-              <span className="text-red-700">Import failed: {dictStatus.error}</span>
+              <span className="text-red-700">Update failed: {dictStatus.error}</span>
             )}
           </p>
         )}
@@ -455,7 +457,7 @@ function Maintenance() {
         />
         <ActionRow
           title="Clear dictionary"
-          description="Deletes the whole home dictionary (entries, senses, forms). Re-import from the kaikki file to restore it."
+          description="Deletes the whole home dictionary (entries, senses, forms). Download and import again to restore it."
           button="Clear dictionary"
           pending={pending === "clear-dictionary"}
           disabled={pending !== null || importing || stats.dictEntries === 0}
