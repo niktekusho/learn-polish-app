@@ -50,7 +50,7 @@ Color is both semantic and decorative:
   in the style round. Not as full-width header bands.
 - **Cases**: solid pills, only where a case is already displayed (WordPanel *Forme* list,
   Name panel). Coloring endings in Reader text and an inflection table are out of scope.
-  Tracked in issue #9.
+  Part of issue #12.
 
 ### Accessibility
 
@@ -109,7 +109,7 @@ Maintenance's operation labels are translated in its own prototype.
 
 ## Process
 
-1. **Mood board**: done 2026-10-22.
+1. **Mood board**: done 2026-10-22. Steps 2–4 are issues #10–#18, a linear chain.
 2. **Style round**: 3 variants of Home and Reader (WordPanel open) on one Artifact page. The
    variants differ in UI sans, word-state treatment, track colors as section colors or not,
    and Home background, accent, radius and shadow. Structure stays the same so only style is
