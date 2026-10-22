@@ -44,6 +44,25 @@ test("pure form-of entry is skipped", () => {
   expect(parseKaikkiLine(line)).toEqual({ kind: "skip", reason: "form-of" });
 });
 
+test("a form-of entry naming a lemma of its own is kept", () => {
+  const line = JSON.stringify({
+    word: "pani",
+    pos: "noun",
+    lang_code: "pl",
+    senses: [
+      {
+        glosses: ["female equivalent of pan (“Mrs; miss”)"],
+        tags: ["feminine", "form-of"],
+        form_of: [{ word: "pan" }],
+      },
+    ],
+  });
+  const out = parseKaikkiLine(line);
+  expect(out.kind === "entry" && out.entry.senses.map((s) => s.gloss)).toEqual([
+    "female equivalent of pan (“Mrs; miss”)",
+  ]);
+});
+
 test("non-Polish lang_code is skipped", () => {
   const line = JSON.stringify({
     word: "Schloss",
