@@ -213,6 +213,17 @@ One installment of a **Story**, stored and read as a normal imported text. Episo
 daily routine.
 _Avoid_: chapter, chunk
 
+**Proofread**:
+The check every LLM-generated Polish text (an **Episode**, a generated **Passage
+exercise** passage) passes before it is stored. The **Home dictionary** flags non-name
+words absent from its forms; an LLM reviewer flags grammatical and lexical errors, never
+style. Anything flagged gets a **Correction**.
+
+**Correction**:
+One LLM rewrite of a generated text that fixes the spans a **Proofread** flagged and
+whatever agrees with them. The result is proofread again; anything still flagged fails
+loudly. Not shown in the reader.
+
 **Conversation**:
 A spoken role-play with an LLM character from the current **Story**, set right after the
 last **Episode** read and played toward a **Goal**. Open: the character follows wherever the learner takes it. Not an **Exercise**:
