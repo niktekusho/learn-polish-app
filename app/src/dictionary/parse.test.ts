@@ -114,6 +114,19 @@ test("multi-word headword is flagged as MWE", () => {
   expect(out.entry.isMwe).toBe(true);
 });
 
+test("split-page headword keeps only the word", () => {
+  const line = JSON.stringify({
+    word: "i/languages M to Z",
+    pos: "conj",
+    lang_code: "pl",
+    senses: [{ glosses: ["and"] }],
+  });
+  const out = parseKaikkiLine(line);
+  if (out.kind !== "entry") throw new Error("expected entry");
+  expect(out.entry.word).toBe("i");
+  expect(out.entry.isMwe).toBe(false);
+});
+
 test("name entries keep senses but drop forms", () => {
   const line = JSON.stringify({
     word: "Polska",
