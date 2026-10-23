@@ -14,6 +14,7 @@ import {
   parsePassageQuestionJson,
   parsePremisesJson,
   parseProofreadJson,
+  parseReportReviewJson,
   parseSenseGlossJson,
   parseStoryOutlineJson,
 } from "./provider";
@@ -219,6 +220,13 @@ test("MWE check: one verdict per item, in order", () => {
   expect(parseMweCheckJson('```json\n{"keep":[false]}\n```', 1)).toEqual([false]);
   expect(() => parseMweCheckJson(JSON.stringify({ keep: [true] }), 2)).toThrow(/2/);
   expect(() => parseMweCheckJson(JSON.stringify({ keep: ["yes"] }), 1)).toThrow();
+});
+
+test("report review: a malformed item is null, a wrong item count fails the call", () => {
+  const ok = { gloss: { sense: 0 }, contextBound: true, reason: "Dipende dalla frase." };
+  const out = JSON.stringify({ reviews: [ok, { gloss: "replace", contextBound: false }] });
+  expect(parseReportReviewJson(out, 2)).toEqual([ok, null]);
+  expect(() => parseReportReviewJson(JSON.stringify({ reviews: [ok] }), 2)).toThrow(/2/);
 });
 
 test("proofread: parses flagged spans, an empty list is valid", () => {

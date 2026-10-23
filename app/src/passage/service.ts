@@ -76,6 +76,16 @@ function occurrences(db: DB, lemmaId: number): Occurrence[] {
   return [...words, ...mwes].map((o) => ({ ...o, target: o.target.trim() }));
 }
 
+/** Distinct sentences from read texts that hold the lemma, at most `max`. */
+export function metSentences(db: DB, lemmaId: number, max = 3): string[] {
+  const out = new Set<string>();
+  for (const o of occurrences(db, lemmaId)) {
+    if (out.size === max) break;
+    out.add(sentenceSpan(db, o.textId, o.sentenceIndex, o.sentenceIndex));
+  }
+  return [...out];
+}
+
 /**
  * Up to 3 consecutive sentences from a read text, centred on the shortest
  * sentence holding the lemma. undefined when no read text has it.

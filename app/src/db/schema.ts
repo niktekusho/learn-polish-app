@@ -65,8 +65,7 @@ export const lemma = sqliteTable(
     // UPOS: NOUN, VERB, ADP, ... — or 'MWE' for multi-word tracked units
     // (dictionary headwords detected at import, see mweOccurrence).
     pos: text("pos").notNull(),
-    // Learner reported a bad exercise (wrong gloss, useless without context).
-    // Non-null = "requires attention": kept out of practice until cleared.
+    // A wrong Report (CONTEXT.md "Report"): kept out of practice until its Report review.
     flaggedAt: integer("flagged_at", { mode: "timestamp" }),
     flagNote: text("flag_note"),
     // Meaning only exists in a sentence (CONTEXT.md "Context-bound lemma"):
@@ -202,6 +201,36 @@ export const lemmaSlipRepair = sqliteTable("lemma_slip_repair", {
     .$defaultFn(() => new Date()),
   seenAt: integer("seen_at", { mode: "timestamp" }),
 });
+
+/**
+ * One Report review (CONTEXT.md): the primary gloss and Context-bound mark
+ * before and after, so the learner can see and undo it.
+ */
+export const reportReview = sqliteTable(
+  "report_review",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    lemmaId: integer("lemma_id")
+      .notNull()
+      .references(() => lemma.id, { onDelete: "cascade" }),
+    kind: text("kind", { enum: ["wrong", "context"] }).notNull(),
+    note: text("note"),
+    glossBefore: text("gloss_before"),
+    glossProviderBefore: text("gloss_provider_before", {
+      enum: ["stub", "claude-cli", "codex-cli", "ollama", "api", "manual"],
+    }),
+    glossAfter: text("gloss_after"),
+    markBefore: integer("mark_before", { mode: "boolean" }).notNull(),
+    markAfter: integer("mark_after", { mode: "boolean" }).notNull(),
+    reason: text("reason").notNull(),
+    reviewedAt: integer("reviewed_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    seenAt: integer("seen_at", { mode: "timestamp" }),
+    undoneAt: integer("undone_at", { mode: "timestamp" }),
+  },
+  (t) => [index("report_review_lemma_idx").on(t.lemmaId)],
+);
 
 /** Italian gloss cached per lemma (optionally per sense). See ADR-0002. */
 export const gloss = sqliteTable(

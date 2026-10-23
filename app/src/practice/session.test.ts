@@ -5,7 +5,9 @@ import { eq, ne } from "drizzle-orm";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import { dueLemmas, initialKnowledgeFields } from "#/fsrs/index";
-import { listContextBound, listFlagged, resolveFlag, unmarkContextBound } from "#/maintenance/ops";
+import { listContextBound, unmarkContextBound } from "#/maintenance/ops";
+import type { GlossProvider, ReportVerdict } from "#/llm/provider";
+import { pendingReports, reviewReports } from "#/report/review";
 import {
   answerItem,
   buildSession,
@@ -99,7 +101,15 @@ test("resumeSession returns the held items and answered progress", () => {
   expect(resumeSession("nope")).toBeNull();
 });
 
-test("report flags the lemma out of practice without grading; resolve brings it back", () => {
+function verdictProvider(v: ReportVerdict): GlossProvider {
+  return {
+    name: "claude-cli",
+    gloss: async () => "",
+    reviewReports: async (items) => items.map(() => v),
+  };
+}
+
+test("report flags the lemma out of practice without grading; its review brings it back", async () => {
   const db = freshDb();
   for (const [w, g] of [
     ["kot", "gatto"],
@@ -116,8 +126,9 @@ test("report flags the lemma out of practice without grading; resolve brings it 
 
   expect(db.select().from(schema.reviewLog).all()).toHaveLength(0); // no FSRS write
   expect(resumeSession(session.sessionId)!.answered).toEqual([{ itemId: bad.id, correct: false }]);
-  const [flag] = listFlagged(db);
-  expect(flag).toMatchObject({ lemma: "tylko", gloss: "ma anche", note: "wrong gloss" });
+  expect(pendingReports(db)).toMatchObject([
+    { lemma: "tylko", kind: "wrong", note: "wrong gloss" },
+  ]);
 
   // Flagged: neither a target nor a distractor.
   const next = buildSession(db, { limit: 20 });
@@ -127,8 +138,15 @@ test("report flags the lemma out of practice without grading; resolve brings it 
     expect(i.prompt).not.toBe("tylko");
     expect(i.choices).not.toContain("ma anche");
   }
-  resolveFlag(db, flag.lemmaId, "solo");
-  expect(listFlagged(db)).toHaveLength(0);
+  await reviewReports(
+    db,
+    verdictProvider({
+      gloss: { italian: "solo", noSenseFits: true },
+      contextBound: false,
+      reason: "Glossa sbagliata.",
+    }),
+  );
+  expect(pendingReports(db)).toHaveLength(0);
   const after = buildSession(db, { limit: 20 });
   const fixed = after.items.find((i) => i.kind === "recognition-mcq" && i.prompt === "tylko");
   expect(fixed?.kind === "recognition-mcq" && fixed.choices).toContain("solo");
@@ -162,7 +180,7 @@ test("needs context drops the lemma from single-word exercises but keeps read-al
   markContextBound(db, session.sessionId, item.id);
 
   expect(db.select().from(schema.reviewLog).all()).toHaveLength(0);
-  expect(listFlagged(db)).toHaveLength(0);
+  expect(pendingReports(db)).toMatchObject([{ lemma: "do", kind: "context" }]);
   expect(listContextBound(db)).toMatchObject([{ lemma: "do" }]);
   expect(dueLemmas(db, "receptive").map((d) => d.lemma)).not.toContain("do");
   expect(dueLemmas(db, "productive").map((d) => d.lemma)).not.toContain("do");
@@ -368,6 +386,6 @@ test("reporting a passage deletes its question so it is prepared again", () => {
   const { session, item, doId } = passageSession(db);
   reportItem(db, session.sessionId, item.id, "");
   expect(db.select().from(schema.passageQuestion).all()).toHaveLength(0);
-  expect(listFlagged(db)).toHaveLength(0);
+  expect(pendingReports(db).filter((p) => p.kind === "wrong")).toHaveLength(0);
   expect(dueLemmas(db, "receptive").map((d) => d.lemmaId)).not.toContain(doId);
 });

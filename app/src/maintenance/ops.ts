@@ -21,7 +21,6 @@ import { wipeDictionary } from "#/dictionary/loader";
 import { forgetUnit, type MweChecker } from "#/dictionary/mwe-check";
 import { slipTarget } from "#/dictionary/lemma-correction";
 import { entriesForPos, lookupDictionary, UPOS_TO_KAIKKI } from "#/dictionary/service";
-import { setManualGloss } from "#/gloss/service";
 import { classifyToken } from "#/import/classify";
 import { importAnalysis } from "#/import/checked-import";
 import { ensureReceptiveKnowledge, upsertLemma } from "#/import/pipeline";
@@ -102,42 +101,6 @@ export function purgeStubGlosses(db: DB): number {
 /** Delete the whole home dictionary (entries, senses, forms). */
 export function clearDictionary(db: DB): number {
   return wipeDictionary(db);
-}
-
-export interface FlaggedLemma {
-  lemmaId: number;
-  lemma: string;
-  pos: string;
-  gloss: string | null;
-  note: string | null;
-  flaggedAt: Date;
-}
-
-/** Lemmas reported from Practice ("requires attention"), oldest first. */
-export function listFlagged(db: DB): FlaggedLemma[] {
-  return db
-    .select({
-      lemmaId: lemma.id,
-      lemma: lemma.lemma,
-      pos: lemma.pos,
-      gloss: gloss.italian,
-      note: lemma.flagNote,
-      flaggedAt: lemma.flaggedAt,
-    })
-    .from(lemma)
-    .leftJoin(gloss, and(eq(gloss.lemmaId, lemma.id), eq(gloss.sense, "")))
-    .where(isNotNull(lemma.flaggedAt))
-    .orderBy(asc(lemma.flaggedAt))
-    .all() as FlaggedLemma[];
-}
-
-/**
- * Clear a flag, optionally writing a corrected gloss first (manual tier).
- * The lemma rejoins practice with its FSRS state untouched.
- */
-export function resolveFlag(db: DB, lemmaId: number, italian?: string): void {
-  if (italian !== undefined) setManualGloss(db, lemmaId, italian);
-  db.update(lemma).set({ flaggedAt: null, flagNote: null }).where(eq(lemma.id, lemmaId)).run();
 }
 
 export interface ContextBoundLemma {

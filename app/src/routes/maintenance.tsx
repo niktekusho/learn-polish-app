@@ -3,7 +3,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import type { DictImportStatus, DictVersion } from "#/dictionary/import-job";
-import type { ContextBoundLemma, FlaggedLemma, MaintenanceStats } from "#/maintenance/ops";
+import type { ContextBoundLemma, MaintenanceStats } from "#/maintenance/ops";
+import { Corrections } from "#/report/Corrections";
+import type { Correction } from "#/report/review";
 
 const loadStats = createServerFn().handler(async (): Promise<MaintenanceStats> => {
   const { db } = await import("#/db/index");
@@ -11,22 +13,11 @@ const loadStats = createServerFn().handler(async (): Promise<MaintenanceStats> =
   return getStats(db);
 });
 
-const loadFlagged = createServerFn().handler(async (): Promise<FlaggedLemma[]> => {
+const loadReviews = createServerFn().handler(async (): Promise<Correction[]> => {
   const { db } = await import("#/db/index");
-  const { listFlagged } = await import("#/maintenance/ops");
-  return listFlagged(db);
+  const { listReviews } = await import("#/report/review");
+  return listReviews(db);
 });
-
-// Clear a practice report; with `italian`, save it as the manual gloss first.
-const resolveFlagFn = createServerFn({ method: "POST" })
-  .validator((d: unknown) =>
-    z.object({ lemmaId: z.number().int(), italian: z.string().min(1).optional() }).parse(d),
-  )
-  .handler(async ({ data }) => {
-    const { db } = await import("#/db/index");
-    const { resolveFlag } = await import("#/maintenance/ops");
-    resolveFlag(db, data.lemmaId, data.italian);
-  });
 
 const loadContextBound = createServerFn().handler(async (): Promise<ContextBoundLemma[]> => {
   const { db } = await import("#/db/index");
@@ -139,21 +130,21 @@ const getDictImportStatus = createServerFn().handler(async (): Promise<DictImpor
 export const Route = createFileRoute("/maintenance")({
   component: Maintenance,
   loader: async () => {
-    const [stats, flagged, contextBound, suppressed, dictVersion] = await Promise.all([
+    const [stats, reviews, contextBound, suppressed, dictVersion] = await Promise.all([
       loadStats(),
-      loadFlagged(),
+      loadReviews(),
       loadContextBound(),
       loadSuppressed(),
       loadDictVersion(),
     ]);
-    return { stats, flagged, contextBound, suppressed, dictVersion };
+    return { stats, reviews, contextBound, suppressed, dictVersion };
   },
 });
 
 type Action = z.infer<typeof actionInput>["action"];
 
 function Maintenance() {
-  const { stats, flagged, contextBound, suppressed, dictVersion } = Route.useLoaderData();
+  const { stats, reviews, contextBound, suppressed, dictVersion } = Route.useLoaderData();
   const [restoring, setRestoring] = useState<number | null>(null);
   const router = useRouter();
   const [pending, setPending] = useState<Action | null>(null);
@@ -227,20 +218,7 @@ function Maintenance() {
         by "Clear imported texts".
       </p>
 
-      {flagged.length > 0 && (
-        <div className="mt-8 rounded border border-amber-300 bg-amber-50 p-4">
-          <h2 className="font-semibold">Requires attention ({flagged.length})</h2>
-          <p className="mt-1 text-sm text-gray-600">
-            Reported from Practice — out of practice until resolved. Fix the gloss (saved as manual)
-            or just clear the flag.
-          </p>
-          <ul className="mt-3 space-y-3">
-            {flagged.map((f) => (
-              <FlaggedRow key={f.lemmaId} f={f} onDone={() => router.invalidate()} />
-            ))}
-          </ul>
-        </div>
-      )}
+      <Corrections title={`Report reviews (${reviews.length})`} items={reviews} className="mt-8" />
 
       {contextBound.length > 0 && (
         <div className="mt-8 rounded border border-gray-200 p-4">
@@ -478,59 +456,6 @@ function Maintenance() {
       )}
       {error && <p className="mt-6 rounded bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     </div>
-  );
-}
-
-function FlaggedRow({ f, onDone }: { f: FlaggedLemma; onDone: () => void }) {
-  const [italian, setItalian] = useState(f.gloss ?? "");
-  const [busy, setBusy] = useState(false);
-  const changed = italian.trim() !== "" && italian.trim() !== (f.gloss ?? "");
-
-  async function resolve(withGloss: boolean) {
-    setBusy(true);
-    try {
-      await resolveFlagFn({
-        data: { lemmaId: f.lemmaId, italian: withGloss ? italian.trim() : undefined },
-      });
-      onDone();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <li className="rounded border border-amber-200 bg-white p-3 text-sm">
-      <div>
-        <span className="text-base font-semibold">{f.lemma}</span>{" "}
-        <span className="text-gray-500">{f.pos}</span>
-      </div>
-      {f.note && <p className="mt-1 text-gray-700">“{f.note}”</p>}
-      <div className="mt-2 flex flex-wrap gap-2">
-        <input
-          type="text"
-          value={italian}
-          onChange={(e) => setItalian(e.target.value)}
-          aria-label={`Italian gloss for ${f.lemma}`}
-          className="min-w-0 flex-1 rounded border border-gray-300 px-2 py-1.5"
-        />
-        <button
-          type="button"
-          onClick={() => resolve(true)}
-          disabled={busy || !changed}
-          className="rounded border border-blue-300 px-3 py-1.5 font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
-        >
-          Save & clear
-        </button>
-        <button
-          type="button"
-          onClick={() => resolve(false)}
-          disabled={busy}
-          className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-        >
-          Clear flag
-        </button>
-      </div>
-    </li>
   );
 }
 

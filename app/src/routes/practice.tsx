@@ -5,10 +5,12 @@ import { useEffect, useState } from "react";
 import { z } from "zod";
 import { PushToTalk } from "#/audio/recorder";
 import { ListenButton } from "#/audio/speak";
+import { Corrections } from "#/report/Corrections";
 import { wordPattern } from "#/reader/word-pattern";
 
 // Build a new session, or resume the held one by id (reload/refocus). No LLM
-// calls: buildSession only reads cached glosses.
+// calls: buildSession only reads cached glosses. A new session takes the unseen
+// corrections, so they show once.
 const startSession = createServerFn()
   .validator((d: unknown) =>
     z.object({ sessionId: z.string().nullable(), mic: z.boolean() }).parse(d),
@@ -16,11 +18,12 @@ const startSession = createServerFn()
   .handler(async ({ data }) => {
     const { db } = await import("#/db/index");
     const { buildSession, resumeSession } = await import("#/practice/session");
+    const { takeCorrections } = await import("#/report/review");
     if (data.sessionId) {
       const resumed = resumeSession(data.sessionId);
-      if (resumed) return resumed;
+      if (resumed) return { ...resumed, corrections: [] };
     }
-    return buildSession(db, { mic: data.mic });
+    return { ...buildSession(db, { mic: data.mic }), corrections: takeCorrections(db) };
   });
 
 // Grade one MCQ answer against the server-held item (exactly once).
@@ -79,7 +82,7 @@ const submitSelfGrade = createServerFn({ method: "POST" })
     return selfGradeItem(db, data.sessionId, data.itemId, data.saidIt);
   });
 
-// "wrong": flag the lemma as "requires attention" (fixed in Maintenance).
+// "wrong": flag the lemma out of practice until its Report review.
 // "context": mark it context-bound (no more single-word exercises).
 const submitReport = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
@@ -110,18 +113,23 @@ const getSummary = createServerFn()
     if (summary?.first) {
       const { relinkDerivedWords, repairLemmaSlips } = await import("#/maintenance/ops");
       const { getImportStatus } = await import("#/dictionary/import-job");
+      const { getGlossProvider } = await import("#/llm/index");
       // A half-loaded dictionary makes real lemmas look like slips. The import repairs once it ends.
       if (getImportStatus().state !== "importing") {
         try {
           relinkDerivedWords(db);
           repairLemmaSlips(db);
+          // After the sweep, so a reported slip is repaired and never reaches the LLM.
+          const { reviewReports } = await import("#/report/review");
+          reviewReports(db, getGlossProvider()).catch((err) =>
+            console.error("[report-review] failed:", err),
+          );
         } catch (err) {
           console.error("[slips] repair failed:", err);
         }
       }
       // Prepare passage questions for the coming days, off the request path.
       const { prepareUpcomingPassages } = await import("#/passage/service");
-      const { getGlossProvider } = await import("#/llm/index");
       const { analyze } = await import("#/import/sidecar");
       prepareUpcomingPassages(db, getGlossProvider(), analyze).catch((err) =>
         console.error("[passage] background prep failed:", err),
@@ -217,9 +225,12 @@ function PracticeSession() {
     </button>
   );
 
+  const corrections = <Corrections title="Corretti" items={data.corrections} className="mb-6" />;
+
   if (items.length === 0) {
     return (
       <Shell toolbar={micToggle}>
+        {corrections}
         <p className="text-lg">Nothing due right now. 🎉</p>
       </Shell>
     );
@@ -357,7 +368,7 @@ function PracticeSession() {
     let note = "";
     if (kind === "wrong") {
       const input = window.prompt(
-        "What is wrong? (optional)\nIt leaves practice until fixed in Maintenance.",
+        "What is wrong? (optional)\nIt leaves practice until it is reviewed after this session.",
       );
       if (input === null) return;
       note = input;
@@ -384,6 +395,7 @@ function PracticeSession() {
 
   return (
     <Shell toolbar={micToggle}>
+      {answeredCount === 0 && corrections}
       <div className="flex items-center justify-between text-sm text-gray-500">
         <span>
           {answeredCount + 1} / {total}

@@ -532,6 +532,100 @@ export function parseCorrectedText(stdout: string): string {
   return text;
 }
 
+// --- Report review (CONTEXT.md "Report review") ------------------------------
+// ONE call per batch. The model picks a numbered dictionary sense whose Italian
+// already exists; free Italian is for when none fits (AGENTS.md deterministic first).
+
+export interface ReportReviewItem {
+  lemma: string;
+  pos: string;
+  kind: "wrong" | "context";
+  note: string | null;
+  gloss: string | null; // current primary gloss
+  manual: boolean; // the primary gloss is a Manual gloss
+  contextBound: boolean;
+  senses: { index: number; gloss: string; italian: string }[];
+  sentences: string[];
+  previous: {
+    glossBefore: string | null;
+    glossAfter: string | null;
+    markBefore: boolean;
+    markAfter: boolean;
+    reason: string;
+    undone: boolean;
+  } | null;
+}
+
+export type GlossVerdict = "keep" | { sense: number } | { italian: string; noSenseFits: boolean };
+
+export interface ReportVerdict {
+  gloss: GlossVerdict;
+  contextBound: boolean;
+  reason: string;
+}
+
+const yesNo = (b: boolean) => (b ? "sì" : "no");
+
+function reportItemText(it: ReportReviewItem, n: number): string {
+  const lines = [
+    `${n}. Lemma: ${it.lemma} (${it.pos})`,
+    `Segnalazione: ${it.kind === "wrong" ? "glossa sbagliata" : "serve il contesto"}${it.note ? ` — «${it.note}»` : ""}`,
+    `Glossa attuale: ${it.gloss ?? "(nessuna)"}${it.manual ? " [manuale: tienila]" : ""}`,
+    `Dipendente dal contesto: ${yesNo(it.contextBound)}`,
+    `Sensi:\n${it.senses.map((s) => `${s.index}. ${s.gloss} (${s.italian})`).join("\n") || "(nessuno)"}`,
+    `Frasi:\n${it.sentences.map((s) => `- ${s}`).join("\n") || "(nessuna)"}`,
+  ];
+  const p = it.previous;
+  if (p) {
+    lines.push(
+      `Revisione precedente${p.undone ? " (annullata dallo studente)" : ""}: glossa «${p.glossBefore ?? "-"}» → «${p.glossAfter ?? "-"}», contesto ${yesNo(p.markBefore)} → ${yesNo(p.markAfter)}. Motivo: ${p.reason}`,
+    );
+  }
+  return lines.join("\n");
+}
+
+export function buildReportReviewPrompt(items: ReportReviewItem[]): string {
+  return (
+    "Sei un lessicografo polacco-italiano. Uno studente italiano principiante ha " +
+    "segnalato queste parole polacche durante gli esercizi. Per ogni voce prendi due " +
+    'decisioni indipendenti. gloss, la glossa principale: "keep" se va bene; ' +
+    '{"sense":N} per sostituirla con la glossa italiana del senso N; ' +
+    '{"italian":"...","noSenseFits":true} (1-4 parole) solo se nessun senso va bene o ' +
+    'non ci sono sensi. Una glossa manuale si tiene sempre: "keep". contextBound: true ' +
+    'se la parola non si può tradurre da sola senza una frase (es. "do" = "a", "fino a", ' +
+    '"in" o "per" a seconda della frase), false se una glossa breve basta (es. "też" = ' +
+    '"anche"). reason: una riga in italiano che spiega entrambe le decisioni. Una ' +
+    "revisione precedente annullata è stata rifiutata dallo studente: non ripeterla. " +
+    "Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
+    '{"reviews":[{"gloss":"keep","contextBound":false,"reason":"..."}]} con una voce ' +
+    "per parola, nello stesso ordine.\n\n" +
+    items.map((it, i) => reportItemText(it, i + 1)).join("\n\n")
+  );
+}
+
+const reportVerdict = z.object({
+  gloss: z.union([
+    z.literal("keep"),
+    z.object({ sense: z.number().int().min(0) }),
+    z.object({ italian: z.string().trim().min(1).max(60), noSenseFits: z.boolean() }),
+  ]),
+  contextBound: z.boolean(),
+  reason: z.string().trim().min(1).max(300),
+});
+
+/** A malformed item is null: it stays pending while the others apply. */
+export function parseReportReviewJson(stdout: string, itemCount: number): (ReportVerdict | null)[] {
+  const { reviews } = parseJsonOutput(
+    stdout,
+    "report review",
+    z.object({ reviews: z.array(z.unknown()) }),
+  );
+  if (reviews.length !== itemCount) {
+    throw new Error(`report review returned ${reviews.length} verdicts for ${itemCount} items`);
+  }
+  return reviews.map((r) => reportVerdict.safeParse(r).data ?? null);
+}
+
 /** Optional capabilities: providers without them fail any generated Polish text. */
 export interface Proofreader {
   proofread?(text: string): Promise<ProofreadFlag[]>;
@@ -555,6 +649,8 @@ export interface GlossProvider extends Proofreader {
   // Optional capability: providers without it fail any import with an MWE
   // match or a Formula candidate.
   checkMwes?(items: MweCheckItem[]): Promise<boolean[]>;
+  // Optional capability: providers without it leave every Report pending.
+  reviewReports?(items: ReportReviewItem[]): Promise<(ReportVerdict | null)[]>;
 }
 
 export interface StoryProvider extends Proofreader {

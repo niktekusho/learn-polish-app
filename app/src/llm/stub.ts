@@ -13,6 +13,8 @@ import type {
   PassageRequest,
   ProofreadFlag,
   ProviderName,
+  ReportReviewItem,
+  ReportVerdict,
   SenseGlossRequest,
   SenseGlossResult,
   StoryOutline,
@@ -48,6 +50,14 @@ export class StubProvider implements GlossProvider, StoryProvider {
 
   async checkMwes(items: MweCheckItem[]): Promise<boolean[]> {
     return items.map(() => true);
+  }
+
+  async reviewReports(items: ReportReviewItem[]): Promise<ReportVerdict[]> {
+    return items.map((it) => ({
+      gloss: it.senses.length > 0 ? { sense: 0 } : "keep",
+      contextBound: it.contextBound,
+      reason: "Revisione stub.",
+    }));
   }
 
   async comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {

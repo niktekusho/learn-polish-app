@@ -9,6 +9,7 @@ import {
   buildPassageQuestionPrompt,
   buildPremisesPrompt,
   buildProofreadPrompt,
+  buildReportReviewPrompt,
   buildSenseGlossPrompt,
   buildStoryOutlinePrompt,
   type ChoiceQuestion,
@@ -32,12 +33,15 @@ import {
   parsePassageQuestionJson,
   parsePremisesJson,
   parseProofreadJson,
+  parseReportReviewJson,
   parseSenseGlossJson,
   parseStoryOutlineJson,
   type PassageQuestionRequest,
   type PassageRequest,
   type ProofreadFlag,
   type ProviderName,
+  type ReportReviewItem,
+  type ReportVerdict,
   type SenseGlossRequest,
   type SenseGlossResult,
   type StoryOutline,
@@ -87,6 +91,13 @@ export abstract class CliProvider implements GlossProvider, StoryProvider {
 
   async checkMwes(items: MweCheckItem[]): Promise<boolean[]> {
     return parseMweCheckJson(await this.exec(buildMweCheckPrompt(items), "gloss"), items.length);
+  }
+
+  async reviewReports(items: ReportReviewItem[]): Promise<(ReportVerdict | null)[]> {
+    return parseReportReviewJson(
+      await this.exec(buildReportReviewPrompt(items), "story"),
+      items.length,
+    );
   }
 
   async proofread(text: string): Promise<ProofreadFlag[]> {
