@@ -79,7 +79,7 @@ export function ComprehensionCheck({
   if (error || questions === null) {
     return (
       <CheckShell>
-        <p className={`${ERROR_LINE} mt-2.5`}>
+        <p className={`${ERROR_LINE} mt-3`}>
           Domande non generate.
           <button type="button" onClick={() => load(getCheckFn)} className={RETRY}>
             Riprova
@@ -105,10 +105,10 @@ export function ComprehensionCheck({
         </>
       }
     >
-      <ol className="mt-3.5 grid gap-5.5">
+      <ol className="mt-4 grid gap-6">
         {questions.map((q, qi) => (
           <li key={qi}>
-            <p className="mb-2.5 font-serif text-md leading-[1.4] font-semibold">
+            <p className="mb-3 font-serif text-md leading-[1.4] font-semibold">
               <span className="font-sans text-sm text-ink-3">{qi + 1}. </span>
               {q.question}
             </p>
@@ -133,7 +133,7 @@ export function ComprehensionCheck({
                     disabled={graded}
                     aria-pressed={picked}
                     onClick={() => setAnswers((prev) => ({ ...prev, [qi]: ci }))}
-                    className={`flex min-h-12 w-full items-center gap-2.5 rounded border-[1.5px] px-3.5 py-2.5 text-left font-serif text-[16px] leading-[1.35] ${cls}`}
+                    className={`flex min-h-12 w-full items-center gap-3 rounded border-[1.5px] px-4 py-3 text-left font-serif text-[16px] leading-[1.35] ${cls}`}
                   >
                     {choice}
                     {right && <Check size={18} strokeWidth={2.4} className="ml-auto shrink-0" />}
@@ -171,7 +171,7 @@ export function ComprehensionCheck({
 
 function CheckShell({ aside, children }: { aside?: ReactNode; children: ReactNode }) {
   return (
-    <section className="mt-7 border-t border-rule pt-4.5 font-sans text-base">
+    <section className="mt-7 border-t border-rule pt-5 font-sans text-base">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="mr-auto font-serif text-lg font-bold">Verifica comprensione</h2>
         {aside}

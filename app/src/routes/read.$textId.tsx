@@ -160,7 +160,7 @@ function Reader() {
 
   return (
     <div className="flex h-dvh flex-col bg-paper font-sans text-base text-ink">
-      <header className="relative flex shrink-0 items-center gap-1 border-b border-rule py-1.5 pr-1.5 pl-1 sm:py-0.5 sm:pr-2">
+      <header className="relative flex shrink-0 items-center gap-1 border-b border-rule py-2 pr-2 pl-1 sm:py-0.5">
         <Link to="/" aria-label="Indietro" className={ICON_BUTTON}>
           <ArrowLeft size={20} />
         </Link>
@@ -170,11 +170,9 @@ function Reader() {
         <ReadingSize size={size} onChange={setSize} />
       </header>
       <div className="relative flex min-h-0 flex-1">
-        <main className="min-w-0 flex-1 overflow-auto px-5 pt-4.5 pb-8 sm:px-7 sm:pt-4 lg:px-12 lg:py-10">
+        <main className="min-w-0 flex-1 overflow-auto px-5 pt-5 pb-8 sm:px-7 lg:px-12 lg:py-10">
           <div className="mx-auto max-w-[36rem]">
-            <h1 className="mb-3.5 font-serif text-xl font-bold text-balance lg:text-2xl">
-              {title}
-            </h1>
+            <h1 className="mb-4 font-serif text-xl font-bold text-balance lg:text-2xl">{title}</h1>
             <article
               lang="pl"
               className="font-serif text-prose wrap-break-word whitespace-pre-wrap"
@@ -223,7 +221,7 @@ function Reader() {
               <ComprehensionCheck textId={text.id} onGraded={story ? markRead : undefined} />
             )}
 
-            <div className="mt-7 grid justify-items-center gap-2.5 border-t border-rule pt-4.5 text-center">
+            <div className="mt-7 grid justify-items-center gap-3 border-t border-rule pt-5 text-center">
               <span className={LABEL}>
                 {story ? `Fine dell'episodio ${text.episodeNumber}` : "Fine del testo"}
               </span>
@@ -256,7 +254,7 @@ function Reader() {
                 <p className="text-sm text-ink-2">
                   {story.title} · {story.total} episodi letti
                 </p>
-                <div className="flex flex-wrap gap-2.5">
+                <div className="flex flex-wrap gap-3">
                   <Link to="/story" className={BTN_PRIMARY}>
                     <Sparkles size={20} />
                     Scegli la prossima storia
@@ -343,7 +341,7 @@ const WORD = "-mx-[.08em] cursor-pointer rounded-word box-decoration-clone px-[.
 
 function Tick() {
   return (
-    <span className="inline-grid size-[30px] shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
+    <span className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
       <Check size={17} strokeWidth={2.6} />
     </span>
   );
@@ -353,16 +351,21 @@ const SIZE_KEY = "reader-size";
 type Size = "16" | "18";
 
 // Per device: the phone and the Mac keep their own choice.
+// Blocked storage (private window, cleared site data) throws: the size then lasts the visit.
 function useReadingSize(): [Size, (s: Size) => void] {
   const [size, setSize] = useState<Size>("18");
   useEffect(() => {
-    if (localStorage.getItem(SIZE_KEY) === "16") setSize("16");
+    try {
+      if (localStorage.getItem(SIZE_KEY) === "16") setSize("16");
+    } catch {}
   }, []);
   return [
     size,
     (s) => {
       setSize(s);
-      localStorage.setItem(SIZE_KEY, s);
+      try {
+        localStorage.setItem(SIZE_KEY, s);
+      } catch {}
     },
   ];
 }
@@ -381,9 +384,9 @@ function ReadingSize({ size, onChange }: { size: Size; onChange: (s: Size) => vo
         <ALargeSmall size={20} />
       </button>
       {open && (
-        <div className="absolute top-[calc(100%+4px)] right-2 z-20 grid min-w-[200px] gap-2 rounded bg-panel p-3 shadow-card">
+        <div className="absolute top-full mt-1 right-2 z-20 grid min-w-[200px] gap-2 rounded bg-panel p-3 shadow-card">
           <span className={LABEL}>Dimensione testo</span>
-          <div className="grid grid-cols-2 gap-1 rounded bg-paper p-[3px]">
+          <div className="grid grid-cols-2 gap-1 rounded bg-paper p-1">
             {(["16", "18"] as const).map((v) => (
               <button
                 key={v}

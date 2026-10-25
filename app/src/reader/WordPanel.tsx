@@ -335,7 +335,7 @@ export function WordPanel({
       }
     >
       {typeof speechSynthesis !== "undefined" && (
-        <div className="mt-2.5 mb-1 flex flex-wrap gap-2">
+        <div className="mt-3 mb-1 flex flex-wrap gap-2">
           <button type="button" onClick={() => speak(token.surface)} className={CHIP}>
             <Volume2 size={17} />
             Ascolta
@@ -347,31 +347,31 @@ export function WordPanel({
         </div>
       )}
 
-      <dl className="mt-3 grid gap-2.5">
+      <dl className="mt-3 grid gap-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <dt className={LABEL}>Forma base</dt>
-            <dd lang="pl" className="mt-0.5 font-serif text-[18px] font-semibold">
+            <dd lang="pl" className="mt-1 font-serif text-[18px] font-semibold">
               {token.lemma}
             </dd>
           </div>
           <div>
             <dt className={LABEL}>Categoria grammaticale</dt>
-            <dd className="mt-0.5">{posLabel(token.pos ?? "")}</dd>
+            <dd className="mt-1">{posLabel(token.pos ?? "")}</dd>
           </div>
         </div>
-        <div className="rounded bg-accent-soft px-3.5 py-3">
+        <div className="rounded bg-accent-soft px-4 py-3">
           <dt className={`${LABEL_TYPE} text-accent-ink`}>
             {editing ? <label htmlFor={editId}>{transLabel}</label> : transLabel}
           </dt>
-          <dd className="mt-0.5">
+          <dd className="mt-1">
             {loading || busy ? (
               <>
                 <div className="mt-2 mb-1 grid animate-pulse gap-2 motion-reduce:animate-none">
                   <i className="block h-3 w-[55%] rounded-full bg-accent/20" />
                   <i className="block h-3 w-[35%] rounded-full bg-accent/20" />
                 </div>
-                <p className="mt-1.5 text-sm text-accent-ink">Traduco nel contesto della frase…</p>
+                <p className="mt-2 text-sm text-accent-ink">Traduco nel contesto della frase…</p>
               </>
             ) : error ? (
               <p className={ERROR_LINE}>
@@ -381,7 +381,7 @@ export function WordPanel({
                 </button>
               </p>
             ) : editing ? (
-              <div className="mt-1.5 grid gap-2">
+              <div className="mt-2 grid gap-2">
                 <input
                   id={editId}
                   type="text"
@@ -412,7 +412,7 @@ export function WordPanel({
               <>
                 <div className="font-serif text-lg font-semibold">{occurrence ?? gloss ?? "—"}</div>
                 {occurrence && gloss && occurrence !== gloss && (
-                  <div className="mt-0.5 font-serif text-ink-2">
+                  <div className="mt-1 font-serif text-ink-2">
                     <span className="font-sans text-xs font-medium text-ink-3">Forma base: </span>
                     {gloss}
                   </div>
@@ -426,7 +426,7 @@ export function WordPanel({
                   </p>
                 )}
                 {token.lemmaId != null && (
-                  <div className="mt-1.5 -ml-2 flex gap-1">
+                  <div className="mt-2 -ml-2 flex gap-1">
                     <button
                       type="button"
                       onClick={() => {
@@ -451,7 +451,7 @@ export function WordPanel({
       </dl>
 
       {mwe && (
-        <p className="mt-3 flex flex-wrap items-center gap-1.5 text-sm text-ink-2">
+        <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-2">
           Parte di:
           <button
             type="button"
@@ -504,7 +504,7 @@ export function WordPanel({
           href={wiktionary}
           target="_blank"
           rel="noreferrer"
-          className="mt-2 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-accent-ink"
+          className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent-ink"
         >
           Wiktionary
           <ExternalLink size={16} />
@@ -515,8 +515,8 @@ export function WordPanel({
 }
 
 const CHIP =
-  "inline-flex min-h-11 items-center gap-1.5 rounded-full bg-accent-soft px-3.5 py-1.5 text-sm font-semibold text-accent-ink";
-const SUPPRESS = "mt-1.5 block min-h-11 text-sm text-ink-3 underline disabled:opacity-50";
+  "inline-flex min-h-11 items-center gap-2 rounded-full bg-accent-soft px-4 py-2 text-sm font-semibold text-accent-ink";
+const SUPPRESS = "mt-2 block min-h-11 text-sm text-ink-3 underline disabled:opacity-50";
 
 /** Slim panel for an inflected Name: base form and case only (CONTEXT.md "Name"). */
 export function NamePanel({ token, onClose }: { token: ReaderToken; onClose: () => void }) {
@@ -532,7 +532,7 @@ export function NamePanel({ token, onClose }: { token: ReaderToken; onClose: () 
         </b>
       }
     >
-      <p className="mt-2 mb-1.5 font-serif text-[20px] leading-[1.35] font-semibold">
+      <p className="mt-2 mb-2 font-serif text-lg font-semibold">
         <span lang="pl">
           {name.word} → {name.base}
         </span>
@@ -605,9 +605,9 @@ function PanelShell({
       >
         <div className="h-1 w-10 rounded-full bg-ink-3/30" />
       </div>
-      <div className="min-h-0 flex-1 overflow-auto px-5 pb-4.5">
+      <div className="min-h-0 flex-1 overflow-auto px-5 pb-5">
         <div className="flex items-start gap-2">
-          <div className="min-w-0 flex-1 pt-1.5">{title}</div>
+          <div className="min-w-0 flex-1 pt-2">{title}</div>
           <button type="button" onClick={onClose} aria-label="Chiudi" className={ICON_BUTTON}>
             <X size={20} />
           </button>
@@ -615,7 +615,7 @@ function PanelShell({
         {children}
       </div>
       {footer && (
-        <div className="flex shrink-0 gap-2.5 border-t border-rule px-4 pt-2.5 pb-3.5 *:flex-1">
+        <div className="flex shrink-0 gap-3 border-t border-rule px-4 pt-3 pb-4 *:flex-1">
           {footer}
         </div>
       )}
@@ -636,7 +636,7 @@ const CASE_BG: Record<CaseKey, string> = {
 function CasePill({ case: key, label }: { case: CaseKey; label: string }) {
   return (
     <span
-      className={`inline-block rounded-full px-2.5 py-0.5 align-[3px] font-sans text-xs font-semibold text-white ${CASE_BG[key]}`}
+      className={`inline-block rounded-full px-3 py-0.5 align-[3px] font-sans text-xs font-semibold text-white ${CASE_BG[key]}`}
     >
       {label}
     </span>
@@ -646,7 +646,7 @@ function CasePill({ case: key, label }: { case: CaseKey; label: string }) {
 const SENSE_PREVIEW = 5;
 const DETAILS = "group border-t border-rule";
 const SUMMARY =
-  "flex min-h-11 cursor-pointer list-none items-center gap-1.5 text-sm font-semibold text-ink-2 [&::-webkit-details-marker]:hidden";
+  "flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-semibold text-ink-2 [&::-webkit-details-marker]:hidden";
 const CHEVRON = "transition-transform group-open:rotate-90";
 
 // Home-dictionary reference block: senses (+ tags), inflection forms and
@@ -656,17 +656,17 @@ function DictSection({ dict, surface }: { dict: DictLookupResult; surface: strin
   const [showAll, setShowAll] = useState(false);
   const here = surface.trim().toLowerCase();
   return (
-    <div className="mt-4.5 border-t border-rule pt-3.5">
-      <h3 className={`${LABEL} mb-1.5`}>Dizionario</h3>
+    <div className="mt-5 border-t border-rule pt-4">
+      <h3 className={`${LABEL} mb-2`}>Dizionario</h3>
       {dict.entries.map((entry) => {
         const senses = showAll ? entry.senses : entry.senses.slice(0, SENSE_PREVIEW);
         return (
           <div key={entry.id}>
             {/* On a pos-mismatched (lemma-only) match, label each entry. */}
             {dict.matchedBy === "lemma" && (
-              <div className={`${LABEL} mt-2.5`}>{posLabel(entry.pos)}</div>
+              <div className={`${LABEL} mt-3`}>{posLabel(entry.pos)}</div>
             )}
-            <ol className="grid list-decimal gap-1.5 pl-[1.4em] font-serif text-[16px] leading-[1.45] marker:font-sans marker:text-[13px] marker:text-ink-3">
+            <ol className="grid list-decimal gap-2 pl-[1.4em] font-serif text-[16px] leading-[1.45] marker:font-sans marker:text-sm marker:text-ink-3">
               {senses.map((s, i) => {
                 const tags = italianTags(s.tags);
                 return (
@@ -693,16 +693,16 @@ function DictSection({ dict, surface }: { dict: DictLookupResult; surface: strin
                   <ChevronRight size={17} className={CHEVRON} />
                   Forme ({entry.forms.length})
                 </summary>
-                <ul className="mb-2 grid gap-0.5">
+                <ul className="mb-2 grid gap-1">
                   {entry.forms.map((f, i) => {
                     const { pill, rest } = caseOfForm(f.tags);
                     const isHere = f.form.toLowerCase() === here;
                     return (
                       <li
                         key={i}
-                        className="flex items-center justify-between gap-2.5 py-1 text-[13px] text-ink-3"
+                        className="flex items-center justify-between gap-3 py-1 text-sm text-ink-3"
                       >
-                        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                        <span className="flex min-w-0 flex-wrap items-center gap-2">
                           {pill && <CasePill case={pill.key} label={pill.label} />}
                           {italianTags(rest)}
                         </span>
