@@ -69,7 +69,8 @@ CONTEXT.md ("Shown in the UI as _x_") only when its screen ships.
 | Practice | Pratica |
 | Retry | Ancora una volta |
 | Report | Segnala (*Significato sbagliato* / *Serve il contesto*) |
-| Report review | Segnalazioni riviste |
+| Report review | Corretti (with Lemma slip repairs) |
+| Receptive / Productive / Pronunciation | Capire / Ricordare / Pronunciare |
 | Context-bound lemma | Serve il contesto |
 | Story / Episode | Storia / Episodio |
 | Conversation | Conversazione |

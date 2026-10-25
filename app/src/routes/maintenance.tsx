@@ -218,7 +218,12 @@ function Maintenance() {
         by "Clear imported texts".
       </p>
 
-      <Corrections title={`Report reviews (${reviews.length})`} items={reviews} className="mt-8" />
+      {reviews.length > 0 && (
+        <div className="mt-8 rounded border border-gray-200 p-4">
+          <h2 className="font-semibold">Report reviews ({reviews.length})</h2>
+          <Corrections items={reviews} />
+        </div>
+      )}
 
       {contextBound.length > 0 && (
         <div className="mt-8 rounded border border-gray-200 p-4">

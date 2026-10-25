@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { Check, ListChecks, RefreshCw, X } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { z } from "zod";
-import { BTN_PRIMARY, ERROR_LINE, RETRY, TOOL } from "./ui";
+import { BTN_PRIMARY, CHOICE, CHOICE_STATE, ERROR_LINE, RETRY, TOOL } from "#/ui";
 
 // Server-only: get (and lazily generate + cache) the comprehension check.
 const getCheckFn = createServerFn({ method: "POST" })
@@ -117,15 +117,10 @@ export function ComprehensionCheck({
                 const picked = answers[qi] === ci;
                 const right = graded && ci === q.correctIndex;
                 const wrong = graded && picked && !right;
-                const cls = right
-                  ? "border-good bg-good-soft text-good-ink"
-                  : wrong
-                    ? "border-bad bg-bad-soft text-bad-ink"
-                    : graded
-                      ? "border-rule bg-panel opacity-55"
-                      : picked
-                        ? "border-accent bg-accent-soft"
-                        : "border-rule bg-panel";
+                const cls =
+                  CHOICE_STATE[
+                    right ? "right" : wrong ? "wrong" : graded ? "off" : picked ? "picked" : "idle"
+                  ];
                 return (
                   <button
                     key={ci}
@@ -133,7 +128,7 @@ export function ComprehensionCheck({
                     disabled={graded}
                     aria-pressed={picked}
                     onClick={() => setAnswers((prev) => ({ ...prev, [qi]: ci }))}
-                    className={`flex min-h-12 w-full items-center gap-3 rounded border-[1.5px] px-4 py-3 text-left font-serif text-[16px] leading-[1.35] ${cls}`}
+                    className={`${CHOICE} ${cls}`}
                   >
                     {choice}
                     {right && <Check size={18} strokeWidth={2.4} className="ml-auto shrink-0" />}

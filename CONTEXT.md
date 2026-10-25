@@ -105,12 +105,13 @@ PL→IT translation, and recognition-style exercises. Not fed by **Read-aloud**:
 attempt to say a word says nothing about understanding it. Listening here means listening
 **Exercises**: hearing a word or sentence played back on request while reading grades
 nothing, since the learner asks for it precisely because they don't know the sound.
+Shown in the UI as _Capire_.
 
 **Productive knowledge**:
 Ability to _produce_ a lemma from memory when speaking. Fed only by retrieval — producing
 the lemma without seeing it (**Spoken recall**, spoken grammar drills, free turns in a
 **Conversation**). Reading a word off the screen, even aloud, never grades this track. Tracked
-separately because comprehension precedes production.
+separately because comprehension precedes production. Shown in the UI as _Ricordare_.
 
 **Pronunciation knowledge**:
 Ability to _say_ a lemma intelligibly when it is in front of the learner. Fed only by
@@ -119,7 +120,8 @@ speaking attempts made while the word is visible: every **Read-aloud** attempt, 
 this word is to say", and its due date decides when the word is proposed again for
 speaking. Never fed by retrieval: a struggle to remember is **Productive**, a struggle to
 pronounce is **Pronunciation**. A lemma joins this track only after its first
-**Receptive** review: understand first, then say, then recall.
+**Receptive** review: understand first, then say, then recall. Shown in the UI as
+_Pronunciare_.
 _Avoid_: speaking score, pronunciation difficulty (as a separate score — it is the
 track's FSRS difficulty)
 
@@ -157,6 +159,7 @@ A missed item (first answer wrong or not produced, never merely hesitant) shown 
 the end of the same **Practice**, after the learner has seen the answer. Once only: a
 missed Retry is not retried again. Practice only: it never grades a **Knowledge state**, since the first answer is
 the evidence and the retry only proves the learner remembers what they saw seconds ago.
+Shown in the UI as _Ancora una volta_.
 _Avoid_: redo, relearning step (FSRS term for a same-day scheduled review)
 
 **Context-bound lemma**:
@@ -166,7 +169,7 @@ Marked by the learner, one lemma at a time, never by word type: _też_ and _podc
 function words that translate fine alone. A beginner's mark can be wrong, so each one
 gets a **Report review**. Never asked as a single word (recognition,
 **Spoken recall**); still practised through **Read-aloud**, where the sentence carries
-the meaning.
+the meaning. Shown in the UI as _Serve il contesto_.
 _Avoid_: function word (as a data term), ambiguous word
 
 **Report**:
@@ -174,6 +177,8 @@ The learner telling Practice that an item's lemma is broken. Two kinds: _wrong_ 
 meaning, garbled gloss, not a word at all), which takes the lemma out of **Practice**
 until its **Report review**, and _needs context_, which makes it **Context-bound** at
 once. No **Knowledge state** is graded: a broken item says nothing about memory.
+Shown in the UI as _Segnala_, with _Significato sbagliato_ (_Domanda sbagliata_ on a
+**Passage exercise**) for _wrong_.
 _Avoid_: flag (code term), bug report
 
 **Report review**:
@@ -183,7 +188,7 @@ independent decisions, its primary **Gloss** (kept or replaced) and its **Contex
 mark (on or off), with a one-line reason. A **Manual gloss** is never replaced. Shown at
 the start of the next **Practice**, and undoable at any time while what it wrote is still
 current. Undoing a review that changed nothing is a new **Report**, and the next review
-sees the old one.
+sees the old one. Shown in the UI as _Corretti_, together with **Lemma slip** repairs.
 _Avoid_: correction (that is a fix to generated text), moderation
 
 **Spoken recall**:
@@ -191,7 +196,7 @@ The **Exercise** that proves **Productive knowledge**: given the Italian meaning
 Polish lemma; the spoken answer is checked against the target and its **Alternative
 answers**. Only the attempt made
 before the answer is revealed (or the learner's self-grade of it) grades **Productive**;
-retries after the reveal grade **Pronunciation** only.
+retries after the reveal grade **Pronunciation** only. Shown in the UI as _Dillo in polacco_.
 _Avoid_: speaking exercise (ambiguous with **Read-aloud**)
 
 **Alternative answer**:
@@ -204,7 +209,7 @@ _Avoid_: synonym (Polish near-synonyms with other glosses don't count)
 
 **Read-aloud**:
 The **Exercise** of reading a displayed Polish sentence out loud. Grades **Pronunciation
-knowledge** only, of the target lemma in the sentence.
+knowledge** only, of the target lemma in the sentence. Shown in the UI as _Leggi ad alta voce_.
 _Avoid_: speaking exercise
 
 **Passage exercise**:
@@ -212,6 +217,7 @@ The **Exercise** of reading 2–3 Polish sentences containing a due lemma and an
 Italian multiple-choice question whose answer hinges on that lemma in context. Grades
 **Receptive knowledge** of that lemma. The receptive exercise for **Context-bound
 lemmas**. Differs from a **Comprehension check**: lemma-level, scheduled and graded.
+Shown in the UI as _Brano_.
 _Avoid_: reading exercise, comprehension exercise
 
 **Comprehension check**:
