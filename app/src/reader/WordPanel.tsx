@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { Check, ChevronRight, ExternalLink, Pencil, RefreshCw, Volume2, X } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useId, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { z } from "zod";
 import { speak } from "#/audio/speak";
 import type { DictLookupResult } from "#/dictionary/service";
@@ -565,13 +565,47 @@ function PanelShell({
   onClose: () => void;
   children: ReactNode;
 }) {
+  const sheet = useRef<HTMLElement>(null);
+  const dragStart = useRef<number | null>(null);
+  const dragged = (e: React.PointerEvent) =>
+    dragStart.current === null ? 0 : Math.max(0, e.clientY - dragStart.current);
   return (
     <section
+      ref={sheet}
       aria-label={label}
       className="absolute inset-x-0 bottom-0 z-10 flex max-h-[80%] animate-sheet-in flex-col rounded-t-lg bg-panel font-sans text-base text-ink shadow-sheet motion-reduce:animate-none sm:static sm:max-h-none sm:min-h-0 sm:flex-1 sm:animate-none sm:rounded-none sm:bg-transparent sm:shadow-none"
     >
-      <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-ink-3/30 sm:hidden" />
-      <div className="min-h-0 flex-1 overflow-auto px-5 pt-1.5 pb-4.5">
+      {/* A pointer-only twin of the Chiudi button: the sheet follows a downward drag,
+          closes on a tap or a drag past a quarter of its height, and snaps back otherwise. */}
+      <div
+        aria-hidden
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          dragStart.current = e.clientY;
+          if (sheet.current) sheet.current.style.transition = "none";
+        }}
+        onPointerMove={(e) => {
+          if (sheet.current && dragStart.current !== null)
+            sheet.current.style.transform = `translateY(${dragged(e)}px)`;
+        }}
+        onPointerUp={(e) => {
+          const dy = dragged(e);
+          dragStart.current = null;
+          const el = sheet.current;
+          if (!el) return;
+          if (dy < 4 || dy > el.offsetHeight / 4) return onClose();
+          el.style.transition = "transform 0.2s ease-out";
+          el.style.transform = "";
+        }}
+        onPointerCancel={() => {
+          dragStart.current = null;
+          if (sheet.current) sheet.current.style.transform = "";
+        }}
+        className="flex h-6 shrink-0 cursor-grab touch-none justify-center pt-2 sm:hidden"
+      >
+        <div className="h-1 w-10 rounded-full bg-ink-3/30" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-5 pb-4.5">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1 pt-1.5">{title}</div>
           <button type="button" onClick={onClose} aria-label="Chiudi" className={ICON_BUTTON}>
