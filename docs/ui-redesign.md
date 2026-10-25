@@ -134,6 +134,8 @@ Every text pair below meets WCAG AA (contrast ratios in parentheses).
 | `word-mwe` | `#2F6DB5` | Dotted 2px underline under an Expression, offset 0.3em |
 | `word-name` | `#6B3F78` | Ink of a tappable Name (7.2:1) |
 | `case-nom` … `case-voc` | `#4B5563` `#B4235A` `#B45309` `#1D6FA5` `#6D28D9` `#0F766E` `#9F1239` | Solid case pills, white text (nom, gen, dat, acc, ins, loc, voc; lowest 5.0:1) |
+| `good` / `-soft` / `-ink` | `#2E7D4F` / `#E2F1E7` / `#1E5C39` | Right answer: border / fill / text (6.8:1 on soft) |
+| `bad` / `-soft` / `-ink` | `#B42318` / `#FBE4E1` / `#8F1C13` | Wrong answer and error lines (ink 7.4:1 on soft, 8.8:1 on panel) |
 
 A known word has no mark. The selected word gets a 2px `accent` outline. The `-soft` track
 tints stay unused on Home (neutral rows won the round), so they are kept only if a later
