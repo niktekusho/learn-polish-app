@@ -77,7 +77,7 @@ test("stronger counts distinct lemmas whose stability grew today, 3 biggest gain
 
   const { stronger } = getRecap(db, TODAY);
   expect(stronger.count).toBe(3);
-  expect(stronger.examples).toEqual(["pies", "dom", "kot"]);
+  expect(stronger.examples.map((w) => w.lemma)).toEqual(["pies", "dom", "kot"]);
 });
 
 test("matured counts lemmas crossing 21 days today, once per lemma across tracks", () => {
@@ -90,7 +90,27 @@ test("matured counts lemmas crossing 21 days today, once per lemma across tracks
   review(db, pies, TODAY, 21, 40); // already mature
   review(db, dom, YESTERDAY, 10, 30); // crossed on another day
 
-  expect(getRecap(db, TODAY).matured).toEqual({ count: 1, examples: ["kot"] });
+  const { matured } = getRecap(db, TODAY);
+  expect(matured.count).toBe(1);
+  expect(matured.examples.map((w) => w.lemma)).toEqual(["kot"]);
+});
+
+test("recap words carry the track that moved them and the lemma gloss", () => {
+  const db = freshDb();
+  const kot = addLemma(db, "kot");
+  const pies = addLemma(db, "pies");
+  db.insert(schema.gloss).values({ lemmaId: kot, sense: "", italian: "gatto" }).run();
+  db.insert(schema.gloss).values({ lemmaId: kot, sense: "a cat", italian: "micio" }).run();
+  review(db, kot, TODAY, 15, 25, "productive");
+  review(db, pies, TODAY, 2, 4); // stronger, no gloss yet
+  review(db, pies, TODAY, 2, 9, "productive"); // its biggest gain
+
+  const r = getRecap(db, TODAY);
+  expect(r.matured.examples).toEqual([{ lemma: "kot", track: "productive", italian: "gatto" }]);
+  expect(r.stronger.examples).toEqual([
+    { lemma: "kot", track: "productive", italian: "gatto" },
+    { lemma: "pies", track: "productive", italian: null },
+  ]);
 });
 
 test("gradeLemma logs stability before and after", () => {

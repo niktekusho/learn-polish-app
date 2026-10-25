@@ -142,6 +142,42 @@ A known word has no mark. The selected word gets a 2px `accent` outline. The `-s
 tints stay unused on Home (neutral rows won the round), so they are kept only if a later
 screen needs them.
 
+### Recap palettes
+
+Two grounds drawn for the Recap in the #14 prototype
+([artifact](https://claude.ai/artifact/665WVFxc1Uxf8YSMCoMQBH), variants E and F). Chiaro
+won the review and ships: its colors are `recap-*` and `glow-*` in `@theme`, the ground is the
+`bg-recap` utility, and its words are set in Literata 600 at 40px (52px on desktop) with the
+gloss in italic 15px, a display size outside the type scale. Scuro stays out of `@theme`. Each consolidated word glows
+in the hue of the track that consolidated it, as a `text-shadow` (`0 0 22–26px`). The glow
+is decoration only: the word, its gloss and its track stay readable without it.
+
+**Scuro** (E): a dusk ground, the only dark screen in a light-only app.
+
+| Role | Value | Contrast |
+|---|---|---|
+| Ground | `linear-gradient(180deg, #14122A 0%, #221C3D 55%, #2E2242 100%)`, with a `#5A3550` radial glow at the bottom | |
+| Text | `#FBF5EA` | 13.6:1 on `#2E2242` |
+| Consolidated word | `#FFF8EC` | 14.0:1 on `#2E2242` |
+| Secondary text, glosses | `#CFC6DD` | 9.0:1 on `#2E2242`, 6.2:1 on `#5A3550` |
+| Eyebrow | `#D9CCF5` | 12.1:1 on `#14122A` |
+| Rule | `rgb(255 255 255 / .16)` | |
+| Glow: receptive / productive / pronunciation | `rgb(140 175 255 / .55)` / `rgb(255 160 110 / .55)` / `rgb(200 160 255 / .55)` | |
+| Streak flame | `#FF9A62` | |
+| Primary button | `#F3E9D6` fill, `#221C3D` text | 13.4:1 |
+| Quiet button | transparent, `rgb(255 255 255 / .38)` border, `#FBF5EA` text | |
+
+**Chiaro** (F): the same layout on the app's light ground.
+
+| Role | Value | Contrast |
+|---|---|---|
+| Ground | `linear-gradient(180deg, #FBF7F0 0%, #F6F0F4 60%, #F1EBF6 100%)`, with a `#FBE3D4` radial at the bottom and an `#E6E9FB` radial at the top right | |
+| Text, consolidated word | `ink` | 13.2:1 on `#F1EBF6`, 12.5:1 on `#FBE3D4` |
+| Secondary text, glosses | `ink-2` | 6.8:1 on `#F1EBF6`, 6.5:1 on `#FBE3D4` |
+| Eyebrow | `accent-ink` | 9.7:1 on `#FBF7F0` |
+| Glow: receptive / productive / pronunciation | `rgb(36 87 197 / .32)` / `rgb(194 65 12 / .30)` / `rgb(122 53 214 / .32)` | |
+| Rule, buttons, tick | the app tokens (`rule`, `accent`, `accent-soft`) | |
+
 ### Type
 
 Literata for all prose, Inter for UI chrome. Prose sizes follow the per-device reading

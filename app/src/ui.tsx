@@ -27,6 +27,27 @@ export const CHOICE_STATE = {
   off: "border-rule bg-panel opacity-55",
 };
 
+export const TRACK = {
+  receptive: {
+    name: "Capire",
+    dot: "bg-receptive",
+    ink: "text-receptive-ink",
+    color: "var(--color-receptive)",
+  },
+  productive: {
+    name: "Ricordare",
+    dot: "bg-productive",
+    ink: "text-productive-ink",
+    color: "var(--color-productive)",
+  },
+  pronunciation: {
+    name: "Pronunciare",
+    dot: "bg-pronunciation",
+    ink: "text-pronunciation-ink",
+    color: "var(--color-pronunciation)",
+  },
+};
+
 export function Tick() {
   return (
     <span className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">

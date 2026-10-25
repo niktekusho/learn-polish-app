@@ -152,6 +152,7 @@ dues yields its share to the others; weakest first within each track), and rende
 through an applicable **Exercise**, interleaved rather than grouped by track. Without a
 mic, only tracks that need no speaking take part. A lemma graded on a track today is not
 drawn for that track again until tomorrow: same-day repetition is the **Retry**'s job.
+Shown in the UI as _Pratica_.
 _Avoid_: lesson, review session
 
 **Retry**:

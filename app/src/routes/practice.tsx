@@ -9,6 +9,7 @@ import type { ClientPracticeItem } from "#/practice/session";
 import { Corrections } from "#/report/Corrections";
 import { wordPattern } from "#/reader/word-pattern";
 import {
+  TRACK,
   BTN_BAD,
   BTN_GOOD,
   BTN_PRIMARY,
@@ -178,27 +179,6 @@ type SpeechPhase =
 
 type Hint = { lemma: string; difficulty: number; due: Date };
 type Kind = ClientPracticeItem["kind"];
-
-const TRACK = {
-  receptive: {
-    name: "Capire",
-    dot: "bg-receptive",
-    ink: "text-receptive-ink",
-    color: "var(--color-receptive)",
-  },
-  productive: {
-    name: "Ricordare",
-    dot: "bg-productive",
-    ink: "text-productive-ink",
-    color: "var(--color-productive)",
-  },
-  pronunciation: {
-    name: "Pronunciare",
-    dot: "bg-pronunciation",
-    ink: "text-pronunciation-ink",
-    color: "var(--color-pronunciation)",
-  },
-};
 
 // The hue an item carries: the track its first answer grades.
 const EXERCISE: Record<Kind, { name: string; track: keyof typeof TRACK }> = {
