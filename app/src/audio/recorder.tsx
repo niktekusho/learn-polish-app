@@ -247,7 +247,7 @@ export function PushToTalk({
 
   return (
     <div
-      className="grid justify-items-center gap-2.5"
+      className="grid justify-items-center gap-3"
       style={{ "--mic": color } as React.CSSProperties}
     >
       <div className="relative">

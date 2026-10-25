@@ -279,7 +279,7 @@ function PracticeSession() {
           </button>
         }
       >
-        <h1 className="flex items-center gap-2.5 font-serif text-xl font-bold text-balance">
+        <h1 className="flex items-center gap-3 font-serif text-xl font-bold text-balance">
           Corretti <Count n={corrections.length} />
         </h1>
         <p className="text-ink-2">
@@ -318,11 +318,11 @@ function PracticeSession() {
             {firsts.length} {firsts.length === 1 ? "ripassata" : "ripassate"} · {correctCount}{" "}
             {correctCount === 1 ? "giusta" : "giuste"}
           </p>
-          <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-sm font-semibold tabular-nums">
+          <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm font-semibold tabular-nums">
             {perTrack
               .filter((t) => t.n > 0)
               .map((t) => (
-                <span key={t.name} className={`inline-flex items-center gap-1.5 ${t.ink}`}>
+                <span key={t.name} className={`inline-flex items-center gap-2 ${t.ink}`}>
                   <i className={`size-2 rounded-full ${t.dot}`} />
                   {t.name} {t.n}
                 </span>
@@ -480,7 +480,7 @@ function PracticeSession() {
       <span className={`${LABEL_TYPE} ${track.ink}`}>{EXERCISE[item.kind].name}</span>
       <span className="text-xs font-medium text-ink-3">· {track.name}</span>
       {item.retry && (
-        <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-accent-soft py-0.5 pr-2.5 pl-2 text-xs font-semibold text-accent-ink">
+        <span className="ml-auto inline-flex h-6 items-center gap-1 rounded-full bg-accent-soft pr-3 pl-2 text-xs font-semibold text-accent-ink">
           <RotateCcw size={14} strokeWidth={2.2} />
           Ancora una volta
         </span>
@@ -575,7 +575,7 @@ function PracticeSession() {
     );
   } else if (current.phase === "busy") {
     actions = (
-      <p className="flex min-h-24 items-center justify-center gap-2.5 font-medium text-ink-2 sm:min-h-20">
+      <p className="flex min-h-24 items-center justify-center gap-3 font-medium text-ink-2 sm:min-h-20">
         {spinner}
         Trascrivo…
       </p>
@@ -604,7 +604,7 @@ function PracticeSession() {
       <>
         <div className="grid gap-1 rounded border-[1.5px] border-rule bg-panel px-4 py-3">
           <span className={LABEL}>Risposta</span>
-          <span lang="pl" className="font-serif text-2xl font-bold">
+          <span lang="pl" className="font-serif text-2xl font-bold wrap-anywhere">
             {current.answer}
           </span>
           {current.alternatives && current.alternatives.length > 0 && (
@@ -626,12 +626,12 @@ function PracticeSession() {
           <ListenButton text={listenText(current.answer)} />
           {!current.heard &&
             (busy ? (
-              <span className="flex min-h-12 items-center gap-2.5 text-sm font-medium text-ink-2">
+              <span className="flex min-h-12 items-center gap-3 text-sm font-medium text-ink-2">
                 {spinner}
                 Trascrivo…
               </span>
             ) : (
-              <span className="flex items-center gap-2.5">
+              <span className="flex items-center gap-3">
                 <PushToTalk onRecorded={sendAudio} color={track.color} small />
                 <span className="text-sm text-ink-3">Tieni premuto per riprovare</span>
               </span>
@@ -644,7 +644,7 @@ function PracticeSession() {
         {item.kind === "spoken-recall" && (
           // the verdict grades recall; retries beside Ascolta only grade pronunciation
           <p className="text-center text-sm text-ink-2">
-            Prima di vedere la risposta, l'avevi detta?
+            Prima di vedere la risposta, l'avevi detto?
           </p>
         )}
         <div className="grid grid-cols-2 gap-2">
@@ -725,7 +725,7 @@ function Screen({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex h-dvh flex-col bg-paper font-sans text-base text-ink">
+    <div className="flex h-dvh flex-col bg-paper font-sans text-base text-pretty text-ink">
       {bar}
       <div className="flex min-h-0 flex-1 flex-col sm:flex-row lg:items-center-safe lg:justify-center lg:gap-12 lg:overflow-auto lg:px-12 lg:py-8">
         <main className="min-h-0 flex-1 overflow-auto px-5 pt-5 pb-3 sm:flex sm:flex-col sm:justify-center-safe sm:px-7 lg:flex-[0_1_34rem] lg:overflow-visible lg:p-0">
@@ -761,7 +761,7 @@ function Bar({
       <Link to="/" aria-label="Indietro" className={ICON_BUTTON}>
         <ArrowLeft size={20} />
       </Link>
-      <div className="flex min-w-0 flex-1 items-center gap-2.5 px-1.5">
+      <div className="flex min-w-0 flex-1 items-center gap-3 px-2">
         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-rule">
           <div
             className="h-full rounded-full bg-accent"
@@ -808,7 +808,7 @@ function ReportMenu({
         <Flag size={20} />
       </button>
       {step === "menu" && (
-        <div className={`${POPOVER} gap-1.5`}>
+        <div className={`${POPOVER} gap-2`}>
           <span className={LABEL}>Segnala</span>
           <button type="button" onClick={() => setStep("note")} className={option}>
             <b className="font-semibold">
@@ -844,7 +844,7 @@ function ReportMenu({
             maxLength={500}
             rows={3}
             autoFocus
-            className="rounded border-[1.5px] border-rule bg-panel px-2.5 py-2 font-serif text-base"
+            className="rounded border-[1.5px] border-rule bg-panel px-3 py-2 font-serif text-base"
           />
           <p className="text-sm text-ink-3">
             Esce dalla pratica fino alla revisione a fine sessione.

@@ -18,7 +18,7 @@ export const ICON_BUTTON =
 
 // A multiple-choice answer: Comprehension check and Practice.
 export const CHOICE =
-  "flex min-h-12 w-full items-center gap-3 rounded border-[1.5px] px-4 py-3 text-left font-serif text-[16px] leading-[1.35]";
+  "flex min-h-12 w-full items-center gap-3 rounded border-[1.5px] px-4 py-3 text-left font-serif text-[16px] leading-[1.35] transition-colors duration-200";
 export const CHOICE_STATE = {
   idle: "border-rule bg-panel",
   picked: "border-accent bg-accent-soft",
