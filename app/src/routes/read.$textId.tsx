@@ -87,17 +87,6 @@ const markEpisodeReadFn = createServerFn({ method: "POST" })
     return appStoryService().markEpisodeRead(data.textId);
   });
 
-// Batch-mark every still-New word in a text as known (grade Easy) in ONE
-// transaction. Excludes words the user explicitly marked "still learning"
-// (Learning/Relearning) — the batch must not overwrite an explicit judgment.
-const batchMarkKnown = createServerFn({ method: "POST" })
-  .validator((d: unknown) => z.object({ textId: z.number().int() }).parse(d))
-  .handler(async ({ data }): Promise<{ lemmaIds: number[] }> => {
-    const { db } = await import("#/db/index");
-    const { markNewKnown } = await import("#/reader/mark");
-    return { lemmaIds: markNewKnown(db, data.textId) };
-  });
-
 export const Route = createFileRoute("/read/$textId")({
   component: Reader,
   loader: ({ params }) => getText({ data: params.textId }),
@@ -139,20 +128,8 @@ function Reader() {
     t.lemmaId != null && overrides[t.lemmaId]
       ? overrides[t.lemmaId]
       : { known: t.known, stillLearning: t.stillLearning };
-  // A Name is never vocabulary: no highlight, no batch mark.
+  // A Name is never vocabulary: no highlight.
   const isUnknown = (t: ReaderToken) => t.lemmaId != null && !isName(t.pos) && !flagsOf(t).known;
-
-  // Batch only burns never-touched (New) words: unknown and not still-learning.
-  const batchEligible = useMemo(() => {
-    const ids = new Set<number>();
-    for (const t of tokens) {
-      if (t.lemmaId == null || isName(t.pos)) continue;
-      const f = flagsOf(t);
-      if (!f.known && !f.stillLearning) ids.add(t.lemmaId);
-    }
-    return ids;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tokens, overrides]);
 
   function markGraded(lemmaId: number, flags: KnowledgeFlags) {
     setOverrides((prev) => ({ ...prev, [lemmaId]: flags }));
@@ -168,16 +145,6 @@ function Reader() {
     }
   }
 
-  async function markAllNewKnown() {
-    if (batchEligible.size === 0) return;
-    const { lemmaIds } = await batchMarkKnown({ data: { textId: text.id } });
-    setOverrides((prev) => {
-      const next = { ...prev };
-      for (const id of lemmaIds) next[id] = { known: true, stillLearning: false };
-      return next;
-    });
-  }
-
   return (
     <div className="mx-auto max-w-3xl p-8">
       <Link to="/" className="text-sm text-blue-600 underline">
@@ -188,17 +155,7 @@ function Reader() {
           {story.title} · episodio {text.episodeNumber} di {story.total}
         </p>
       )}
-      <div className="mt-2 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">{text.title || `Text #${text.id}`}</h1>
-        <button
-          type="button"
-          onClick={markAllNewKnown}
-          disabled={batchEligible.size === 0}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm disabled:opacity-40"
-        >
-          Mark {batchEligible.size} new word{batchEligible.size === 1 ? "" : "s"} known
-        </button>
-      </div>
+      <h1 className="mt-2 text-2xl font-bold">{text.title || `Text #${text.id}`}</h1>
 
       <article className="mt-6 whitespace-pre-wrap text-lg leading-relaxed">
         {tokens.map((t, i) => {
