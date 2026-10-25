@@ -1,21 +1,13 @@
 import { Link, createFileRoute, notFound, useNavigate, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import {
-  ALargeSmall,
-  ArrowLeft,
-  ArrowRight,
-  BookCheck,
-  Check,
-  ListChecks,
-  Sparkles,
-} from "lucide-react";
+import { ALargeSmall, ArrowLeft, ArrowRight, BookCheck, ListChecks, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { ComprehensionCheck } from "#/reader/ComprehensionCheck";
 import { NamePanel, WordPanel } from "#/reader/WordPanel";
 import { isName, nameForm } from "#/reader/name";
 import type { KnowledgeFlags, ReaderToken } from "#/reader/types";
-import { BTN_PRIMARY, BTN_QUIET, ICON_BUTTON, LABEL } from "#/reader/ui";
+import { BTN_PRIMARY, BTN_QUIET, ICON_BUTTON, LABEL, Tick } from "#/ui";
 
 // Load a text and its tokens in reading order. `known` / `stillLearning` are
 // computed server-side; the client never sees the raw FSRS state.
@@ -338,14 +330,6 @@ function Reader() {
 
 // Words pad vertically to fill the line box: a short word is otherwise a few pixels wide.
 const WORD = "-mx-[.08em] cursor-pointer rounded-word box-decoration-clone px-[.08em] py-[.3em]";
-
-function Tick() {
-  return (
-    <span className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-accent-soft text-accent">
-      <Check size={17} strokeWidth={2.6} />
-    </span>
-  );
-}
 
 const SIZE_KEY = "reader-size";
 type Size = "16" | "18";

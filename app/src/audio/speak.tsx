@@ -12,23 +12,15 @@ export function speak(text: string) {
   speechSynthesis.speak(u);
 }
 
-export function ListenButton({
-  text,
-  label = "Listen",
-  className = "mt-3",
-}: {
-  text: string;
-  label?: string;
-  className?: string;
-}) {
+export function ListenButton({ text, label = "Ascolta" }: { text: string; label?: string }) {
   if (typeof speechSynthesis === "undefined") return null;
   return (
     <button
       type="button"
       onClick={() => speak(text)}
-      className={`${className} flex items-center gap-1 rounded border border-gray-300 px-3 py-1 text-sm text-gray-700 hover:bg-gray-50`}
+      className="inline-flex min-h-11 items-center gap-2 justify-self-start rounded-full bg-accent-soft px-4 text-sm font-semibold text-accent-ink"
     >
-      <Volume2 size={16} /> {label}
+      <Volume2 size={17} /> {label}
     </button>
   );
 }

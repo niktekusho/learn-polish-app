@@ -17,7 +17,7 @@ import {
   LABEL_TYPE,
   RETRY,
   TOOL,
-} from "./ui";
+} from "#/ui";
 
 // Server-only: resolve (and cache) the Italian gloss for a lemma. The reader
 // always has a sentence, so this path may generate.

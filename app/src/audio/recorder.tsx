@@ -1,5 +1,6 @@
 import { Mic } from "lucide-react";
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { ERROR_LINE, RETRY } from "#/ui";
 
 /**
  * Mic capture for the speaking exercises (roadmap Slice 1).
@@ -127,8 +128,8 @@ export function useRecorder(onRecorded: (blob: Blob) => void) {
       const lvl = meterLevel(r);
       el.style.width = `${Math.round(lvl * 100)}%`;
       const quiet = lvl < meterLevel(QUIET_RMS_THRESHOLD);
-      el.classList.toggle("bg-red-400", quiet);
-      el.classList.toggle("bg-green-500", !quiet);
+      el.classList.toggle("bg-bad", quiet);
+      el.classList.toggle("bg-good", !quiet);
     }
     rafRef.current = requestAnimationFrame(monitor);
   }, []);
@@ -188,13 +189,18 @@ export function useRecorder(onRecorded: (blob: Blob) => void) {
  * keydown/keyup adds spacebar hold on desktop. Long-press context menu
  * (Android) and text selection are suppressed. A live meter shows input level
  * while holding; releasing on a too-quiet clip warns instead of sending.
+ * `color` is the button's fill: the hue of the track the item grades.
  */
 export function PushToTalk({
   onRecorded,
+  color,
   disabled = false,
+  small = false,
 }: {
   onRecorded: (blob: Blob) => void;
+  color: string;
   disabled?: boolean;
+  small?: boolean;
 }) {
   const { state, meterFillRef, start, stop, dismiss } = useRecorder(onRecorded);
 
@@ -218,11 +224,11 @@ export function PushToTalk({
   }, [disabled, start, stop]);
 
   if (state === "unsupported")
-    return <p className="text-sm text-red-600">No mic support in this browser.</p>;
+    return <p className={`${ERROR_LINE} justify-center`}>Questo browser non registra audio.</p>;
   if (state === "denied")
     return (
-      <p className="text-sm text-red-600">
-        Mic permission denied — allow it in the browser and reload.
+      <p className={`${ERROR_LINE} justify-center text-center`}>
+        Il microfono è bloccato: consentilo nel browser e ricarica.
       </p>
     );
 
@@ -238,47 +244,48 @@ export function PushToTalk({
     onPointerCancel: stop,
     onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
   };
-  const meter = recording && (
-    <div className="h-2 w-48 overflow-hidden rounded-full bg-gray-200">
-      {/* width + color written imperatively by the rAF loop; starts empty/red */}
-      <div ref={meterFillRef} className="h-full w-0 bg-red-400" />
-    </div>
-  );
-  const tooQuiet = state === "tooQuiet" && (
-    <p className="text-sm text-red-600">
-      Too quiet to hear — speak up or raise your mic level, then hold again.{" "}
-      <button type="button" onClick={dismiss} className="underline">
-        Dismiss
-      </button>
-    </p>
-  );
 
-  // Mobile: floats near the bottom edge, in thumb reach (the page reserves
-  // room for it, see Shell in routes/practice.tsx). sm+: inline, left-aligned.
   return (
-    <div className="fixed inset-x-0 bottom-[max(2rem,env(safe-area-inset-bottom))] z-10 flex flex-col items-center gap-3 sm:static sm:items-start">
+    <div
+      className="grid justify-items-center gap-3"
+      style={{ "--mic": color } as React.CSSProperties}
+    >
       <div className="relative">
         {recording && (
-          <span className="absolute inset-0 animate-ping rounded-full bg-red-400 opacity-60" />
+          <span className="absolute inset-0 animate-ping rounded-full bg-(--mic) opacity-50 motion-reduce:animate-none" />
         )}
         <button
           {...press}
-          aria-label={recording ? "Recording, release to send" : "Hold to speak"}
-          className={`relative flex size-24 select-none touch-none items-center justify-center rounded-full text-white shadow-lg transition-transform ${
-            recording
-              ? "scale-110 bg-red-600 shadow-red-300"
-              : "bg-blue-600 shadow-blue-300 active:scale-95 disabled:opacity-50"
-          }`}
+          aria-label={
+            recording ? "Registrazione: rilascia per inviare" : "Tieni premuto per parlare"
+          }
+          className={`relative grid touch-none place-items-center rounded-full bg-(--mic) text-white shadow-[0_10px_24px_-8px_color-mix(in_srgb,var(--mic)_70%,transparent)] transition-transform duration-200 ease-[cubic-bezier(.22,1.25,.36,1)] select-none disabled:opacity-45 ${
+            small ? "size-12" : "size-24 sm:size-20"
+          } ${recording ? "scale-110" : "active:scale-95"}`}
         >
-          <Mic size={40} />
+          <Mic size={small ? 22 : 36} strokeWidth={1.8} />
         </button>
       </div>
-      <span className="text-sm font-medium text-gray-600">
-        {recording ? "Release to send" : "Hold to speak"}
-        <span className="hidden sm:inline">{recording ? "" : " (or hold Space)"}</span>
-      </span>
-      {meter}
-      {tooQuiet}
+      {!small && (
+        <span className="text-sm font-semibold text-ink-2">
+          {recording ? "Rilascia per inviare" : "Tieni premuto per parlare"}
+          <span className="hidden sm:inline">{recording ? "" : " (o tieni premuto Spazio)"}</span>
+        </span>
+      )}
+      {recording && (
+        <div className="h-2 w-44 overflow-hidden rounded-full bg-rule">
+          {/* width + color written imperatively by the rAF loop; starts empty/red */}
+          <div ref={meterFillRef} className="h-full w-0 rounded-full bg-bad" />
+        </div>
+      )}
+      {state === "tooQuiet" && (
+        <p className={`${ERROR_LINE} justify-center text-center`}>
+          Troppo piano: alza la voce o il volume del microfono, poi tieni premuto di nuovo.
+          <button type="button" onClick={dismiss} className={RETRY}>
+            Chiudi
+          </button>
+        </p>
+      )}
     </div>
   );
 }

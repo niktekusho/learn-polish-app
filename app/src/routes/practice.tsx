@@ -1,12 +1,25 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { Flag, Mic, MicOff } from "lucide-react";
+import { ArrowLeft, Check, Flag, Mic, MicOff, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { PushToTalk } from "#/audio/recorder";
 import { ListenButton } from "#/audio/speak";
+import type { ClientPracticeItem } from "#/practice/session";
 import { Corrections } from "#/report/Corrections";
 import { wordPattern } from "#/reader/word-pattern";
+import {
+  BTN_BAD,
+  BTN_GOOD,
+  BTN_PRIMARY,
+  BTN_QUIET,
+  CHOICE,
+  CHOICE_STATE,
+  ICON_BUTTON,
+  LABEL,
+  LABEL_TYPE,
+  Tick,
+} from "#/ui";
 
 // Build a new session, or resume the held one by id (reload/refocus). No LLM
 // calls: buildSession only reads cached glosses. A new session takes the unseen
@@ -153,7 +166,7 @@ export const Route = createFileRoute("/practice")({
 
 type SpeechPhase =
   | { itemId: string; phase: "busy" }
-  | { itemId: string; phase: "correct"; answer: string; transcript: string }
+  | { itemId: string; phase: "correct"; answer: string; transcript: string; hint?: Hint }
   | {
       itemId: string;
       phase: "revealed";
@@ -164,6 +177,36 @@ type SpeechPhase =
     };
 
 type Hint = { lemma: string; difficulty: number; due: Date };
+type Kind = ClientPracticeItem["kind"];
+
+const TRACK = {
+  receptive: {
+    name: "Capire",
+    dot: "bg-receptive",
+    ink: "text-receptive-ink",
+    color: "var(--color-receptive)",
+  },
+  productive: {
+    name: "Ricordare",
+    dot: "bg-productive",
+    ink: "text-productive-ink",
+    color: "var(--color-productive)",
+  },
+  pronunciation: {
+    name: "Pronunciare",
+    dot: "bg-pronunciation",
+    ink: "text-pronunciation-ink",
+    color: "var(--color-pronunciation)",
+  },
+};
+
+// The hue an item carries: the track its first answer grades.
+const EXERCISE: Record<Kind, { name: string; track: keyof typeof TRACK }> = {
+  "recognition-mcq": { name: "Riconosci", track: "receptive" },
+  passage: { name: "Brano", track: "receptive" },
+  "spoken-recall": { name: "Dillo in polacco", track: "productive" },
+  "read-aloud": { name: "Leggi ad alta voce", track: "pronunciation" },
+};
 
 function Practice() {
   const data = Route.useLoaderData();
@@ -206,9 +249,9 @@ function PracticeSession() {
   // Alternative answers already said, per spoken-recall item: named in the prompt.
   const [excluded, setExcluded] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState(false);
-  const [reportFor, setReportFor] = useState<string | null>(null);
-  // Last Pronunciation grade; stays up (it names its word) until the next one.
-  const [hint, setHint] = useState<Hint | null>(null);
+  // The URL pin reloads the data as a resume, which carries no corrections: keep the first ones.
+  const [corrections] = useState(data.corrections);
+  const [started, setStarted] = useState(corrections.length === 0);
 
   const micToggle = (
     <button
@@ -217,22 +260,43 @@ function PracticeSession() {
         // Toggling rebuilds the session: the mix itself changes with the mic.
         navigate({ to: "/practice", search: { mic: !mic }, replace: true })
       }
-      className="flex items-center gap-1 rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-50"
-      title={mic ? "Speaking exercises on" : "Speaking exercises off"}
+      aria-label="Esercizi a voce"
+      aria-pressed={mic}
+      className={ICON_BUTTON}
     >
-      {mic ? <Mic size={14} /> : <MicOff size={14} />}
-      {mic ? "Mic on" : "Mic off"}
+      {mic ? <Mic size={20} /> : <MicOff size={20} />}
     </button>
   );
 
-  const corrections = <Corrections title="Corretti" items={data.corrections} className="mb-6" />;
+  if (!started) {
+    return (
+      <Screen
+        bar={<Bar done={0}>{micToggle}</Bar>}
+        inline
+        actions={
+          <button type="button" onClick={() => setStarted(true)} className={BTN_PRIMARY}>
+            Inizia
+          </button>
+        }
+      >
+        <h1 className="flex items-center gap-3 font-serif text-xl font-bold text-balance">
+          Corretti <Count n={corrections.length} />
+        </h1>
+        <p className="text-ink-2">
+          Dopo l'ultima sessione ho corretto queste parole. Annulla quello che non ti convince.
+        </p>
+        <Corrections items={corrections} />
+      </Screen>
+    );
+  }
 
   if (items.length === 0) {
     return (
-      <Shell toolbar={micToggle}>
-        {corrections}
-        <p className="text-lg">Nothing due right now. 🎉</p>
-      </Shell>
+      <Screen bar={<Bar done={0}>{micToggle}</Bar>}>
+        <End title="Niente da ripassare ora.">
+          <p className="text-sm text-ink-3">Torna più tardi o leggi un episodio.</p>
+        </End>
+      </Screen>
     );
   }
 
@@ -243,18 +307,36 @@ function PracticeSession() {
   if (index === -1) {
     const firsts = items.filter((it) => !it.retry);
     const correctCount = firsts.filter((it) => answered[it.id]).length;
+    const perTrack = Object.entries(TRACK).map(([track, t]) => ({
+      ...t,
+      n: firsts.filter((it) => EXERCISE[it.kind].track === track).length,
+    }));
     return (
-      <Shell toolbar={micToggle}>
-        <h2 className="text-xl font-bold">Session complete</h2>
-        <p className="mt-2 text-gray-700">
-          Reviewed {firsts.length} — {correctCount} correct.
-        </p>
-        <SessionNote sessionId={data.sessionId} />
-      </Shell>
+      <Screen bar={<Bar done={1}>{micToggle}</Bar>}>
+        <End title="Sessione completata">
+          <p className="text-ink-2 tabular-nums">
+            {firsts.length} {firsts.length === 1 ? "ripassata" : "ripassate"} · {correctCount}{" "}
+            {correctCount === 1 ? "giusta" : "giuste"}
+          </p>
+          <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm font-semibold tabular-nums">
+            {perTrack
+              .filter((t) => t.n > 0)
+              .map((t) => (
+                <span key={t.name} className={`inline-flex items-center gap-2 ${t.ink}`}>
+                  <i className={`size-2 rounded-full ${t.dot}`} />
+                  {t.name} {t.n}
+                </span>
+              ))}
+          </div>
+          <SessionNote sessionId={data.sessionId} />
+        </End>
+      </Screen>
     );
   }
 
   const item = items[index];
+  const track = TRACK[EXERCISE[item.kind].track];
+  const nextLabel = index + 1 < total ? "Avanti" : "Fine";
 
   async function choose(choiceIndex: number) {
     if (reveal || busy || (item.kind !== "recognition-mcq" && item.kind !== "passage")) return;
@@ -289,7 +371,8 @@ function PracticeSession() {
     if (busy || speech?.phase === "correct") return;
     const prev = speech;
     setBusy(true);
-    setSpeech({ itemId: item.id, phase: "busy" });
+    // A revealed answer stays up while a retry transcribes.
+    if (prev?.phase !== "revealed") setSpeech({ itemId: item.id, phase: "busy" });
     try {
       const form = new FormData();
       form.set("sessionId", data.sessionId);
@@ -302,8 +385,8 @@ function PracticeSession() {
           phase: "correct",
           answer: res.answer ?? "",
           transcript: res.transcript,
+          hint: res.hint,
         });
-        if (res.hint) setHint(res.hint);
       } else if (res.status === "alternative") {
         const dropped = res.dropped ?? [];
         setItems((prev) => prev.filter((it) => !dropped.includes(it.id)));
@@ -348,13 +431,13 @@ function PracticeSession() {
     }
   }
 
+  // The Pronunciation note a self-grade returns is not shown: the item closes with it.
   async function selfGrade(saidIt: boolean) {
     setBusy(true);
     try {
       const res = await submitSelfGrade({
         data: { sessionId: data.sessionId, itemId: item.id, saidIt },
       });
-      if (res.hint) setHint(res.hint);
       appendRetry(res.retry);
       setAnswered((prev) => ({ ...prev, [item.id]: saidIt }));
       setSpeech(null);
@@ -363,17 +446,8 @@ function PracticeSession() {
     }
   }
 
-  async function report(kind: "wrong" | "context") {
+  async function report(kind: "wrong" | "context", note: string) {
     if (busy) return;
-    let note = "";
-    if (kind === "wrong") {
-      const input = window.prompt(
-        "What is wrong? (optional)\nIt leaves practice until it is reviewed after this session.",
-      );
-      if (input === null) return;
-      note = input;
-    }
-    setReportFor(null);
     setBusy(true);
     try {
       const { dropped } = await submitReport({
@@ -393,207 +467,428 @@ function PracticeSession() {
     setSpeech(null);
   }
 
-  return (
-    <Shell toolbar={micToggle}>
-      {answeredCount === 0 && corrections}
-      <div className="flex items-center justify-between text-sm text-gray-500">
-        <span>
-          {answeredCount + 1} / {total}
-          {item.retry && <span className="ml-2 text-amber-700">Retry</span>}
-        </span>
-        <button
-          type="button"
-          onClick={() => setReportFor(reportFor === item.id ? null : item.id)}
-          disabled={busy}
-          aria-expanded={reportFor === item.id}
-          className="flex items-center gap-1 hover:text-red-600"
-          title="Report a problem with this exercise"
-        >
-          <Flag size={14} /> Report
-        </button>
-      </div>
-      {reportFor === item.id && (
-        <div className="mt-2 flex flex-wrap justify-end gap-2 text-sm">
-          <button
-            type="button"
-            onClick={() => report("wrong")}
-            disabled={busy}
-            className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50"
-          >
-            {item.kind === "passage" ? "Question is wrong" : "Meaning is wrong"}
-          </button>
-          {item.kind !== "passage" && (
-            <button
-              type="button"
-              onClick={() => report("context")}
-              disabled={busy}
-              className="rounded border border-gray-300 px-3 py-1.5 text-gray-700 hover:bg-gray-50"
-              title="Only makes sense in a sentence: stop asking it as a single word"
-            >
-              Needs context
-            </button>
-          )}
-        </div>
-      )}
-      {hint && <p className="mt-1 text-sm text-gray-500">{hintText(hint)}</p>}
+  const bar = (
+    <Bar done={answeredCount / total} count={`${answeredCount + 1} / ${total}`}>
+      <ReportMenu key={item.id} passage={item.kind === "passage"} busy={busy} onReport={report} />
+      {micToggle}
+    </Bar>
+  );
 
-      {(item.kind === "recognition-mcq" || item.kind === "passage") && (
-        <>
-          {item.kind === "recognition-mcq" ? (
-            <div className="mt-2 text-3xl font-bold">{item.prompt}</div>
-          ) : (
-            <>
-              <p className="mt-2 text-xl leading-relaxed">
-                <Highlighted text={item.passage} target={item.target} />
-              </p>
-              <p className="mt-4 font-medium">{item.question}</p>
-            </>
-          )}
-          <div className="mt-6 space-y-2">
+  const label = (
+    <div className="flex flex-wrap items-center gap-2">
+      <i className={`size-2.5 rounded-full ${track.dot}`} />
+      <span className={`${LABEL_TYPE} ${track.ink}`}>{EXERCISE[item.kind].name}</span>
+      <span className="text-xs font-medium text-ink-3">· {track.name}</span>
+      {item.retry && (
+        <span className="ml-auto inline-flex h-6 items-center gap-1 rounded-full bg-accent-soft pr-3 pl-2 text-xs font-semibold text-accent-ink">
+          <RotateCcw size={14} strokeWidth={2.2} />
+          Ancora una volta
+        </span>
+      )}
+    </div>
+  );
+
+  if (item.kind === "recognition-mcq" || item.kind === "passage") {
+    return (
+      <Screen
+        bar={bar}
+        actions={
+          <>
             {item.choices.map((choice, i) => {
-              const revealed = reveal !== null;
-              const isCorrect = i === reveal?.correctIndex;
-              const isPicked = i === reveal?.picked;
-              const cls = !revealed
-                ? "border-gray-300 hover:bg-gray-50"
-                : isCorrect
-                  ? "border-green-500 bg-green-50"
-                  : isPicked
-                    ? "border-red-500 bg-red-50"
-                    : "border-gray-200 opacity-60";
+              const state = !reveal
+                ? "idle"
+                : i === reveal.correctIndex
+                  ? "right"
+                  : i === reveal.picked
+                    ? "wrong"
+                    : "off";
               return (
                 <button
                   key={i}
                   type="button"
-                  disabled={revealed}
+                  disabled={reveal !== null}
                   onClick={() => choose(i)}
-                  className={`block w-full rounded border px-4 py-2 text-left ${cls}`}
+                  className={`${CHOICE} ${CHOICE_STATE[state]}`}
                 >
                   {choice}
+                  {state === "right" && (
+                    <Check size={18} strokeWidth={2.4} className="ml-auto shrink-0" />
+                  )}
+                  {state === "wrong" && (
+                    <X size={18} strokeWidth={2.4} className="ml-auto shrink-0" />
+                  )}
                 </button>
               );
             })}
-          </div>
-          {reveal && (
-            <button
-              type="button"
-              onClick={next}
-              className="mt-6 rounded bg-blue-600 px-4 py-2 font-medium text-white"
-            >
-              {index + 1 < total ? "Next" : "Finish"}
-            </button>
-          )}
-        </>
-      )}
+            {reveal && (
+              <button type="button" onClick={next} className={BTN_PRIMARY}>
+                {nextLabel}
+              </button>
+            )}
+          </>
+        }
+      >
+        {label}
+        {item.kind === "recognition-mcq" ? (
+          <>
+            <p className="text-sm text-ink-3">Che cosa significa?</p>
+            <p lang="pl" className="font-serif text-2xl font-bold wrap-anywhere">
+              {item.prompt}
+            </p>
+          </>
+        ) : (
+          <>
+            <p lang="pl" className="font-serif text-prose leading-[1.75] whitespace-pre-wrap">
+              <Highlighted text={item.passage} target={item.target} />
+            </p>
+            <p className="font-serif text-md leading-[1.4] font-semibold">{item.question}</p>
+          </>
+        )}
+      </Screen>
+    );
+  }
 
-      {(item.kind === "spoken-recall" || item.kind === "read-aloud") && (
+  const current = speech?.itemId === item.id ? speech : null;
+  const listenText = (answer: string) => (item.kind === "read-aloud" ? item.sentence : answer);
+  const spinner = (
+    <span
+      className="size-5 animate-spin rounded-full border-[2.5px] border-rule motion-reduce:animate-none"
+      style={{ borderTopColor: track.color }}
+    />
+  );
+
+  let verdict: React.ReactNode = null;
+  let actions: React.ReactNode;
+  if (!current) {
+    actions = (
+      <>
+        <PushToTalk onRecorded={sendAudio} color={track.color} disabled={busy} />
+        <button
+          type="button"
+          onClick={giveUp}
+          disabled={busy}
+          className="min-h-11 justify-self-center text-sm font-medium text-ink-3 underline underline-offset-[.2em]"
+        >
+          Mostra la risposta
+        </button>
+      </>
+    );
+  } else if (current.phase === "busy") {
+    actions = (
+      <p className="flex min-h-24 items-center justify-center gap-3 font-medium text-ink-2 sm:min-h-20">
+        {spinner}
+        Trascrivo…
+      </p>
+    );
+  } else if (current.phase === "correct") {
+    verdict = (
+      <>
+        <div className="grid gap-1 rounded bg-good-soft px-4 py-3 text-good-ink">
+          <span className="flex items-center gap-2 font-semibold">
+            <Check size={18} strokeWidth={2.4} />
+            Giusto
+          </span>
+          <Heard transcript={current.transcript} />
+        </div>
+        <ListenButton text={listenText(current.answer)} />
+        {current.hint && <PronunciationNote hint={current.hint} />}
+      </>
+    );
+    actions = (
+      <button type="button" onClick={speechNext} className={BTN_PRIMARY}>
+        {nextLabel}
+      </button>
+    );
+  } else {
+    verdict = (
+      <>
+        <div className="grid gap-1 rounded border-[1.5px] border-rule bg-panel px-4 py-3">
+          <span className={LABEL}>Risposta</span>
+          <span lang="pl" className="font-serif text-2xl font-bold wrap-anywhere">
+            {current.answer}
+          </span>
+          {current.alternatives && current.alternatives.length > 0 && (
+            <span className="text-sm text-ink-2">
+              anche:{" "}
+              <em lang="pl" className="font-serif text-base">
+                {current.alternatives.join(", ")}
+              </em>
+            </span>
+          )}
+          {current.transcript && (
+            <Heard
+              transcript={current.transcript}
+              className={current.heard ? "font-semibold text-good-ink" : "text-ink-3"}
+            />
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <ListenButton text={listenText(current.answer)} />
+          {!current.heard &&
+            (busy ? (
+              <span className="flex min-h-12 items-center gap-3 text-sm font-medium text-ink-2">
+                {spinner}
+                Trascrivo…
+              </span>
+            ) : (
+              <span className="flex items-center gap-3">
+                <PushToTalk onRecorded={sendAudio} color={track.color} small />
+                <span className="text-sm text-ink-3">Tieni premuto per riprovare</span>
+              </span>
+            ))}
+        </div>
+      </>
+    );
+    actions = (
+      <>
+        {item.kind === "spoken-recall" && (
+          // the verdict grades recall; retries beside Ascolta only grade pronunciation
+          <p className="text-center text-sm text-ink-2">
+            Prima di vedere la risposta, l'avevi detto?
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => selfGrade(true)}
+            className={BTN_GOOD}
+          >
+            <Check size={18} strokeWidth={2.4} />
+            L'ho detto
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => selfGrade(false)}
+            className={BTN_BAD}
+          >
+            <X size={18} strokeWidth={2.4} />
+            Non l'ho detto
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <Screen bar={bar} actions={actions} inline={current?.phase === "correct"}>
+      {label}
+      {item.kind === "spoken-recall" ? (
         <>
-          {item.kind === "spoken-recall" ? (
+          <p className="text-sm text-ink-3">Come si dice in polacco?</p>
+          <p className="font-serif text-2xl font-bold">{item.gloss}</p>
+          {excluded[item.id] && (
             <>
-              <div className="mt-2 text-sm text-gray-500">Say it in Polish:</div>
-              <div className="mt-1 text-3xl font-bold">{item.gloss}</div>
-              {excluded[item.id] && (
-                <>
-                  {!speech && (
-                    <p className="mt-2 text-green-700">✓ Giusto — c'è un'altra parola.</p>
-                  )}
-                  <p className="mt-1 text-gray-600">
-                    Non: <em>{excluded[item.id].join(", ")}</em>
-                  </p>
-                </>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="mt-2 text-sm text-gray-500">Read aloud:</div>
-              <div className="mt-1 text-2xl font-medium leading-relaxed">{item.sentence}</div>
-            </>
-          )}
-
-          {(!speech || speech.itemId !== item.id) && (
-            <div className="mt-6 flex flex-col items-center gap-8 sm:items-start sm:gap-3">
-              <PushToTalk onRecorded={sendAudio} disabled={busy} />
-              <button
-                type="button"
-                onClick={giveUp}
-                disabled={busy}
-                className="text-sm text-gray-500 underline"
-              >
-                Show answer
-              </button>
-            </div>
-          )}
-
-          {speech?.phase === "busy" && <p className="mt-6 text-gray-500">Transcribing…</p>}
-
-          {speech?.phase === "correct" && (
-            <div className="mt-6">
-              <div className="rounded border border-green-500 bg-green-50 px-4 py-3">
-                ✓ Correct — heard “{speech.transcript}”
-              </div>
-              <ListenButton text={item.kind === "read-aloud" ? item.sentence : speech.answer} />
-              <button
-                type="button"
-                onClick={speechNext}
-                className="mt-4 rounded bg-blue-600 px-4 py-2 font-medium text-white"
-              >
-                {index + 1 < total ? "Next" : "Finish"}
-              </button>
-            </div>
-          )}
-
-          {speech?.phase === "revealed" && (
-            <div className="mt-6">
-              <div className="rounded border border-gray-300 bg-gray-50 px-4 py-3">
-                <div className="text-2xl font-bold">{speech.answer}</div>
-                {speech.alternatives && speech.alternatives.length > 0 && (
-                  <div className="text-sm text-gray-600">
-                    anche: <em>{speech.alternatives.join(", ")}</em>
-                  </div>
-                )}
-                {speech.transcript ? (
-                  <div
-                    className={`mt-1 text-sm ${speech.heard ? "text-green-700" : "text-gray-500"}`}
-                  >
-                    {speech.heard ? "✓ " : ""}Heard: “{speech.transcript}”
-                  </div>
-                ) : null}
-              </div>
-              <ListenButton text={item.kind === "read-aloud" ? item.sentence : speech.answer} />
-              {!speech.heard && (
-                <div className="mt-4 flex justify-center sm:justify-start">
-                  <PushToTalk onRecorded={sendAudio} disabled={busy} />
-                </div>
-              )}
-              {item.kind === "spoken-recall" && (
-                // the verdict grades recall; retries above only grade pronunciation
-                <p className="mt-4 text-sm text-gray-600">
-                  Before the answer showed, had you said it?
+              {!speech && (
+                <p className="flex items-center gap-2 font-semibold text-good-ink">
+                  <Check size={18} strokeWidth={2.4} />
+                  Giusto, ma c'è un'altra parola.
                 </p>
               )}
-              <div className="mt-4 flex gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => selfGrade(true)}
-                  className="rounded bg-green-600 px-4 py-2 font-medium text-white"
-                >
-                  I said it
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => selfGrade(false)}
-                  className="rounded bg-red-600 px-4 py-2 font-medium text-white"
-                >
-                  I didn’t
-                </button>
-              </div>
-            </div>
+              <p className="text-sm text-ink-2">
+                Non:{" "}
+                <em lang="pl" className="font-serif text-base">
+                  {excluded[item.id].join(", ")}
+                </em>
+              </p>
+            </>
           )}
         </>
+      ) : (
+        <>
+          <p className="text-sm text-ink-3">Leggi la frase ad alta voce.</p>
+          <p lang="pl" className="font-serif text-lg leading-[1.55] font-medium">
+            {item.sentence}
+          </p>
+        </>
       )}
-    </Shell>
+      {verdict}
+    </Screen>
+  );
+}
+
+/**
+ * Narrow: the content scrolls and the actions sit at the bottom, in thumb reach.
+ * Wide: the actions sit beside the content, or under it when `inline` (a lone button
+ * leaves a column of its own empty).
+ */
+function Screen({
+  bar,
+  actions,
+  inline = false,
+  children,
+}: {
+  bar: React.ReactNode;
+  actions?: React.ReactNode;
+  inline?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex h-dvh flex-col bg-paper font-sans text-base text-pretty text-ink">
+      {bar}
+      <div className="flex min-h-0 flex-1 flex-col sm:flex-row lg:items-center-safe lg:justify-center lg:gap-12 lg:overflow-auto lg:px-12 lg:py-8">
+        <main className="min-h-0 flex-1 overflow-auto px-5 pt-5 pb-3 sm:flex sm:flex-col sm:justify-center-safe sm:px-7 lg:flex-[0_1_34rem] lg:overflow-visible lg:p-0">
+          <div className="mx-auto grid w-full max-w-[36rem] gap-4">
+            {children}
+            {inline && <div className="mt-1 hidden sm:flex">{actions}</div>}
+          </div>
+        </main>
+        {actions && (
+          <div
+            className={`grid shrink-0 gap-2 px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom))] sm:w-[min(42%,400px)] sm:content-center sm:overflow-auto sm:p-4 lg:w-[340px] lg:overflow-visible lg:p-0 ${inline ? "sm:hidden" : ""}`}
+          >
+            {actions}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Top bar: back, progress (`done` 0..1), then the screen's own buttons. */
+function Bar({
+  done,
+  count,
+  children,
+}: {
+  done: number;
+  count?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <header className="relative flex shrink-0 items-center gap-1 border-b border-rule py-2 pr-2 pl-1 sm:py-0.5 lg:px-[max(8px,calc((100%_-_960px)/2))]">
+      <Link to="/" aria-label="Indietro" className={ICON_BUTTON}>
+        <ArrowLeft size={20} />
+      </Link>
+      <div className="flex min-w-0 flex-1 items-center gap-3 px-2">
+        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-rule">
+          <div
+            className="h-full rounded-full bg-accent"
+            style={{ width: `${Math.round(done * 100)}%` }}
+          />
+        </div>
+        {count && (
+          <span className="text-sm font-semibold whitespace-nowrap text-ink-2 tabular-nums">
+            {count}
+          </span>
+        )}
+      </div>
+      {children}
+    </header>
+  );
+}
+
+const POPOVER =
+  "absolute top-full right-2 z-20 mt-1 grid w-[min(300px,calc(100%-16px))] rounded bg-panel p-3 shadow-card";
+
+function ReportMenu({
+  passage,
+  busy,
+  onReport,
+}: {
+  passage: boolean;
+  busy: boolean;
+  onReport: (kind: "wrong" | "context", note: string) => void;
+}) {
+  const [step, setStep] = useState<"menu" | "note" | null>(null);
+  const [note, setNote] = useState("");
+  const option =
+    "grid min-h-12 gap-px rounded border-[1.5px] border-rule bg-panel px-3 py-2 text-left";
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setStep(step ? null : "menu")}
+        disabled={busy}
+        aria-label="Segnala"
+        aria-expanded={step !== null}
+        className={ICON_BUTTON}
+      >
+        <Flag size={20} />
+      </button>
+      {step === "menu" && (
+        <div className={`${POPOVER} gap-2`}>
+          <span className={LABEL}>Segnala</span>
+          <button type="button" onClick={() => setStep("note")} className={option}>
+            <b className="font-semibold">
+              {passage ? "Domanda sbagliata" : "Significato sbagliato"}
+            </b>
+            <small className="text-sm text-ink-3">Esce dalla pratica fino alla revisione</small>
+          </button>
+          {!passage && (
+            <button type="button" onClick={() => onReport("context", "")} className={option}>
+              <b className="font-semibold">Serve il contesto</b>
+              <small className="text-sm text-ink-3">
+                Non chiederla più da sola: solo in una frase
+              </small>
+            </button>
+          )}
+        </div>
+      )}
+      {step === "note" && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            onReport("wrong", note);
+          }}
+          className={`${POPOVER} gap-2`}
+        >
+          <label htmlFor="report-note" className="text-sm font-semibold text-ink-2">
+            Cosa non va? <span className="font-normal text-ink-3">(facoltativo)</span>
+          </label>
+          <textarea
+            id="report-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            maxLength={500}
+            rows={3}
+            autoFocus
+            className="rounded border-[1.5px] border-rule bg-panel px-3 py-2 font-serif text-base"
+          />
+          <p className="text-sm text-ink-3">
+            Esce dalla pratica fino alla revisione a fine sessione.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setStep(null)} className={BTN_QUIET}>
+              Annulla
+            </button>
+            <button type="submit" disabled={busy} className={BTN_PRIMARY}>
+              Segnala
+            </button>
+          </div>
+        </form>
+      )}
+    </>
+  );
+}
+
+function Heard({ transcript, className = "" }: { transcript: string; className?: string }) {
+  return (
+    <span className={`text-sm ${className}`}>
+      Ho sentito:{" "}
+      <q lang="pl" className="font-serif text-base">
+        {transcript}
+      </q>
+    </span>
+  );
+}
+
+function End({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="grid justify-items-center gap-3 pt-10 text-center sm:pt-0">
+      <Tick />
+      <h1 className="font-serif text-xl font-bold">{title}</h1>
+      {children}
+    </div>
+  );
+}
+
+function Count({ n }: { n: number }) {
+  return (
+    <span className="inline-grid h-6 min-w-6 place-items-center rounded-full bg-accent-soft px-2 font-sans text-xs font-bold text-accent-ink tabular-nums">
+      {n}
+    </span>
   );
 }
 
@@ -605,7 +900,10 @@ function Highlighted({ text, target }: { text: string; target: string }) {
     <>
       {parts.map((p, i) =>
         i % 2 === 1 ? (
-          <strong key={i} className="text-blue-800">
+          <strong
+            key={i}
+            className="font-bold text-receptive-ink underline decoration-receptive/45 decoration-2 underline-offset-[.25em]"
+          >
             {p}
           </strong>
         ) : (
@@ -620,47 +918,54 @@ const RECAP_DELAY_MS = 2500;
 
 function SessionNote({ sessionId }: { sessionId: string }) {
   const navigate = useNavigate();
-  const [line, setLine] = useState<string | null>(null);
+  const [summary, setSummary] = useState<{ line: string; dayCompleted: boolean } | null>(null);
   useEffect(() => {
     getSummary({ data: { sessionId } }).then((s) => {
       if (!s) return;
-      setLine(s.line);
+      setSummary(s);
       // Leave the slot line on screen for a moment before the recap.
       if (s.dayCompleted) setTimeout(() => navigate({ to: "/recap" }), RECAP_DELAY_MS);
     });
   }, [sessionId, navigate]);
-  return line ? <p className="mt-2 font-medium text-green-700">{line}</p> : null;
+  if (!summary) return null;
+  return (
+    <>
+      <p className="font-semibold text-accent-ink">{summary.line}</p>
+      {summary.dayCompleted && (
+        <p className="text-sm text-ink-3">Apro il riepilogo della giornata…</p>
+      )}
+    </>
+  );
+}
+
+function PronunciationNote({ hint }: { hint: Hint }) {
+  return (
+    <p className="flex items-center gap-2 text-sm text-ink-2">
+      <i className="size-2 shrink-0 rounded-full bg-pronunciation" />
+      <span>
+        <b lang="pl" className="font-serif font-semibold text-pronunciation-ink">
+          {hint.lemma}
+        </b>
+        : {hintText(hint)}
+      </span>
+    </p>
+  );
 }
 
 /**
- * "🗣 kot: hard to say · back in 9 h". Bands over FSRS difficulty (1..10):
+ * "pronuncia difficile · torna tra 9 h". Bands over FSRS difficulty (1..10):
  * one Good lands ≈2.1, one Hard ≈5.1, one Again ≈6.4, repeated Agains ≥8.8.
  * ponytail: calibration knob — retune the 4/7 cut-offs if the bands feel off.
  */
 function hintText(h: Hint): string {
-  const band = h.difficulty < 4 ? "easy" : h.difficulty < 7 ? "medium" : "hard";
+  const band = h.difficulty < 4 ? "facile" : h.difficulty < 7 ? "media" : "difficile";
   const min = Math.max(1, Math.round((new Date(h.due).getTime() - Date.now()) / 60000));
+  const days = Math.round(min / 1440);
   const when =
     min < 60
       ? `${min} min`
       : min < 1440
         ? `${Math.round(min / 60)} h`
-        : `${Math.round(min / 1440)} days`;
-  return `🗣 ${h.lemma}: ${band} to say · back in ${when}`;
-}
-
-function Shell({ children, toolbar }: { children: React.ReactNode; toolbar?: React.ReactNode }) {
-  return (
-    // pb-48: room for the bottom-floating mic button on mobile
-    <div className="mx-auto max-w-xl p-8 pb-48 sm:pb-8">
-      <div className="flex items-center justify-between">
-        <Link to="/" className="text-sm text-blue-600 underline">
-          ← Home
-        </Link>
-        {toolbar}
-      </div>
-      <h1 className="mt-2 text-2xl font-bold">Practice</h1>
-      <div className="mt-6">{children}</div>
-    </div>
-  );
+        : `${days} ${days === 1 ? "giorno" : "giorni"}`;
+  return `pronuncia ${band} · torna tra ${when}`;
 }
