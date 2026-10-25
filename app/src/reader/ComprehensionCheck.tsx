@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { useEffect, useState } from "react";
+import { Check, ListChecks, RefreshCw, X } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
 import { z } from "zod";
+import { BTN_PRIMARY, ERROR_LINE, RETRY, TOOL } from "./ui";
 
 // Server-only: get (and lazily generate + cache) the comprehension check.
 const getCheckFn = createServerFn({ method: "POST" })
@@ -58,67 +60,84 @@ export function ComprehensionCheck({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => void load(getCheckFn), [textId]);
 
-  const allAnswered = questions !== null && questions.every((_, i) => answers[i] !== undefined);
+  const answered = questions?.filter((_, i) => answers[i] !== undefined).length ?? 0;
+  const allAnswered = questions !== null && answered === questions.length;
   const score = questions?.filter((q, i) => answers[i] === q.correctIndex).length ?? 0;
 
   if (loading) {
-    return <p className="mt-8 text-sm text-gray-400">Generazione domande…</p>;
+    return (
+      <CheckShell>
+        <div className="mt-4 grid animate-pulse gap-2 motion-reduce:animate-none">
+          {["w-[70%]", "w-full", "w-full", "w-[85%]"].map((w, i) => (
+            <i key={i} className={`block h-3 rounded-full bg-rule ${w}`} />
+          ))}
+        </div>
+        <p className="mt-3 text-xs font-medium text-ink-3">Preparo le domande…</p>
+      </CheckShell>
+    );
   }
   if (error || questions === null) {
     return (
-      <p className="mt-8 text-sm text-red-600">
-        Generazione non riuscita{" "}
-        <button
-          type="button"
-          onClick={() => load(getCheckFn)}
-          className="underline hover:text-red-700"
-        >
-          Riprova
-        </button>
-      </p>
+      <CheckShell>
+        <p className={`${ERROR_LINE} mt-3`}>
+          Domande non generate.
+          <button type="button" onClick={() => load(getCheckFn)} className={RETRY}>
+            Riprova
+          </button>
+        </p>
+      </CheckShell>
     );
   }
 
   return (
-    <section className="mt-8 border-t border-gray-200 pt-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Verifica comprensione</h2>
-        <button
-          type="button"
-          onClick={() => load(regenerateCheckFn)}
-          className="text-xs text-gray-400 underline hover:text-gray-700"
-        >
-          Rigenera domande
-        </button>
-      </div>
-
-      <ol className="mt-4 space-y-6">
+    <CheckShell
+      aside={
+        <>
+          {graded && (
+            <span className="rounded-full bg-accent-soft px-3 py-0.5 font-bold text-accent-ink tabular-nums">
+              {score} / {questions.length}
+            </span>
+          )}
+          <button type="button" onClick={() => load(regenerateCheckFn)} className={TOOL}>
+            <RefreshCw size={15} />
+            Rigenera domande
+          </button>
+        </>
+      }
+    >
+      <ol className="mt-4 grid gap-6">
         {questions.map((q, qi) => (
           <li key={qi}>
-            <p className="font-medium">
-              {qi + 1}. {q.question}
+            <p className="mb-3 font-serif text-md leading-[1.4] font-semibold">
+              <span className="font-sans text-sm text-ink-3">{qi + 1}. </span>
+              {q.question}
             </p>
-            <div className="mt-2 space-y-2">
+            <div className="grid gap-2">
               {q.choices.map((choice, ci) => {
                 const picked = answers[qi] === ci;
-                const cls = !graded
-                  ? picked
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-gray-300 hover:bg-gray-50"
-                  : ci === q.correctIndex
-                    ? "border-green-500 bg-green-50"
-                    : picked
-                      ? "border-red-500 bg-red-50"
-                      : "border-gray-200 opacity-60";
+                const right = graded && ci === q.correctIndex;
+                const wrong = graded && picked && !right;
+                const cls = right
+                  ? "border-good bg-good-soft text-good-ink"
+                  : wrong
+                    ? "border-bad bg-bad-soft text-bad-ink"
+                    : graded
+                      ? "border-rule bg-panel opacity-55"
+                      : picked
+                        ? "border-accent bg-accent-soft"
+                        : "border-rule bg-panel";
                 return (
                   <button
                     key={ci}
                     type="button"
                     disabled={graded}
+                    aria-pressed={picked}
                     onClick={() => setAnswers((prev) => ({ ...prev, [qi]: ci }))}
-                    className={`block w-full rounded border px-4 py-2 text-left font-serif text-sm ${cls}`}
+                    className={`flex min-h-12 w-full items-center gap-3 rounded border-[1.5px] px-4 py-3 text-left font-serif text-[16px] leading-[1.35] ${cls}`}
                   >
                     {choice}
+                    {right && <Check size={18} strokeWidth={2.4} className="ml-auto shrink-0" />}
+                    {wrong && <X size={18} strokeWidth={2.4} className="ml-auto shrink-0" />}
                   </button>
                 );
               })}
@@ -128,24 +147,36 @@ export function ComprehensionCheck({
       </ol>
 
       {!graded && (
-        <button
-          type="button"
-          disabled={!allAnswered}
-          onClick={() => {
-            setGraded(true);
-            onGraded?.();
-          }}
-          className="mt-6 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-40"
-        >
-          Verifica
-        </button>
-      )}
-
-      {graded && (
-        <div className="fixed bottom-6 right-6 rounded bg-gray-900 px-4 py-2 text-white shadow-lg">
-          {score} / {questions.length}
+        <div className="mt-5 flex items-center gap-3">
+          <button
+            type="button"
+            disabled={!allAnswered}
+            onClick={() => {
+              setGraded(true);
+              onGraded?.();
+            }}
+            className={BTN_PRIMARY}
+          >
+            <ListChecks size={20} />
+            Verifica
+          </button>
+          <small className="text-sm text-ink-3 tabular-nums">
+            {answered} di {questions.length}
+          </small>
         </div>
       )}
+    </CheckShell>
+  );
+}
+
+function CheckShell({ aside, children }: { aside?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="mt-7 border-t border-rule pt-5 font-sans text-base">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="mr-auto font-serif text-lg font-bold">Verifica comprensione</h2>
+        {aside}
+      </div>
+      {children}
     </section>
   );
 }

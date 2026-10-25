@@ -15,7 +15,7 @@ The dictionary/base form of a word that groups all its surface forms. _kot_ is t
 of _kota_, _kotu_, _kotem_. The unit at which knowledge is tracked, except for a
 **Name**, whose lemma only groups its forms. Assigned at text import by the morphology
 analyzer, corrected by the **Home dictionary**'s inflected forms when the analyzer's lemma
-is not a headword for the word's part of speech.
+is not a headword for the word's part of speech. Shown in the UI as _Forma base_.
 _Avoid_: root, stem, base word
 
 **Lemma slip**:
@@ -36,7 +36,7 @@ stay separate lemmas. Detected at text import by matching token runs against the
 dictionary**'s multi-word headwords (contiguous only in v1; discontinuous parked).
 A match is only a candidate: the same words can form a compositional phrase (_To jest
 chleb_ is "questo è pane", not the _to jest_ meaning "cioè"), so each match is checked
-in its sentence before it counts.
+in its sentence before it counts. Shown in the UI as _Espressione_.
 _Avoid_: phrase, collocation, idiom (as data terms)
 
 **Suppressed MWE**:
@@ -56,7 +56,7 @@ Found two ways: the surface form is an interjection headword in the **Home dicti
 and the analyzer gave it a different lemma, or an **Occurrence gloss** found no
 dictionary sense fitting and judged the use fixed. Either way each occurrence is checked
 in its sentence like a **Multi-word expression** match. No word list: the dictionary and
-accepted occurrences decide the candidates.
+accepted occurrences decide the candidates. Shown in the UI as _Formula_.
 _Avoid_: politeness word, set phrase
 
 **Suppressed formula**:
@@ -69,7 +69,7 @@ A proper noun in a text: a person (_Kasia_) or a place (_Warszawa_). Never a **T
 unit**: it has no Italian meaning to learn. Only its inflection is of interest, so the
 reader shows the base form and case of an inflected name (_Kasi_ → _Kasia_, genitive).
 A word tagged proper noun only because it is capitalized (_Bułka_ at sentence start) is
-not a Name when the **Home dictionary** has it as a common word and not as a name.
+not a Name when the **Home dictionary** has it as a common word and not as a name. Shown in the UI as _Nome proprio_.
 _Avoid_: proper noun (as a data term), PROPN
 
 **L1**:
@@ -82,17 +82,17 @@ reading and used in exercises. Sourced per word-sense, not per surface form: for
 in the **Home dictionary**, one LLM call translates every Wiktionary sense and flags the
 one fitting the sentence (the inline gloss); out-of-dictionary lemmas fall back to
 sentence-context generation. Machine-generated glosses are provisional; a **Manual
-gloss** overrides them.
+gloss** overrides them. Shown in the UI as _Traduzione_.
 
 **Occurrence gloss**:
 What one occurrence of a word means in its sentence, shown while reading beside the
 lemma's **Gloss**. One of the lemma's word-senses, or free Italian when none fits
 (_Poproszę chleb_ → "vorrei"). Never becomes the lemma's **Gloss** and is never practised
-itself: a fixed use worth practising becomes a **Formula**.
+itself: a fixed use worth practising becomes a **Formula**. Shown in the UI as _In questa frase_.
 
 **Manual gloss**:
 A **Gloss** written or corrected by the learner. The highest-trust tier: never overwritten
-or purged by automated regeneration.
+or purged by automated regeneration. Shown in the UI as _Traduzione tua_.
 
 **Knowledge state**:
 Per-lemma memory tracked with the FSRS algorithm (stability/difficulty → due date), rather
@@ -217,7 +217,7 @@ _Avoid_: reading exercise, comprehension exercise
 **Comprehension check**:
 A question about a text the learner just read, answered to verify understanding of the
 text itself. Part of the reading flow, NOT an **Exercise**: it is tied to a text rather
-than to lemmas, is not scheduled by SRS, and does not grade any **Knowledge state**.
+than to lemmas, is not scheduled by SRS, and does not grade any **Knowledge state**. Shown in the UI as _Verifica comprensione_.
 _Avoid_: quiz, comprehension exercise
 
 **Focused drill**:
@@ -227,17 +227,17 @@ genitive), instead of the mixed **Practice** queue.
 **Home dictionary**:
 The Wiktionary-derived data imported into SQLite (POS, senses, IPA, inflection tables),
 used as reference and as exercise fuel. Distinct from the **Gloss**, which is the Italian
-meaning layered on top. See ADR-0002.
+meaning layered on top. See ADR-0002. Shown in the UI as _Dizionario_.
 
 **Story**:
 An LLM-generated serial fiction at the learner's level, built from known lemmas plus
 ~10% new ones. Its outline and episode count (at most 10) are set when the learner picks
-one of the proposed premises.
+one of the proposed premises. Shown in the UI as _Storia_.
 
 **Episode**:
 One installment of a **Story**, stored and read as a normal imported text. Episodes and
 **Conversations** alternate day by day; one of them plus one **Practice** session make the
-daily routine.
+daily routine. Shown in the UI as _Episodio_.
 _Avoid_: chapter, chunk
 
 **Proofread**:

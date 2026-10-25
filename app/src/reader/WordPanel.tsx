@@ -1,11 +1,23 @@
 import { createServerFn } from "@tanstack/react-start";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { Check, ChevronRight, ExternalLink, Pencil, RefreshCw, Volume2, X } from "lucide-react";
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from "react";
 import { z } from "zod";
-import { ListenButton } from "#/audio/speak";
+import { speak } from "#/audio/speak";
 import type { DictLookupResult } from "#/dictionary/service";
 import type { GlossResult } from "#/gloss/service";
-import { nameLabel } from "./name";
+import { type CaseKey, caseOfForm, italianTags, posLabel } from "./labels";
+import { nameForm } from "./name";
 import type { KnowledgeFlags, ReaderToken } from "./types";
+import {
+  BTN_PRIMARY,
+  BTN_QUIET,
+  ERROR_LINE,
+  ICON_BUTTON,
+  LABEL,
+  LABEL_TYPE,
+  RETRY,
+  TOOL,
+} from "./ui";
 
 // Server-only: resolve (and cache) the Italian gloss for a lemma. The reader
 // always has a sentence, so this path may generate.
@@ -145,9 +157,11 @@ export function WordPanel({
   const [error, setError] = useState(false);
   const [marking, setMarking] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [saved, setSaved] = useState(false); // the gloss shown is the learner's own
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false); // save/regenerate in flight
   const [dict, setDict] = useState<DictLookupResult | null>(null);
+  const editId = useId();
 
   // In the reader the sentence is always present, so lookupGloss either resolves
   // with a gloss or rejects (provider/CLI failure) — a rejection is a real error,
@@ -158,6 +172,7 @@ export function WordPanel({
     setLoading(true);
     setError(false);
     setGloss(null);
+    setSaved(false);
     lookupGloss({
       data: {
         lemmaId: token.lemmaId,
@@ -222,6 +237,7 @@ export function WordPanel({
         },
       });
       showGloss(r);
+      setSaved(false);
       if (r.formula) onPromoted?.(r.formula);
     } catch {
       setError(true);
@@ -238,6 +254,7 @@ export function WordPanel({
         data: { lemmaId: token.lemmaId, italian: draft },
       });
       setGloss(r.italian);
+      setSaved(true);
       setEditing(false);
     } finally {
       setBusy(false);
@@ -257,46 +274,116 @@ export function WordPanel({
     }
   }
 
+  async function suppress(fn: typeof suppressMweFn, question: string) {
+    if (token.lemmaId == null || !window.confirm(question)) return;
+    setMarking(true);
+    setSuppressError(null);
+    try {
+      await fn({ data: { lemmaId: token.lemmaId } });
+      onSuppressed?.();
+    } catch (err) {
+      setSuppressError(err instanceof Error ? err.message : "Non riuscito.");
+    } finally {
+      setMarking(false);
+    }
+  }
+
   const wiktionary = token.lemma
     ? `https://en.wiktionary.org/wiki/${encodeURIComponent(token.lemma)}#Polish`
     : null;
+  const ipa = dict?.entries[0]?.ipa;
+  const settled = !loading && !busy && !error;
+  const transLabel =
+    editing || (saved && !occurrence)
+      ? "Traduzione tua"
+      : settled && occurrence
+        ? "In questa frase"
+        : "Traduzione";
 
   return (
-    <PanelShell onClose={onClose}>
-      <div className="text-2xl font-bold">
-        {token.surface}
-        {dict?.entries[0]?.ipa && (
-          <span className="ml-2 text-sm font-normal text-gray-400">{dict.entries[0].ipa}</span>
-        )}
-      </div>
-      <div className="mt-2 flex gap-2">
-        <ListenButton text={token.surface} className="" />
-        <ListenButton text={sentence} label="Sentence" className="" />
-      </div>
-      <dl className="mt-4 space-y-2 text-sm">
-        <div>
-          <dt className="text-gray-500">Lemma</dt>
-          <dd className="font-medium">{token.lemma}</dd>
+    <PanelShell
+      label="Parola"
+      onClose={onClose}
+      title={
+        <>
+          <b lang="pl" className="font-serif text-2xl font-bold">
+            {token.surface}
+          </b>
+          {ipa && <span className="ml-2 text-sm whitespace-nowrap text-ink-3">{ipa}</span>}
+        </>
+      }
+      footer={
+        <>
+          <button
+            type="button"
+            disabled={marking}
+            onClick={() => mark(RATING_KNOWN)}
+            className={BTN_PRIMARY}
+          >
+            <Check size={20} />
+            La conosco
+          </button>
+          <button
+            type="button"
+            disabled={marking}
+            onClick={() => mark(RATING_LEARNING)}
+            className={BTN_QUIET}
+          >
+            Da imparare
+          </button>
+        </>
+      }
+    >
+      {typeof speechSynthesis !== "undefined" && (
+        <div className="mt-3 mb-1 flex flex-wrap gap-2">
+          <button type="button" onClick={() => speak(token.surface)} className={CHIP}>
+            <Volume2 size={17} />
+            Ascolta
+          </button>
+          <button type="button" onClick={() => speak(sentence)} className={CHIP}>
+            <Volume2 size={17} />
+            Frase
+          </button>
         </div>
-        <div>
-          <dt className="text-gray-500">Part of speech</dt>
-          <dd className="font-medium">{token.pos}</dd>
+      )}
+
+      <dl className="mt-3 grid gap-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <dt className={LABEL}>Forma base</dt>
+            <dd lang="pl" className="mt-1 font-serif text-[18px] font-semibold">
+              {token.lemma}
+            </dd>
+          </div>
+          <div>
+            <dt className={LABEL}>Categoria grammaticale</dt>
+            <dd className="mt-1">{posLabel(token.pos ?? "")}</dd>
+          </div>
         </div>
-        <div>
-          <dt className="text-gray-500">Italiano</dt>
-          <dd className="font-medium">
+        <div className="rounded bg-accent-soft px-4 py-3">
+          <dt className={`${LABEL_TYPE} text-accent-ink`}>
+            {editing ? <label htmlFor={editId}>{transLabel}</label> : transLabel}
+          </dt>
+          <dd className="mt-1">
             {loading || busy ? (
-              <span className="text-gray-400">…</span>
+              <>
+                <div className="mt-2 mb-1 grid animate-pulse gap-2 motion-reduce:animate-none">
+                  <i className="block h-3 w-[55%] rounded-full bg-accent/20" />
+                  <i className="block h-3 w-[35%] rounded-full bg-accent/20" />
+                </div>
+                <p className="mt-2 text-sm text-accent-ink">Traduco nel contesto della frase…</p>
+              </>
             ) : error ? (
-              <span className="text-red-600">
-                Traduzione non riuscita{" "}
-                <button type="button" onClick={runLookup} className="underline hover:text-red-700">
+              <p className={ERROR_LINE}>
+                Traduzione non riuscita.
+                <button type="button" onClick={runLookup} className={RETRY}>
                   Riprova
                 </button>
-              </span>
+              </p>
             ) : editing ? (
-              <div className="flex flex-col gap-2">
+              <div className="mt-2 grid gap-2">
                 <input
+                  id={editId}
                   type="text"
                   value={draft}
                   autoFocus
@@ -305,80 +392,72 @@ export function WordPanel({
                     if (e.key === "Enter") saveGloss();
                     if (e.key === "Escape") setEditing(false);
                   }}
-                  className="rounded border border-gray-300 px-2 py-1 text-sm"
+                  className="min-h-11 rounded border-[1.5px] border-accent bg-panel px-3 py-2 font-serif text-[18px] font-semibold"
                 />
-                <div className="flex gap-3 text-sm">
+                <div className="flex gap-2">
                   <button
                     type="button"
                     onClick={saveGloss}
                     disabled={!draft.trim()}
-                    className="text-blue-600 underline disabled:opacity-50"
+                    className={BTN_PRIMARY}
                   >
                     Salva
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditing(false)}
-                    className="text-gray-500 underline"
-                  >
+                  <button type="button" onClick={() => setEditing(false)} className={BTN_QUIET}>
                     Annulla
                   </button>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center justify-between gap-2">
-                <span>
-                  {occurrence ?? gloss ?? "—"}
-                  {occurrence && gloss && occurrence !== gloss && (
-                    <span className="block text-xs font-normal text-gray-500">{gloss}</span>
-                  )}
-                  {occurrenceError && (
-                    <span className="block text-xs font-normal text-red-600">
-                      {occurrenceError}{" "}
-                      <button
-                        type="button"
-                        onClick={runLookup}
-                        className="underline hover:text-red-700"
-                      >
-                        Riprova
-                      </button>
-                    </span>
-                  )}
-                </span>
+              <>
+                <div className="font-serif text-lg font-semibold">{occurrence ?? gloss ?? "—"}</div>
+                {occurrence && gloss && occurrence !== gloss && (
+                  <div className="mt-1 font-serif text-ink-2">
+                    <span className="font-sans text-xs font-medium text-ink-3">Forma base: </span>
+                    {gloss}
+                  </div>
+                )}
+                {occurrenceError && (
+                  <p className={`${ERROR_LINE} mt-1`} title={occurrenceError}>
+                    Il significato in questa frase non è disponibile.
+                    <button type="button" onClick={runLookup} className={RETRY}>
+                      Riprova
+                    </button>
+                  </p>
+                )}
                 {token.lemmaId != null && (
-                  <span className="flex gap-2 text-xs text-gray-400">
+                  <div className="mt-2 -ml-2 flex gap-1">
                     <button
                       type="button"
                       onClick={() => {
                         setDraft(gloss ?? "");
                         setEditing(true);
                       }}
-                      className="underline hover:text-gray-700"
+                      className={TOOL}
                     >
+                      <Pencil size={15} />
                       Modifica
                     </button>
-                    <button
-                      type="button"
-                      onClick={regenerate}
-                      className="underline hover:text-gray-700"
-                    >
+                    <button type="button" onClick={regenerate} className={TOOL}>
+                      <RefreshCw size={15} />
                       Rigenera
                     </button>
-                  </span>
+                  </div>
                 )}
-              </div>
+              </>
             )}
           </dd>
         </div>
       </dl>
 
       {mwe && (
-        <p className="mt-4 text-sm text-gray-600">
-          Parte di:{" "}
+        <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-ink-2">
+          Parte di:
           <button
             type="button"
+            lang="pl"
             onClick={() => onSelectMwe?.(mwe)}
-            className="font-serif font-semibold text-blue-600 underline"
+            className="min-h-11 font-serif text-md font-semibold text-accent-ink underline decoration-word-mwe decoration-dotted decoration-2 underline-offset-[0.3em]"
           >
             {mwe.headword}
           </button>
@@ -389,22 +468,13 @@ export function WordPanel({
         <button
           type="button"
           disabled={marking}
-          onClick={async () => {
-            if (
-              !window.confirm(
-                `«${token.lemma}» non verrà più riconosciuta come espressione. Puoi ripristinarla da Maintenance.`,
-              )
+          onClick={() =>
+            suppress(
+              suppressMweFn,
+              `«${token.lemma}» non verrà più riconosciuta come espressione. Puoi ripristinarla da Manutenzione.`,
             )
-              return;
-            setMarking(true);
-            try {
-              await suppressMweFn({ data: { lemmaId: token.lemmaId as number } });
-              onSuppressed?.();
-            } finally {
-              setMarking(false);
-            }
-          }}
-          className="mt-4 text-sm text-gray-500 underline hover:text-gray-700 disabled:opacity-50"
+          }
+          className={SUPPRESS}
         >
           Non è un'espressione
         </button>
@@ -414,150 +484,249 @@ export function WordPanel({
         <button
           type="button"
           disabled={marking}
-          onClick={async () => {
-            if (
-              !window.confirm(
-                `«${token.lemma}» non verrà più riconosciuta come formula: torna al verbo.`,
-              )
+          onClick={() =>
+            suppress(
+              suppressFormulaFn,
+              `«${token.lemma}» non verrà più riconosciuta come formula: torna al verbo.`,
             )
-              return;
-            setMarking(true);
-            setSuppressError(null);
-            try {
-              await suppressFormulaFn({ data: { lemmaId: token.lemmaId as number } });
-              onSuppressed?.();
-            } catch (err) {
-              setSuppressError(err instanceof Error ? err.message : "Non riuscito.");
-            } finally {
-              setMarking(false);
-            }
-          }}
-          className="mt-4 text-sm text-gray-500 underline hover:text-gray-700 disabled:opacity-50"
+          }
+          className={SUPPRESS}
         >
           Non è una formula
         </button>
       )}
-      {suppressError && <p className="mt-1 text-sm text-red-600">{suppressError}</p>}
+      {suppressError && <p className={ERROR_LINE}>{suppressError}</p>}
 
-      {dict && dict.matchedBy !== null && <DictSection dict={dict} />}
-
-      <div className="mt-6 flex gap-2">
-        <button
-          type="button"
-          disabled={marking}
-          onClick={() => mark(RATING_KNOWN)}
-          className="rounded bg-green-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-        >
-          Mark known
-        </button>
-        <button
-          type="button"
-          disabled={marking}
-          onClick={() => mark(RATING_LEARNING)}
-          className="rounded border border-gray-300 px-3 py-1.5 text-sm disabled:opacity-50"
-        >
-          Still learning
-        </button>
-      </div>
+      {dict && dict.matchedBy !== null && <DictSection dict={dict} surface={token.surface} />}
 
       {wiktionary && (
         <a
           href={wiktionary}
           target="_blank"
           rel="noreferrer"
-          className="mt-6 inline-block text-sm text-blue-600 underline"
+          className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-accent-ink"
         >
-          Wiktionary ↗
+          Wiktionary
+          <ExternalLink size={16} />
         </a>
       )}
     </PanelShell>
   );
 }
 
+const CHIP =
+  "inline-flex min-h-11 items-center gap-2 rounded-full bg-accent-soft px-4 py-2 text-sm font-semibold text-accent-ink";
+const SUPPRESS = "mt-2 block min-h-11 text-sm text-ink-3 underline disabled:opacity-50";
+
 /** Slim panel for an inflected Name: base form and case only (CONTEXT.md "Name"). */
 export function NamePanel({ token, onClose }: { token: ReaderToken; onClose: () => void }) {
+  const name = nameForm(token.surface, token.lemma ?? "", token.tags);
+  if (!name) return null;
   return (
-    <PanelShell onClose={onClose}>
-      <p className="pr-6 text-lg font-medium">
-        {nameLabel(token.surface, token.lemma ?? "", token.tags)}
+    <PanelShell
+      label="Nome proprio"
+      onClose={onClose}
+      title={
+        <b lang="pl" className="font-serif text-2xl font-bold">
+          {name.word}
+        </b>
+      }
+    >
+      <p className="mt-2 mb-2 font-serif text-lg font-semibold">
+        <span lang="pl">
+          {name.word} → {name.base}
+        </span>
+        {name.case && (
+          <>
+            {" "}
+            <CasePill case={name.case.key} label={name.case.label} />{" "}
+            <small className="font-sans text-sm font-normal text-ink-3">
+              {name.number && `${name.number} `}(<span lang="pl">{name.case.polish}</span>)
+            </small>
+          </>
+        )}
       </p>
+      <p className={LABEL}>Nome proprio</p>
     </PanelShell>
   );
 }
 
-function PanelShell({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+// A bottom sheet in the narrow layout; in the wide layout the Reader's side column holds it.
+function PanelShell({
+  label,
+  title,
+  footer,
+  onClose,
+  children,
+}: {
+  label: string;
+  title: ReactNode;
+  footer?: ReactNode;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const sheet = useRef<HTMLElement>(null);
+  const dragStart = useRef<number | null>(null);
+  const dragged = (e: React.PointerEvent) =>
+    dragStart.current === null ? 0 : Math.max(0, e.clientY - dragStart.current);
   return (
-    <aside className="fixed right-0 top-0 h-full w-80 overflow-y-auto border-l border-gray-200 bg-white p-6 shadow-lg">
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Close"
-        className="absolute right-4 top-4 text-gray-400 hover:text-gray-700"
+    <section
+      ref={sheet}
+      aria-label={label}
+      className="absolute inset-x-0 bottom-0 z-10 flex max-h-[80%] animate-sheet-in flex-col rounded-t-lg bg-panel font-sans text-base text-ink shadow-sheet motion-reduce:animate-none sm:static sm:max-h-none sm:min-h-0 sm:flex-1 sm:animate-none sm:rounded-none sm:bg-transparent sm:shadow-none"
+    >
+      {/* A pointer-only twin of the Chiudi button: the sheet follows a downward drag,
+          closes on a tap or a drag past a quarter of its height, and snaps back otherwise. */}
+      <div
+        aria-hidden
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          dragStart.current = e.clientY;
+          if (sheet.current) sheet.current.style.transition = "none";
+        }}
+        onPointerMove={(e) => {
+          if (sheet.current && dragStart.current !== null)
+            sheet.current.style.transform = `translateY(${dragged(e)}px)`;
+        }}
+        onPointerUp={(e) => {
+          const dy = dragged(e);
+          dragStart.current = null;
+          const el = sheet.current;
+          if (!el) return;
+          if (dy < 4 || dy > el.offsetHeight / 4) return onClose();
+          el.style.transition = "transform 0.2s ease-out";
+          el.style.transform = "";
+        }}
+        onPointerCancel={() => {
+          dragStart.current = null;
+          if (sheet.current) sheet.current.style.transform = "";
+        }}
+        className="flex h-6 shrink-0 cursor-grab touch-none justify-center pt-2 sm:hidden"
       >
-        ✕
-      </button>
-      {children}
-    </aside>
+        <div className="h-1 w-10 rounded-full bg-ink-3/30" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto px-5 pb-5">
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1 pt-2">{title}</div>
+          <button type="button" onClick={onClose} aria-label="Chiudi" className={ICON_BUTTON}>
+            <X size={20} />
+          </button>
+        </div>
+        {children}
+      </div>
+      {footer && (
+        <div className="flex shrink-0 gap-3 border-t border-rule px-4 pt-3 pb-4 *:flex-1">
+          {footer}
+        </div>
+      )}
+    </section>
+  );
+}
+
+const CASE_BG: Record<CaseKey, string> = {
+  nom: "bg-case-nom",
+  gen: "bg-case-gen",
+  dat: "bg-case-dat",
+  acc: "bg-case-acc",
+  ins: "bg-case-ins",
+  loc: "bg-case-loc",
+  voc: "bg-case-voc",
+};
+
+function CasePill({ case: key, label }: { case: CaseKey; label: string }) {
+  return (
+    <span
+      className={`inline-block rounded-full px-3 py-0.5 align-[3px] font-sans text-xs font-semibold text-white ${CASE_BG[key]}`}
+    >
+      {label}
+    </span>
   );
 }
 
 const SENSE_PREVIEW = 5;
+const DETAILS = "group border-t border-rule";
+const SUMMARY =
+  "flex min-h-11 cursor-pointer list-none items-center gap-2 text-sm font-semibold text-ink-2 [&::-webkit-details-marker]:hidden";
+const CHEVRON = "transition-transform group-open:rotate-90";
 
 // Home-dictionary reference block: senses (+ tags), inflection forms and
 // etymology per entry. Multiple entries per word are legitimate (one per
 // etymology section in the dump).
-function DictSection({ dict }: { dict: DictLookupResult }) {
+function DictSection({ dict, surface }: { dict: DictLookupResult; surface: string }) {
   const [showAll, setShowAll] = useState(false);
+  const here = surface.trim().toLowerCase();
   return (
-    <div className="mt-6 border-t border-gray-100 pt-4 text-sm">
-      <h3 className="font-semibold text-gray-700">Dizionario</h3>
-      {dict.entries.map((entry, ei) => {
+    <div className="mt-5 border-t border-rule pt-4">
+      <h3 className={`${LABEL} mb-2`}>Dizionario</h3>
+      {dict.entries.map((entry) => {
         const senses = showAll ? entry.senses : entry.senses.slice(0, SENSE_PREVIEW);
         return (
-          <div key={entry.id} className={ei > 0 ? "mt-3" : "mt-1"}>
+          <div key={entry.id}>
             {/* On a pos-mismatched (lemma-only) match, label each entry. */}
             {dict.matchedBy === "lemma" && (
-              <div className="text-xs uppercase text-gray-400">{entry.pos}</div>
+              <div className={`${LABEL} mt-3`}>{posLabel(entry.pos)}</div>
             )}
-            <ol className="list-decimal space-y-1 pl-5">
-              {senses.map((s, i) => (
-                <li key={i}>
-                  {s.italian && <span className="font-semibold">{s.italian} — </span>}
-                  <span>{s.gloss}</span>
-                  {s.tags.length > 0 && (
-                    <span className="ml-1 text-xs text-gray-400">{s.tags.join(" ")}</span>
-                  )}
-                </li>
-              ))}
+            <ol className="grid list-decimal gap-2 pl-[1.4em] font-serif text-[16px] leading-[1.45] marker:font-sans marker:text-sm marker:text-ink-3">
+              {senses.map((s, i) => {
+                const tags = italianTags(s.tags);
+                return (
+                  <li key={i}>
+                    {s.italian && <span className="font-semibold">{s.italian} — </span>}
+                    <span className="text-ink-2">{s.gloss}</span>
+                    {tags && <span className="ml-1 font-sans text-xs text-ink-3">{tags}</span>}
+                  </li>
+                );
+              })}
             </ol>
             {entry.senses.length > SENSE_PREVIEW && (
               <button
                 type="button"
                 onClick={() => setShowAll((v) => !v)}
-                className="mt-1 text-xs text-blue-600 underline"
+                className="min-h-11 text-sm font-semibold text-accent-ink"
               >
                 {showAll ? "mostra meno" : `mostra tutte (${entry.senses.length})`}
               </button>
             )}
             {entry.forms.length > 0 && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs text-gray-500">
+              <details className={DETAILS}>
+                <summary className={SUMMARY}>
+                  <ChevronRight size={17} className={CHEVRON} />
                   Forme ({entry.forms.length})
                 </summary>
-                <ul className="mt-1 space-y-0.5 text-xs">
-                  {entry.forms.map((f, i) => (
-                    <li key={i} className="flex justify-between gap-2">
-                      <span className="text-gray-400">{f.tags.join(" ")}</span>
-                      <span className="font-medium">{f.form}</span>
-                    </li>
-                  ))}
+                <ul className="mb-2 grid gap-1">
+                  {entry.forms.map((f, i) => {
+                    const { pill, rest } = caseOfForm(f.tags);
+                    const isHere = f.form.toLowerCase() === here;
+                    return (
+                      <li
+                        key={i}
+                        className="flex items-center justify-between gap-3 py-1 text-sm text-ink-3"
+                      >
+                        <span className="flex min-w-0 flex-wrap items-center gap-2">
+                          {pill && <CasePill case={pill.key} label={pill.label} />}
+                          {italianTags(rest)}
+                        </span>
+                        <span
+                          lang="pl"
+                          className={`font-serif text-[16px] ${isHere ? "font-bold text-accent-ink" : "font-medium text-ink"}`}
+                        >
+                          {f.form}
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </details>
             )}
             {entry.etymology && (
-              <details className="mt-2">
-                <summary className="cursor-pointer text-xs text-gray-500">Etimologia</summary>
-                <p className="mt-1 text-xs text-gray-600">{entry.etymology}</p>
+              <details className={DETAILS}>
+                <summary className={SUMMARY}>
+                  <ChevronRight size={17} className={CHEVRON} />
+                  Etimologia
+                </summary>
+                <p className="mb-2 font-serif text-sm leading-normal whitespace-pre-wrap text-ink-2">
+                  {entry.etymology}
+                </p>
               </details>
             )}
           </div>

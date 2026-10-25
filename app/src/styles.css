@@ -59,6 +59,12 @@
   --color-case-ins: #6d28d9;
   --color-case-loc: #0f766e;
   --color-case-voc: #9f1239;
+  --color-good: #2e7d4f;
+  --color-good-soft: #e2f1e7;
+  --color-good-ink: #1e5c39;
+  --color-bad: #b42318;
+  --color-bad-soft: #fbe4e1;
+  --color-bad-ink: #8f1c13;
 
   --text-xs: 12.5px;
   --text-xs--line-height: 1.4;
@@ -84,6 +90,14 @@
   --shadow-card: 0 12px 30px -10px rgb(40 30 60 / 0.28), 0 2px 6px rgb(40 30 60 / 0.06);
   --shadow-sheet: 0 -14px 40px -8px rgb(40 30 60 / 0.3);
   --shadow-button: 0 2px 6px -2px color-mix(in srgb, var(--color-accent) 60%, transparent);
+
+  --animate-sheet-in: sheet-in 0.42s cubic-bezier(0.22, 1.25, 0.36, 1);
+
+  @keyframes sheet-in {
+    from {
+      transform: translateY(100%);
+    }
+  }
 }
 
 * {
