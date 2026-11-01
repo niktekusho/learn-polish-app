@@ -27,6 +27,8 @@ git worktree add -q --detach "$rel" "$new"
 if ! (
   cd "$rel" &&
     pnpm install --frozen-lockfile &&
+    pnpm --filter app typecheck &&
+    pnpm --filter app test &&
     VITE_GIT_SHA="$new" pnpm --filter app build &&
     cd sidecar && uv sync --frozen
 ) >"$log" 2>&1; then

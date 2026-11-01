@@ -40,7 +40,14 @@ on the phone.
 - **Release:** merge to `main`, `git push`. Live within ~2 minutes.
 - **Deploy now** instead of waiting: `launchctl kickstart gui/$UID/com.niktekusho.learn-polish-deploy`
 - **Try a branch on the phone:** `pnpm dev` in that checkout, open the test-env URL. It uses
-  that checkout's `app/data/app.db`, never the prod DB.
+  that checkout's `app/data/app.db`, never the prod DB. `pnpm dev` starts the app and a dev
+  sidecar on `:8000`. To run only the app, `SIDECAR_URL=http://localhost:10001 pnpm dev:app`
+  reuses the prod sidecar, which is safe because the sidecar stores nothing.
+- **Screenshot a page:** `scripts/shoot.sh <path> <out.png> [W,H]` against the dev server
+  (`BASE_URL` overrides). Sizes for the three prototype frames are in the script.
+- **Deploy gate:** a deploy runs `typecheck` and `test` before `build`; a red one becomes a
+  failed deploy. Commits run `vp fmt`, `vp lint`, the plural check, and reject a
+  `Co-Authored-By` line.
 - **Repair names + backfill morph tags** (maintenance page): run once on prod after the deploy that stops tracking
   names as vocabulary (#2), with the sidecar up. It cleans names imported before then and
   re-analyzes older texts to store their morph tags; texts the sidecar could not analyze
@@ -54,9 +61,8 @@ on the phone.
   corrects episodes with non-Polish words or grammar errors (_torta_ → _tort_) in place and
   lists every change; an episode whose correction fails is listed and left unchanged, and a
   rerun retries it. Try it on a copy of the prod DB first.
-- **Refresh the dev DB with real data:**
-  `sqlite3 ~/Library/Application\ Support/learn-polish/app.db ".backup app/data/app.db"`
-  (stop `pnpm dev` first).
+- **Refresh the dev DB with real data:** stop `pnpm dev`, then `pnpm db:prod-copy`. It keeps
+  the old dev DB as `app/data/app.db.before-prod-copy-<time>`.
 
 ## Rollback
 
