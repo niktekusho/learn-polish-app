@@ -1,4 +1,16 @@
-import { and, countDistinct, desc, eq, gte, inArray, lt, min, ne, notExists } from "drizzle-orm";
+import {
+  and,
+  count,
+  countDistinct,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lt,
+  min,
+  ne,
+  notExists,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
@@ -182,12 +194,28 @@ export function practiceLine(db: DB, lemmaIds: number[], startedAt: Date): strin
   return parts.join(" · ");
 }
 
+/** A text's word count: its tokens with a lemma, so punctuation is left out. */
+export function wordCount(db: DB, textId: number): number {
+  const [{ n }] = db
+    .select({ n: count(token.lemmaId) })
+    .from(token)
+    .where(eq(token.textId, textId))
+    .all();
+  return n;
+}
+
+/** One-line note after an Episode: its count of new lemmas. */
+export function episodeLine(db: DB, textId: number): string {
+  const n = newLemmaCount(db, textId);
+  return `+${n} ${plural(n, "parola nuova incontrata", "parole nuove incontrate")}`;
+}
+
 /**
- * One-line note after an Episode: its lemmas no earlier text contained, names excluded.
+ * Lemmas of a text that no earlier text contained, names excluded.
  * ponytail: token lemmas only; MWE occurrences are not counted. A name the
  * analyzer mistags as NOUN still counts.
  */
-export function episodeLine(db: DB, textId: number): string {
+export function newLemmaCount(db: DB, textId: number): number {
   const earlier = alias(token, "earlier");
   const [{ n }] = db
     .select({ n: countDistinct(token.lemmaId) })
@@ -206,5 +234,5 @@ export function episodeLine(db: DB, textId: number): string {
       ),
     )
     .all();
-  return `+${n} ${plural(n, "parola nuova incontrata", "parole nuove incontrate")}`;
+  return n;
 }

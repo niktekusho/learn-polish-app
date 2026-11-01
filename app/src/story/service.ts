@@ -8,7 +8,7 @@ import { importAnalysis } from "#/import/checked-import";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import type { StoryPremise, StoryProvider } from "#/llm/provider";
 import { proofreadText } from "#/proofread/proofread";
-import { episodeLine, recordActivity } from "#/recap/service";
+import { episodeLine, newLemmaCount, recordActivity, wordCount } from "#/recap/service";
 
 type DB = BetterSQLite3Database<typeof schema>;
 type StoryRow = typeof story.$inferSelect;
@@ -243,11 +243,21 @@ export function storyService(db: DB, deps: StoryDeps) {
         totalEpisodes: s.plannedEpisodes,
         // The next episode may not be generated yet: then it is the one after the last.
         nextEpisode: all.find((e) => e.readAt === null)?.episodeNumber ?? all.length + 1,
-        episodes: all.map((e) => ({
-          textId: e.id,
-          episodeNumber: e.episodeNumber as number,
-          read: e.readAt !== null,
-        })),
+        episodes: all.map((e) => {
+          const n = e.episodeNumber as number;
+          return {
+            textId: e.id,
+            episodeNumber: n,
+            readAt: e.readAt,
+            words: wordCount(db, e.id),
+            newWords: newLemmaCount(db, e.id),
+            // The outline beat summarizes the episode: shown once read, it spoils nothing.
+            // Beats start with the "episodio N:" the outline prompt asks for.
+            summary: e.readAt
+              ? (s.outline.beats[n - 1]?.replace(/^\s*episodio\s+\d+\s*:\s*/i, "") ?? null)
+              : null,
+          };
+        }),
       };
     },
   };

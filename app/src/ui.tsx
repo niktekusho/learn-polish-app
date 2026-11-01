@@ -7,6 +7,7 @@ export const BTN_PRIMARY = `${BTN} bg-accent text-white shadow-button`;
 export const BTN_QUIET = `${BTN} border-[1.5px] border-accent/45 bg-panel text-accent-ink`;
 export const BTN_GOOD = `${BTN} border-[1.5px] border-good bg-good-soft text-good-ink`;
 export const BTN_BAD = `${BTN} border-[1.5px] border-bad bg-bad-soft text-bad-ink`;
+export const BTN_DANGER = `${BTN} bg-bad text-white`;
 export const LABEL_TYPE = "font-sans text-xs font-semibold tracking-[0.06em] uppercase";
 export const LABEL = `${LABEL_TYPE} text-ink-3`;
 export const TOOL =
