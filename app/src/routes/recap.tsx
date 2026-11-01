@@ -2,7 +2,8 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Check, Flame } from "lucide-react";
 import type { RecapWord } from "#/recap/service";
-import { BTN_PRIMARY, BTN_QUIET, ICON_BUTTON, LABEL_TYPE, TRACK, plural, streakDays } from "#/ui";
+import { BTN_PRIMARY, BTN_QUIET, ICON_BUTTON, LABEL_TYPE, TRACK, streakDays } from "#/ui";
+import { plural } from "#/plural";
 
 const getRecapFn = createServerFn().handler(async () => {
   const { db } = await import("#/db/index");

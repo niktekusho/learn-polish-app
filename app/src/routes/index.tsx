@@ -3,16 +3,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { ArrowRight, ChevronRight, Ellipsis, FilePlus, Flame, Wrench } from "lucide-react";
 import { useState } from "react";
 import type { Track } from "#/fsrs/index";
-import {
-  BTN_PRIMARY,
-  BTN_QUIET,
-  ICON_BUTTON,
-  LABEL_TYPE,
-  TRACK,
-  Tick,
-  plural,
-  streakDays,
-} from "#/ui";
+import { BTN_PRIMARY, BTN_QUIET, ICON_BUTTON, LABEL_TYPE, TRACK, Tick, streakDays } from "#/ui";
+import { plural } from "#/plural";
 
 // Imported texts, newest first, with their word counts (punctuation has no lemma).
 const listTexts = createServerFn().handler(async () => {

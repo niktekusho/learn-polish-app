@@ -20,8 +20,8 @@ import {
   LABEL,
   LABEL_TYPE,
   Tick,
-  plural,
 } from "#/ui";
+import { plural } from "#/plural";
 
 // Build a new session, or resume the held one by id (reload/refocus). No LLM
 // calls: buildSession only reads cached glosses. A new session takes the unseen

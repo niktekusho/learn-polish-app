@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { plural } from "#/plural";
 
 const BTN =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded px-4 py-3 text-center text-base leading-tight font-semibold disabled:opacity-45 disabled:shadow-none";
@@ -27,7 +28,6 @@ export const CHOICE_STATE = {
   off: "border-rule bg-panel opacity-55",
 };
 
-export const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 export const streakDays = (n: number) => `${plural(n, "giorno", "giorni")} di fila`;
 
 export const TRACK = {

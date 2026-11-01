@@ -5,6 +5,7 @@ import * as schema from "#/db/schema";
 import { dailyActivity, gloss, lemma, reviewLog, token } from "#/db/schema";
 import { MATURE_DAYS, type Track, startOfDay } from "#/fsrs/index";
 import { NAME_POS } from "#/reader/name";
+import { plural } from "#/plural";
 
 type DB = BetterSQLite3Database<typeof schema>;
 export type ActivityKind = "practice" | "episode";
@@ -173,10 +174,10 @@ export function getRecap(db: DB, now = new Date()): Recap {
 export function practiceLine(db: DB, lemmaIds: number[], startedAt: Date): string {
   const s = summarize(db, startedAt, undefined, lemmaIds);
   const parts = [
-    `+${s.stronger.count} ${s.stronger.count === 1 ? "parola più solida" : "parole più solide"}`,
+    `+${s.stronger.count} ${plural(s.stronger.count, "parola più solida", "parole più solide")}`,
   ];
   if (s.matured.count > 0) {
-    parts.push(`${s.matured.count} ${s.matured.count === 1 ? "consolidata" : "consolidate"}`);
+    parts.push(`${s.matured.count} ${plural(s.matured.count, "consolidata", "consolidate")}`);
   }
   return parts.join(" · ");
 }
@@ -205,5 +206,5 @@ export function episodeLine(db: DB, textId: number): string {
       ),
     )
     .all();
-  return `+${n} ${n === 1 ? "parola nuova incontrata" : "parole nuove incontrate"}`;
+  return `+${n} ${plural(n, "parola nuova incontrata", "parole nuove incontrate")}`;
 }
