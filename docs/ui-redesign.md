@@ -61,8 +61,9 @@ Color is both semantic and decorative:
 ## Copy
 
 All UI copy is Italian (CONTEXT.md **L1**). The table below is the default copy for
-prototypes. Each screen's labels are settled in its prototype review; a label lands in
-CONTEXT.md ("Shown in the UI as _x_") only when its screen ships.
+prototypes. Each screen's labels are settled in its prototype review. When the screen ships,
+the label of each glossary term it shows lands in CONTEXT.md ("Shown in the UI as _x_");
+other strings live only in the code.
 
 | Term or string | Label |
 |---|---|
@@ -200,7 +201,8 @@ Weights: Literata 400, 600, 700 and italic 400; Inter 400, 500, 600, 700.
 
 4px steps: `1` 4, `2` 8, `3` 12, `4` 16, `5` 20, `6` 24, `8` 32. Screen gutter 16px on the
 phone, 20–28px wide. Every touch target is at least 44px; Reader words pad vertically to
-fill the line box.
+fill the line box. Two half steps are allowed: `py-1.5` for the 56px top bar and `0.5` for 2px
+hairlines. `scripts/check-spacing.sh` enforces this on commit.
 
 ### Radius
 
@@ -263,6 +265,10 @@ extracted only when a second screen needs it.
   `sqlite3 ~/Library/Application\ Support/learn-polish/app.db ".backup <scratch>/snapshot.db"`.
   The prod DB is never opened any other way.
 - Static HTML, clickable where it matters (tap a word, answer an item).
+- Review bench: copy the newest screen's artifact (Story, slug
+  `210ccbd8-f074-488d-b164-1f4354171749`; artifact tools need the slug, not the short link). It
+  has the three frames, full screen, bench states and review questions saved to the `review/main`
+  db document. Publish first, then declare `{db: {}}`.
 
 ### Conversation spec
 

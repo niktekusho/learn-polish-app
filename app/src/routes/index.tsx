@@ -77,7 +77,7 @@ function Home() {
         </button>
         {menu && <div aria-hidden className="fixed inset-0 z-10" onClick={() => setMenu(false)} />}
         {menu && (
-          <div className="absolute top-full right-3 z-20 grid min-w-[210px] rounded bg-panel p-1.5 shadow-card">
+          <div className="absolute top-full right-3 z-20 grid min-w-[210px] rounded bg-panel p-2 shadow-card">
             <MenuLink to="/import" icon={<FilePlus size={20} />} label="Importa testo" />
             <MenuLink to="/maintenance" icon={<Wrench size={20} />} label="Manutenzione" />
           </div>
@@ -88,7 +88,7 @@ function Home() {
         <section className={`${CARD} grid gap-1 p-4 pb-3`}>
           <div className="flex min-h-7 items-center justify-between gap-3">
             <h2 className={SECTION_HEAD}>Oggi</h2>
-            <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-2 tabular-nums">
+            <span className="inline-flex items-center gap-2 text-sm font-medium text-ink-2 tabular-nums">
               <Flame size={18} className="text-productive" />
               {recap.streak} {streakDays(recap.streak)}
             </span>
@@ -101,7 +101,7 @@ function Home() {
               next={!recap.practiceDone}
               go="Inizia"
             >
-              <p className="mt-1.5 ml-11 text-xs text-ink-3">Da ripassare</p>
+              <p className="mt-2 ml-11 text-xs text-ink-3">Da ripassare</p>
               <div className="mt-1 mb-1 ml-11 grid grid-cols-3 gap-2">
                 {(Object.keys(TRACK) as Track[]).map((t) => (
                   <TrackCount key={t} track={t} {...tracks[t]} />
@@ -128,7 +128,7 @@ function Home() {
           {recap.complete && (
             <Link
               to="/recap"
-              className="flex min-h-11 items-center gap-1.5 border-t border-rule pt-2 font-semibold text-accent-ink"
+              className="flex min-h-11 items-center gap-2 border-t border-rule pt-2 font-semibold text-accent-ink"
             >
               Giornata completa: vedi il riepilogo <ArrowRight size={18} />
             </Link>
@@ -153,13 +153,13 @@ function Home() {
               </Link>
             </div>
           ) : (
-            <ul className="-mx-2.5 divide-y divide-rule tall:min-h-0 tall:overflow-auto tall:overscroll-contain">
+            <ul className="-mx-3 divide-y divide-rule tall:min-h-0 tall:overflow-auto tall:overscroll-contain">
               {texts.map((t) => (
                 <li key={t.id}>
                   <Link
                     to="/read/$textId"
                     params={{ textId: String(t.id) }}
-                    className="flex min-h-13 items-center gap-3 px-2.5 py-2"
+                    className="flex min-h-13 items-center gap-3 px-3 py-2"
                   >
                     <span className="min-w-0 flex-1 font-serif text-[16px] leading-[1.3]">
                       {t.title || `Testo #${t.id}`}
@@ -191,7 +191,7 @@ function MenuLink({
   return (
     <Link
       to={to}
-      className="flex min-h-11 items-center gap-2.5 rounded px-3 py-2 font-medium active:bg-accent-soft [&>svg]:text-ink-2"
+      className="flex min-h-11 items-center gap-3 rounded px-3 py-2 font-medium active:bg-accent-soft [&>svg]:text-ink-2"
     >
       {icon}
       {label}
@@ -247,7 +247,7 @@ function TrackCount({ track, due, mature }: { track: Track; due: number; mature:
   const t = TRACK[track];
   return (
     <div className="grid min-w-0 gap-0.5 py-1.5">
-      <span className={`flex min-w-0 items-center gap-1.5 text-xs font-semibold ${t.ink}`}>
+      <span className={`flex min-w-0 items-center gap-2 text-xs font-semibold ${t.ink}`}>
         <i className={`size-[9px] shrink-0 rounded-full ${t.dot}`} />
         <span className="truncate">{t.name}</span>
       </span>

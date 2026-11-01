@@ -9,7 +9,8 @@ Read during review. Tooling already enforces formatting (`vp fmt`), lint (`vp li
 - [AGENTS.md](./AGENTS.md): deterministic first. An LLM call needs a case no data or rule
   decides, and its output is validated against deterministic data before it is stored.
 - [CONTEXT.md](./CONTEXT.md): domain terms. Code and UI copy use the glossary term. A screen
-  that ships records each new label as "Shown in the UI as _x_".
+  that ships records how each glossary term it shows appears, as "Shown in the UI as _x_".
+  CONTEXT.md is a glossary: other UI copy (buttons, headings) lives only in the code.
 - [docs/ui-redesign.md](./docs/ui-redesign.md): tokens, type scale, spacing, copy and
   accessibility for every screen. Colors come from `@theme` tokens.
 - [docs/adr/](./docs/adr/): decisions a change must keep or explicitly supersede.

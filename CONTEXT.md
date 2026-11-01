@@ -239,15 +239,12 @@ meaning layered on top. See ADR-0002. Shown in the UI as _Dizionario_.
 **Story**:
 An LLM-generated serial fiction at the learner's level, built from known lemmas plus
 ~10% new ones. Its outline and episode count (at most 10) are set when the learner picks
-one of the proposed premises. Shown in the UI as _Storia_. The premise choice is shown as
-_Scegli una storia_, with _Altre idee_ for a new set; ending a story early as _Abbandona la
-storia_.
+one of the proposed premises. Shown in the UI as _Storia_.
 
 **Episode**:
 One installment of a **Story**, stored and read as a normal imported text. Episodes and
 **Conversations** alternate day by day; one of them plus one **Practice** session make the
-daily routine. Shown in the UI as _Episodio_. The story page lists read ones under _Episodi
-precedenti_, each with _Rileggi_, and counts them as _8 di 10 episodi letti_.
+daily routine. Shown in the UI as _Episodio_.
 _Avoid_: chapter, chunk, puntata
 
 **Streak**:

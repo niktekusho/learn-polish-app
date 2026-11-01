@@ -1,6 +1,7 @@
 # Project rules
 
 Read [CONTEXT.md](./CONTEXT.md) for the domain language and [docs/adr/](./docs/adr/) for past decisions.
+Running the app, screenshots, phone testing and deploys: [docs/operations.md](./docs/operations.md).
 
 ## Deterministic first
 
