@@ -152,6 +152,7 @@ dues yields its share to the others; weakest first within each track), and rende
 through an applicable **Exercise**, interleaved rather than grouped by track. Without a
 mic, only tracks that need no speaking take part. A lemma graded on a track today is not
 drawn for that track again until tomorrow: same-day repetition is the **Retry**'s job.
+Shown in the UI as _Pratica_.
 _Avoid_: lesson, review session
 
 **Retry**:
@@ -245,6 +246,18 @@ One installment of a **Story**, stored and read as a normal imported text. Episo
 **Conversations** alternate day by day; one of them plus one **Practice** session make the
 daily routine. Shown in the UI as _Episodio_.
 _Avoid_: chapter, chunk
+
+**Streak**:
+Consecutive days with at least one part of the daily routine done. A today with nothing
+done yet does not break it: it ends yesterday until the day is over. Shown in the UI as
+_giorni di fila_.
+
+**Recap**:
+Today's progress, derived from the review log and never stored: new lemmas, lemmas whose
+stability grew, lemmas that became **Mature** (each with the track that moved it), and the
+**Streak**. Shown in the UI as _Riepilogo di oggi_, or _Giornata completa_ once the whole
+daily routine is done.
+_Avoid_: summary, report
 
 **Proofread**:
 The check every LLM-generated Polish text (an **Episode**, a generated **Passage

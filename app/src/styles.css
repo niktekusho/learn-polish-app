@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* A landscape phone is wide but short: a second scroll area inside a 360px window fights the page scroll. */
+@custom-variant tall (@media (width >= 40rem) and (height >= 32rem));
+
 @font-face {
   font-family: Literata;
   src: url("/fonts/literata.woff2") format("woff2");
@@ -65,6 +68,14 @@
   --color-bad: #b42318;
   --color-bad-soft: #fbe4e1;
   --color-bad-ink: #8f1c13;
+  --color-recap-top: #fbf7f0;
+  --color-recap-mid: #f6f0f4;
+  --color-recap-low: #f1ebf6;
+  --color-recap-peach: #fbe3d4;
+  --color-recap-sky: #e6e9fb;
+  --color-glow-receptive: rgb(36 87 197 / 0.32);
+  --color-glow-productive: rgb(194 65 12 / 0.3);
+  --color-glow-pronunciation: rgb(122 53 214 / 0.32);
 
   --text-xs: 12.5px;
   --text-xs--line-height: 1.4;
@@ -92,12 +103,33 @@
   --shadow-button: 0 2px 6px -2px color-mix(in srgb, var(--color-accent) 60%, transparent);
 
   --animate-sheet-in: sheet-in 0.42s cubic-bezier(0.22, 1.25, 0.36, 1);
+  --animate-rise: rise 0.5s cubic-bezier(0.22, 1.25, 0.36, 1) both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+  }
 
   @keyframes sheet-in {
     from {
       transform: translateY(100%);
     }
   }
+}
+
+/* Recap ground, the Chiaro palette in docs/ui-redesign.md. */
+@utility bg-recap {
+  background:
+    radial-gradient(520px 300px at 50% 112%, var(--color-recap-peach) 0%, transparent 70%),
+    radial-gradient(480px 320px at 108% -8%, var(--color-recap-sky) 0%, transparent 70%),
+    linear-gradient(
+      180deg,
+      var(--color-recap-top) 0%,
+      var(--color-recap-mid) 60%,
+      var(--color-recap-low) 100%
+    );
 }
 
 * {

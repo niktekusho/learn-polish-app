@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import { plural } from "#/plural";
 
 const BTN =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded px-4 py-3 text-center text-base leading-tight font-semibold disabled:opacity-45 disabled:shadow-none";
@@ -25,6 +26,32 @@ export const CHOICE_STATE = {
   right: "border-good bg-good-soft text-good-ink",
   wrong: "border-bad bg-bad-soft text-bad-ink",
   off: "border-rule bg-panel opacity-55",
+};
+
+export const streakDays = (n: number) => `${plural(n, "giorno", "giorni")} di fila`;
+
+export const TRACK = {
+  receptive: {
+    name: "Capire",
+    dot: "bg-receptive",
+    ink: "text-receptive-ink",
+    color: "var(--color-receptive)",
+    glow: "var(--color-glow-receptive)",
+  },
+  productive: {
+    name: "Ricordare",
+    dot: "bg-productive",
+    ink: "text-productive-ink",
+    color: "var(--color-productive)",
+    glow: "var(--color-glow-productive)",
+  },
+  pronunciation: {
+    name: "Pronunciare",
+    dot: "bg-pronunciation",
+    ink: "text-pronunciation-ink",
+    color: "var(--color-pronunciation)",
+    glow: "var(--color-glow-pronunciation)",
+  },
 };
 
 export function Tick() {

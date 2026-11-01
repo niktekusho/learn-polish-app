@@ -157,6 +157,15 @@ test("marking an episode read records the day, sets read_at and prepares the nex
   expect(provider.calls.episode).toBe(2);
 });
 
+test("the active story names its next episode: the first unread, generated or not", async () => {
+  const { svc } = setup(3);
+  const ep1 = (await svc.startStory(PREMISE))!;
+  expect(svc.activeStory()?.nextEpisode).toBe(1);
+
+  await svc.markEpisodeRead(ep1.textId);
+  expect(svc.activeStory()?.nextEpisode).toBe(2);
+});
+
 test("the planned last episode finishes the story", async () => {
   const { db, provider, svc } = setup(1);
   const ep1 = (await svc.startStory(PREMISE))!;

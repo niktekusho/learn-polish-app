@@ -9,6 +9,7 @@ import type { ClientPracticeItem } from "#/practice/session";
 import { Corrections } from "#/report/Corrections";
 import { wordPattern } from "#/reader/word-pattern";
 import {
+  TRACK,
   BTN_BAD,
   BTN_GOOD,
   BTN_PRIMARY,
@@ -20,6 +21,7 @@ import {
   LABEL_TYPE,
   Tick,
 } from "#/ui";
+import { plural } from "#/plural";
 
 // Build a new session, or resume the held one by id (reload/refocus). No LLM
 // calls: buildSession only reads cached glosses. A new session takes the unseen
@@ -179,27 +181,6 @@ type SpeechPhase =
 type Hint = { lemma: string; difficulty: number; due: Date };
 type Kind = ClientPracticeItem["kind"];
 
-const TRACK = {
-  receptive: {
-    name: "Capire",
-    dot: "bg-receptive",
-    ink: "text-receptive-ink",
-    color: "var(--color-receptive)",
-  },
-  productive: {
-    name: "Ricordare",
-    dot: "bg-productive",
-    ink: "text-productive-ink",
-    color: "var(--color-productive)",
-  },
-  pronunciation: {
-    name: "Pronunciare",
-    dot: "bg-pronunciation",
-    ink: "text-pronunciation-ink",
-    color: "var(--color-pronunciation)",
-  },
-};
-
 // The hue an item carries: the track its first answer grades.
 const EXERCISE: Record<Kind, { name: string; track: keyof typeof TRACK }> = {
   "recognition-mcq": { name: "Riconosci", track: "receptive" },
@@ -315,8 +296,8 @@ function PracticeSession() {
       <Screen bar={<Bar done={1}>{micToggle}</Bar>}>
         <End title="Sessione completata">
           <p className="text-ink-2 tabular-nums">
-            {firsts.length} {firsts.length === 1 ? "ripassata" : "ripassate"} · {correctCount}{" "}
-            {correctCount === 1 ? "giusta" : "giuste"}
+            {firsts.length} {plural(firsts.length, "ripassata", "ripassate")} · {correctCount}{" "}
+            {plural(correctCount, "giusta", "giuste")}
           </p>
           <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm font-semibold tabular-nums">
             {perTrack
@@ -966,6 +947,6 @@ function hintText(h: Hint): string {
       ? `${min} min`
       : min < 1440
         ? `${Math.round(min / 60)} h`
-        : `${days} ${days === 1 ? "giorno" : "giorni"}`;
+        : `${days} ${plural(days, "giorno", "giorni")}`;
   return `pronuncia ${band} · torna tra ${when}`;
 }

@@ -1,4 +1,4 @@
-import { and, asc, eq, exists, isNull, lt, lte, ne, or } from "drizzle-orm";
+import { and, asc, count, eq, exists, gte, isNull, lt, lte, ne, or } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import {
   type Card,
@@ -34,6 +34,9 @@ type CardFields = Pick<
 
 // FSRS State enum values we branch on.
 const STATE_NEW = 0;
+
+/** CONTEXT.md "Mature": stability of 21 days on a track. */
+export const MATURE_DAYS = 21;
 
 // Default cap on brand-new cards introduced per session (see dueLemmas).
 export const DEFAULT_NEW_CARD_LIMIT = 10;
@@ -159,6 +162,38 @@ export interface DueLemma {
 }
 
 /**
+ * Single-word exercises have no meaning for a context-bound lemma. Filtered in
+ * the query, not at render, so it can't take a slot. Receptive keeps it when a
+ * prepared passage question can carry the meaning.
+ */
+function singleWordOk(db: DB, track: Track) {
+  const notContextBound = eq(lemma.contextBound, false);
+  if (track === "pronunciation") return undefined;
+  if (track === "productive") return notContextBound;
+  return or(
+    notContextBound,
+    exists(
+      db
+        .select({ id: passageQuestion.id })
+        .from(passageQuestion)
+        .where(eq(passageQuestion.lemmaId, lemma.id)),
+    ),
+  );
+}
+
+/** A review (not a New card) Practice may draw on `track` now. Needs `lemma` joined. */
+function reviewDue(db: DB, track: Track, now: Date) {
+  return and(
+    eq(knowledge.track, track),
+    lte(knowledge.due, now),
+    or(isNull(knowledge.lastReview), lt(knowledge.lastReview, startOfDay(now))),
+    ne(knowledge.state, STATE_NEW),
+    isNull(lemma.flaggedAt),
+    singleWordOk(db, track),
+  );
+}
+
+/**
  * Due lemmas for a track, with New-card introduction gated. Import makes every
  * lemma due immediately with stability 0, so a naive weakest-first order lets
  * one pasted article bury genuine reviews forever. Rule (#8): actual reviews
@@ -191,39 +226,11 @@ export function dueLemmas(
     contextBound: lemma.contextBound,
   };
 
-  // Single-word exercises have no meaning for a context-bound lemma. Filtered
-  // here, not at render, so it can't take a slot. Receptive keeps it when a
-  // prepared passage question can carry the meaning.
-  const notContextBound = eq(lemma.contextBound, false);
-  const singleWordOk =
-    track === "pronunciation"
-      ? undefined
-      : track === "receptive"
-        ? or(
-            notContextBound,
-            exists(
-              db
-                .select({ id: passageQuestion.id })
-                .from(passageQuestion)
-                .where(eq(passageQuestion.lemmaId, lemma.id)),
-            ),
-          )
-        : notContextBound;
-
   const reviews = db
     .select(cols)
     .from(knowledge)
     .innerJoin(lemma, eq(knowledge.lemmaId, lemma.id))
-    .where(
-      and(
-        eq(knowledge.track, track),
-        lte(knowledge.due, now),
-        or(isNull(knowledge.lastReview), lt(knowledge.lastReview, startOfDay(now))),
-        ne(knowledge.state, STATE_NEW),
-        isNull(lemma.flaggedAt),
-        singleWordOk,
-      ),
-    )
+    .where(reviewDue(db, track, now))
     .orderBy(asc(knowledge.stability), asc(knowledge.due))
     .limit(limit)
     .all();
@@ -240,7 +247,7 @@ export function dueLemmas(
             lte(knowledge.due, now),
             eq(knowledge.state, STATE_NEW),
             isNull(lemma.flaggedAt),
-            singleWordOk,
+            singleWordOk(db, track),
           ),
         )
         .orderBy(asc(knowledge.due))
@@ -249,6 +256,31 @@ export function dueLemmas(
     : [];
 
   return [...reviews, ...news] as DueLemma[];
+}
+
+/** Per track: reviews due now (what Practice draws from, uncapped) and Mature lemmas. */
+export function trackCounts(
+  db: DB,
+  now = new Date(),
+): Record<Track, { due: number; mature: number }> {
+  const counts = (track: Track) => ({
+    due: db
+      .select({ n: count() })
+      .from(knowledge)
+      .innerJoin(lemma, eq(knowledge.lemmaId, lemma.id))
+      .where(reviewDue(db, track, now))
+      .all()[0].n,
+    mature: db
+      .select({ n: count() })
+      .from(knowledge)
+      .where(and(eq(knowledge.track, track), gte(knowledge.stability, MATURE_DAYS)))
+      .all()[0].n,
+  });
+  return {
+    receptive: counts("receptive"),
+    productive: counts("productive"),
+    pronunciation: counts("pronunciation"),
+  };
 }
 
 /** Base forms of every lemma in the store (any knowledge row): LLM writing fuel. */

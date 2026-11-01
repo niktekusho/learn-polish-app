@@ -234,13 +234,16 @@ export function storyService(db: DB, deps: StoryDeps) {
     activeStory() {
       const s = activeStory();
       if (!s) return null;
+      const all = episodes(s.id);
       return {
         id: s.id,
         title: s.title,
         genre: s.genre,
         hook: s.hook,
         totalEpisodes: s.plannedEpisodes,
-        episodes: episodes(s.id).map((e) => ({
+        // The next episode may not be generated yet: then it is the one after the last.
+        nextEpisode: all.find((e) => e.readAt === null)?.episodeNumber ?? all.length + 1,
+        episodes: all.map((e) => ({
           textId: e.id,
           episodeNumber: e.episodeNumber as number,
           read: e.readAt !== null,

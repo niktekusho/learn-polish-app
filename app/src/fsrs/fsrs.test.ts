@@ -1,9 +1,17 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { eq } from "drizzle-orm";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
-import { Rating, dueLemmas, gradeLemma, initialKnowledgeFields, nextPracticeDue } from "./index";
+import {
+  Rating,
+  dueLemmas,
+  gradeLemma,
+  initialKnowledgeFields,
+  nextPracticeDue,
+  trackCounts,
+} from "./index";
 
 function freshDb() {
   const sqlite = new Database(":memory:");
@@ -127,4 +135,39 @@ test("a card graded today is not due again until tomorrow", () => {
       .sort(),
   ).toEqual(["dobrze", "zle"]);
   expect(nextPracticeDue(new Date(2026, 0, 1, 8, 10), morning)).toEqual(new Date(2026, 0, 2));
+});
+
+test("track counts give each track's reviews due now and its mature lemmas", () => {
+  const db = freshDb();
+  const now = new Date(2026, 0, 10, 12, 0);
+  const card = (
+    word: string,
+    track: "receptive" | "productive",
+    fields: { state: number; stability: number; due: Date; lastReview?: Date },
+  ) => {
+    const lemmaId = addLemma(db, word);
+    db.insert(schema.knowledge)
+      .values({ lemmaId, track, ...initialKnowledgeFields(now), ...fields })
+      .run();
+    return lemmaId;
+  };
+  const yesterday = new Date(2026, 0, 9);
+  card("kot", "receptive", { state: 2, stability: 3, due: yesterday });
+  card("pies", "receptive", { state: 2, stability: 30, due: new Date(2026, 1, 1) }); // mature, not due
+  card("nowy", "receptive", { state: 0, stability: 0, due: yesterday }); // new: not a review
+  card("dzis", "receptive", {
+    state: 1,
+    stability: 1,
+    due: yesterday,
+    lastReview: new Date(2026, 0, 10, 9),
+  });
+  const flagged = card("zly", "receptive", { state: 2, stability: 3, due: yesterday });
+  db.update(schema.lemma).set({ flaggedAt: now }).where(eq(schema.lemma.id, flagged)).run();
+  card("dom", "productive", { state: 2, stability: 21, due: yesterday }); // due and mature
+
+  expect(trackCounts(db, now)).toEqual({
+    receptive: { due: 1, mature: 1 },
+    productive: { due: 1, mature: 1 },
+    pronunciation: { due: 0, mature: 0 },
+  });
 });

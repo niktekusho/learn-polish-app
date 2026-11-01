@@ -2,21 +2,27 @@ import { and, countDistinct, desc, eq, gte, inArray, lt, min, ne, notExists } fr
 import { alias } from "drizzle-orm/sqlite-core";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
-import { dailyActivity, lemma, reviewLog, token } from "#/db/schema";
-import { startOfDay } from "#/fsrs/index";
+import { dailyActivity, gloss, lemma, reviewLog, token } from "#/db/schema";
+import { MATURE_DAYS, type Track, startOfDay } from "#/fsrs/index";
 import { NAME_POS } from "#/reader/name";
+import { plural } from "#/plural";
 
 type DB = BetterSQLite3Database<typeof schema>;
 export type ActivityKind = "practice" | "episode";
 
-/** CONTEXT.md "Mature": stability of 21 days on a track. */
-const MATURE_DAYS = 21;
 const EXAMPLES = 3;
+
+/** A word shown in the recap: the track that moved it today and its lemma gloss. */
+export interface RecapWord {
+  lemma: string;
+  track: Track;
+  italian: string | null;
+}
 
 export interface Recap {
   newWords: number;
-  stronger: { count: number; examples: string[] };
-  matured: { count: number; examples: string[] };
+  stronger: { count: number; examples: RecapWord[] };
+  matured: { count: number; examples: RecapWord[] };
   streak: number;
   practiceDone: boolean;
   episodeDone: boolean;
@@ -99,36 +105,56 @@ function summarize(db: DB, from: Date, to?: Date, lemmaIds?: number[]) {
     .select({
       lemmaId: reviewLog.lemmaId,
       lemma: lemma.lemma,
+      track: reviewLog.track,
       before: reviewLog.stabilityBefore,
       after: reviewLog.stabilityAfter,
     })
     .from(reviewLog)
     .innerJoin(lemma, eq(lemma.id, reviewLog.lemmaId))
     .where(and(gte(reviewLog.reviewedAt, from), to && lt(reviewLog.reviewedAt, to), scope))
+    .orderBy(reviewLog.reviewedAt)
     .all();
 
-  const gain = new Map<number, { lemma: string; gain: number }>();
-  const matured = new Map<number, string>();
+  type Moved = { lemmaId: number; lemma: string; track: Track };
+  const gain = new Map<number, Moved & { gain: number }>();
+  const matured = new Map<number, Moved>();
   for (const r of rows) {
     if (r.before == null || r.after == null) continue;
     const g = r.after - r.before;
-    if (g > 0 && g > (gain.get(r.lemmaId)?.gain ?? 0)) {
-      gain.set(r.lemmaId, { lemma: r.lemma, gain: g });
+    if (g > 0 && g > (gain.get(r.lemmaId)?.gain ?? 0)) gain.set(r.lemmaId, { ...r, gain: g });
+    if (r.before < MATURE_DAYS && r.after >= MATURE_DAYS && !matured.has(r.lemmaId)) {
+      matured.set(r.lemmaId, r);
     }
-    if (r.before < MATURE_DAYS && r.after >= MATURE_DAYS) matured.set(r.lemmaId, r.lemma);
   }
 
+  const strongest = [...gain.values()].sort((a, b) => b.gain - a.gain).slice(0, EXAMPLES);
+  const italian = lemmaGlosses(
+    db,
+    [...strongest, ...matured.values()].map((m) => m.lemmaId),
+  );
+  const word = (m: Moved): RecapWord => ({
+    lemma: m.lemma,
+    track: m.track,
+    italian: italian.get(m.lemmaId) ?? null,
+  });
   return {
     newWords,
-    stronger: {
-      count: gain.size,
-      examples: [...gain.values()]
-        .sort((a, b) => b.gain - a.gain)
-        .slice(0, EXAMPLES)
-        .map((x) => x.lemma),
-    },
-    matured: { count: matured.size, examples: [...matured.values()] },
+    stronger: { count: gain.size, examples: strongest.map(word) },
+    matured: { count: matured.size, examples: [...matured.values()].map(word) },
   };
+}
+
+/** The lemma gloss (the sense='' row) of each lemma that has one. */
+function lemmaGlosses(db: DB, lemmaIds: number[]): Map<number, string> {
+  if (lemmaIds.length === 0) return new Map();
+  return new Map(
+    db
+      .select({ lemmaId: gloss.lemmaId, italian: gloss.italian })
+      .from(gloss)
+      .where(and(inArray(gloss.lemmaId, lemmaIds), eq(gloss.sense, "")))
+      .all()
+      .map((g) => [g.lemmaId, g.italian]),
+  );
 }
 
 /** The daily recap for `now`'s local day. Derived, nothing stored. */
@@ -148,10 +174,10 @@ export function getRecap(db: DB, now = new Date()): Recap {
 export function practiceLine(db: DB, lemmaIds: number[], startedAt: Date): string {
   const s = summarize(db, startedAt, undefined, lemmaIds);
   const parts = [
-    `+${s.stronger.count} ${s.stronger.count === 1 ? "parola più solida" : "parole più solide"}`,
+    `+${s.stronger.count} ${plural(s.stronger.count, "parola più solida", "parole più solide")}`,
   ];
   if (s.matured.count > 0) {
-    parts.push(`${s.matured.count} ${s.matured.count === 1 ? "consolidata" : "consolidate"}`);
+    parts.push(`${s.matured.count} ${plural(s.matured.count, "consolidata", "consolidate")}`);
   }
   return parts.join(" · ");
 }
@@ -180,5 +206,5 @@ export function episodeLine(db: DB, textId: number): string {
       ),
     )
     .all();
-  return `+${n} ${n === 1 ? "parola nuova incontrata" : "parole nuove incontrate"}`;
+  return `+${n} ${plural(n, "parola nuova incontrata", "parole nuove incontrate")}`;
 }
