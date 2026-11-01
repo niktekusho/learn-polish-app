@@ -166,6 +166,24 @@ test("the active story names its next episode: the first unread, generated or no
   expect(svc.activeStory()?.nextEpisode).toBe(2);
 });
 
+test("an episode shows its outline beat as a summary only once read", async () => {
+  const { db, svc } = setup(3);
+  const ep1 = (await svc.startStory(PREMISE))!;
+  db.update(schema.story)
+    .set({
+      outline: { plot: "", characters: [], beats: ["episodio 1: Ala trova un gatto.", "b2", "b3"] },
+    })
+    .run();
+  expect(svc.activeStory()?.episodes[0]).toMatchObject({ readAt: null, summary: null });
+
+  await svc.markEpisodeRead(ep1.textId);
+  await svc.currentEpisode();
+  const [first, second] = svc.activeStory()!.episodes;
+  expect(first).toMatchObject({ summary: "Ala trova un gatto.", words: 22 });
+  expect(first.readAt).not.toBeNull();
+  expect(second).toMatchObject({ readAt: null, summary: null });
+});
+
 test("the planned last episode finishes the story", async () => {
   const { db, provider, svc } = setup(1);
   const ep1 = (await svc.startStory(PREMISE))!;

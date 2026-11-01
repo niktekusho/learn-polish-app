@@ -136,7 +136,7 @@ Every text pair below meets WCAG AA (contrast ratios in parentheses).
 | `word-name` | `#6B3F78` | Ink of a tappable Name (7.2:1) |
 | `case-nom` … `case-voc` | `#4B5563` `#B4235A` `#B45309` `#1D6FA5` `#6D28D9` `#0F766E` `#9F1239` | Solid case pills, white text (nom, gen, dat, acc, ins, loc, voc; lowest 5.0:1) |
 | `good` / `-soft` / `-ink` | `#2E7D4F` / `#E2F1E7` / `#1E5C39` | Right answer: border / fill / text (6.8:1 on soft) |
-| `bad` / `-soft` / `-ink` | `#B42318` / `#FBE4E1` / `#8F1C13` | Wrong answer and error lines (ink 7.4:1 on soft, 8.8:1 on panel) |
+| `bad` / `-soft` / `-ink` | `#B42318` / `#FBE4E1` / `#8F1C13` | Wrong answer and error lines (ink 7.4:1 on soft, 8.8:1 on panel); white on `bad` (6.6:1) for a destructive confirm button |
 
 A known word has no mark. The selected word gets a 2px `accent` outline. The `-soft` track
 tints stay unused on Home (neutral rows won the round), so they are kept only if a later
@@ -148,7 +148,7 @@ Two grounds drawn for the Recap in the #14 prototype
 ([artifact](https://claude.ai/artifact/665WVFxc1Uxf8YSMCoMQBH), variants E and F). Chiaro
 won the review and ships: its colors are `recap-*` and `glow-*` in `@theme`, the ground is the
 `bg-recap` utility, and its words are set in Literata 600 at 40px (52px on desktop) with the
-gloss in italic 15px, a display size outside the type scale. Scuro stays out of `@theme`. Each consolidated word glows
+gloss in italic 15px, a display size outside the type scale. The Story cover title is the other display size: Literata 700 at 34px (52px on desktop). Scuro stays out of `@theme`. Each consolidated word glows
 in the hue of the track that consolidated it, as a `text-shadow` (`0 0 22–26px`). The glow
 is decoration only: the word, its gloss and its track stay readable without it.
 
