@@ -27,24 +27,30 @@ export const CHOICE_STATE = {
   off: "border-rule bg-panel opacity-55",
 };
 
+export const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
+export const streakDays = (n: number) => `${plural(n, "giorno", "giorni")} di fila`;
+
 export const TRACK = {
   receptive: {
     name: "Capire",
     dot: "bg-receptive",
     ink: "text-receptive-ink",
     color: "var(--color-receptive)",
+    glow: "var(--color-glow-receptive)",
   },
   productive: {
     name: "Ricordare",
     dot: "bg-productive",
     ink: "text-productive-ink",
     color: "var(--color-productive)",
+    glow: "var(--color-glow-productive)",
   },
   pronunciation: {
     name: "Pronunciare",
     dot: "bg-pronunciation",
     ink: "text-pronunciation-ink",
     color: "var(--color-pronunciation)",
+    glow: "var(--color-glow-pronunciation)",
   },
 };
 

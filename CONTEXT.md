@@ -247,6 +247,18 @@ One installment of a **Story**, stored and read as a normal imported text. Episo
 daily routine. Shown in the UI as _Episodio_.
 _Avoid_: chapter, chunk
 
+**Streak**:
+Consecutive days with at least one part of the daily routine done. A today with nothing
+done yet does not break it: it ends yesterday until the day is over. Shown in the UI as
+_giorni di fila_.
+
+**Recap**:
+Today's progress, derived from the review log and never stored: new lemmas, lemmas whose
+stability grew, lemmas that became **Mature** (each with the track that moved it), and the
+**Streak**. Shown in the UI as _Riepilogo di oggi_, or _Giornata completa_ once the whole
+daily routine is done.
+_Avoid_: summary, report
+
 **Proofread**:
 The check every LLM-generated Polish text (an **Episode**, a generated **Passage
 exercise** passage) passes before it is stored. The **Home dictionary** flags non-name

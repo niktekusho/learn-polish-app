@@ -111,6 +111,7 @@ function summarize(db: DB, from: Date, to?: Date, lemmaIds?: number[]) {
     .from(reviewLog)
     .innerJoin(lemma, eq(lemma.id, reviewLog.lemmaId))
     .where(and(gte(reviewLog.reviewedAt, from), to && lt(reviewLog.reviewedAt, to), scope))
+    .orderBy(reviewLog.reviewedAt)
     .all();
 
   type Moved = { lemmaId: number; lemma: string; track: Track };

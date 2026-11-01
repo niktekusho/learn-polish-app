@@ -3,7 +3,16 @@ import { createServerFn } from "@tanstack/react-start";
 import { ArrowRight, ChevronRight, Ellipsis, FilePlus, Flame, Wrench } from "lucide-react";
 import { useState } from "react";
 import type { Track } from "#/fsrs/index";
-import { BTN_PRIMARY, ICON_BUTTON, LABEL_TYPE, TRACK, Tick } from "#/ui";
+import {
+  BTN_PRIMARY,
+  BTN_QUIET,
+  ICON_BUTTON,
+  LABEL_TYPE,
+  TRACK,
+  Tick,
+  plural,
+  streakDays,
+} from "#/ui";
 
 // Imported texts, newest first, with their word counts (punctuation has no lemma).
 const listTexts = createServerFn().handler(async () => {
@@ -35,7 +44,7 @@ const getToday = createServerFn().handler(async () => {
     tracks: trackCounts(db),
     episode: story && {
       title: story.title,
-      number: story.episodes.find((e) => !e.read)?.episodeNumber ?? story.episodes.length + 1,
+      number: story.nextEpisode,
       total: story.totalEpisodes,
     },
   };
@@ -58,7 +67,10 @@ function Home() {
   const [menu, setMenu] = useState(false);
   return (
     <div className="min-h-dvh bg-paper font-sans text-base text-ink">
-      <header className="relative mx-auto flex max-w-[1100px] items-center justify-between gap-2 pt-5 pr-2 pb-1 pl-5 sm:pt-3 sm:pl-6 lg:pt-8">
+      <header
+        onKeyDown={(e) => e.key === "Escape" && setMenu(false)}
+        className="relative mx-auto flex max-w-[1100px] items-center justify-between gap-2 pt-5 pr-2 pb-1 pl-5 sm:pt-3 sm:pl-6 lg:pt-8"
+      >
         <h1 className="font-serif text-2xl font-bold tracking-[-0.01em] sm:text-xl lg:text-2xl">
           Impara il polacco
         </h1>
@@ -71,6 +83,7 @@ function Home() {
         >
           <Ellipsis size={20} />
         </button>
+        {menu && <div aria-hidden className="fixed inset-0 z-10" onClick={() => setMenu(false)} />}
         {menu && (
           <div className="absolute top-full right-3 z-20 grid min-w-[210px] rounded bg-panel p-1.5 shadow-card">
             <MenuLink to="/import" icon={<FilePlus size={20} />} label="Importa testo" />
@@ -85,7 +98,7 @@ function Home() {
             <h2 className={SECTION_HEAD}>Oggi</h2>
             <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-2 tabular-nums">
               <Flame size={18} className="text-productive" />
-              {recap.streak} {recap.streak === 1 ? "giorno" : "giorni"} di fila
+              {recap.streak} {streakDays(recap.streak)}
             </span>
           </div>
           <ul className="grid divide-y divide-rule">
@@ -138,16 +151,15 @@ function Home() {
             <h2 className={SECTION_HEAD}>Testi</h2>
           </div>
           {texts.length === 0 ? (
-            <p className="py-2 font-serif text-[16px] leading-normal text-ink-2">
-              Nessun testo.{" "}
-              <Link
-                to="/import"
-                className="font-semibold text-accent-ink underline underline-offset-[0.2em]"
-              >
+            <div className="grid justify-items-start gap-3 py-2">
+              <p className="font-serif text-[16px] leading-normal text-ink-2">
+                Nessun testo. Importane uno per iniziare a leggere.
+              </p>
+              <Link to="/import" className={BTN_QUIET}>
+                <FilePlus size={18} />
                 Importa un testo
-              </Link>{" "}
-              per iniziare a leggere.
-            </p>
+              </Link>
+            </div>
           ) : (
             <ul className="-mx-2.5 divide-y divide-rule tall:min-h-0 tall:overflow-auto tall:overscroll-contain">
               {texts.map((t) => (
@@ -161,7 +173,7 @@ function Home() {
                       {t.title || `Testo #${t.id}`}
                     </span>
                     <span className="text-sm whitespace-nowrap text-ink-3 tabular-nums">
-                      {t.words} {t.words === 1 ? "parola" : "parole"}
+                      {t.words} {plural(t.words, "parola", "parole")}
                     </span>
                     <ChevronRight size={18} className="shrink-0 text-ink-3" />
                   </Link>
@@ -249,7 +261,7 @@ function TrackCount({ track, due, mature }: { track: Track; due: number; mature:
       </span>
       <span className={`text-2xl font-bold tabular-nums ${t.ink}`}>{due}</span>
       <span className="text-xs text-ink-3 tabular-nums">
-        {mature} {mature === 1 ? "consolidata" : "consolidate"}
+        {mature} {plural(mature, "consolidata", "consolidate")}
       </span>
     </div>
   );

@@ -20,6 +20,7 @@ import {
   LABEL,
   LABEL_TYPE,
   Tick,
+  plural,
 } from "#/ui";
 
 // Build a new session, or resume the held one by id (reload/refocus). No LLM
@@ -295,8 +296,8 @@ function PracticeSession() {
       <Screen bar={<Bar done={1}>{micToggle}</Bar>}>
         <End title="Sessione completata">
           <p className="text-ink-2 tabular-nums">
-            {firsts.length} {firsts.length === 1 ? "ripassata" : "ripassate"} · {correctCount}{" "}
-            {correctCount === 1 ? "giusta" : "giuste"}
+            {firsts.length} {plural(firsts.length, "ripassata", "ripassate")} · {correctCount}{" "}
+            {plural(correctCount, "giusta", "giuste")}
           </p>
           <div className="flex flex-wrap justify-center gap-x-4 gap-y-2 text-sm font-semibold tabular-nums">
             {perTrack
@@ -946,6 +947,6 @@ function hintText(h: Hint): string {
       ? `${min} min`
       : min < 1440
         ? `${Math.round(min / 60)} h`
-        : `${days} ${days === 1 ? "giorno" : "giorni"}`;
+        : `${days} ${plural(days, "giorno", "giorni")}`;
   return `pronuncia ${band} · torna tra ${when}`;
 }

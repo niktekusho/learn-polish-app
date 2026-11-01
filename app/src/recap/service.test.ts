@@ -113,6 +113,15 @@ test("recap words carry the track that moved them and the lemma gloss", () => {
   ]);
 });
 
+test("a consolidated word carries the track that crossed 21 days first in time", () => {
+  const db = freshDb();
+  const kot = addLemma(db, "kot");
+  review(db, kot, new Date(2026, 9, 14, 18, 0), 18, 22, "productive"); // logged first, later time
+  review(db, kot, new Date(2026, 9, 14, 8, 0), 15, 25); // morning
+
+  expect(getRecap(db, TODAY).matured.examples[0].track).toBe("receptive");
+});
+
 test("gradeLemma logs stability before and after", () => {
   const db = freshDb();
   const kot = addLemma(db, "kot");
