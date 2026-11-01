@@ -130,9 +130,9 @@ function Home() {
           )}
         </section>
 
-        {/* Wide: the list scrolls inside its card so a long list leaves Oggi alone (#24). */}
+        {/* Wide and tall: the list scrolls inside its card so a long list leaves Oggi alone (#24). */}
         <section
-          className={`${CARD} grid min-w-0 gap-1 px-4 pt-4 pb-2 sm:sticky sm:top-3 sm:flex sm:max-h-[calc(100dvh-24px)] sm:flex-col sm:overflow-hidden`}
+          className={`${CARD} grid min-w-0 gap-1 px-4 pt-4 pb-2 tall:sticky tall:top-3 tall:flex tall:max-h-[calc(100dvh-24px)] tall:flex-col tall:overflow-hidden`}
         >
           <div className="flex min-h-7 items-center">
             <h2 className={SECTION_HEAD}>Testi</h2>
@@ -149,7 +149,7 @@ function Home() {
               per iniziare a leggere.
             </p>
           ) : (
-            <ul className="-mx-2.5 divide-y divide-rule sm:min-h-0 sm:overflow-auto sm:overscroll-contain">
+            <ul className="-mx-2.5 divide-y divide-rule tall:min-h-0 tall:overflow-auto tall:overscroll-contain">
               {texts.map((t) => (
                 <li key={t.id}>
                   <Link

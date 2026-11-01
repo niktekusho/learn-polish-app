@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* A landscape phone is wide but short: a second scroll area inside a 360px window fights the page scroll. */
+@custom-variant tall (@media (width >= 40rem) and (height >= 32rem));
+
 @font-face {
   font-family: Literata;
   src: url("/fonts/literata.woff2") format("woff2");
