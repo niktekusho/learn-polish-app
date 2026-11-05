@@ -127,6 +127,20 @@
       "when": 1793916666704,
       "tag": "0017_yellow_synch",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1793920249182,
+      "tag": "0018_light_starjammers",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1793920638883,
+      "tag": "0019_drop_generated_passages",
+      "breakpoints": true
     }
   ]
 }

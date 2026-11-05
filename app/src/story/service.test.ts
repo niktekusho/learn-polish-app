@@ -63,8 +63,10 @@ function fakeProvider(beats: number, drafts: (string | Error)[] = []) {
     name: "stub" as const,
     calls: { premises: 0, outline: 0, episode: 0 },
     episodeRequests: [] as EpisodeRequest[],
-    async premises() {
+    pastGenres: [] as string[][],
+    async premises(pastGenres: string[]) {
       this.calls.premises++;
+      this.pastGenres.push(pastGenres);
       return [PREMISE, PREMISE, PREMISE];
     },
     async outline() {
@@ -74,7 +76,7 @@ function fakeProvider(beats: number, drafts: (string | Error)[] = []) {
     async episode(req: EpisodeRequest) {
       this.calls.episode++;
       this.episodeRequests.push(req);
-      const next = drafts.shift() ?? draft(2, `e${req.episodeNumber}`);
+      const next = drafts.shift() ?? draft(3, `e${req.episodeNumber}`);
       if (next instanceof Error) throw next;
       return next;
     },
@@ -84,7 +86,11 @@ function fakeProvider(beats: number, drafts: (string | Error)[] = []) {
     async correct(text: string) {
       return text;
     },
-  } satisfies StoryProvider & { calls: Record<string, number>; episodeRequests: EpisodeRequest[] };
+  } satisfies StoryProvider & {
+    calls: Record<string, number>;
+    episodeRequests: EpisodeRequest[];
+    pastGenres: string[][];
+  };
 }
 
 function setup(beats = 3, drafts: (string | Error)[] = []) {
@@ -102,6 +108,24 @@ test("premises come from the provider, not persisted", async () => {
   expect(db.select().from(schema.story).all()).toHaveLength(0);
 });
 
+test("premises are asked to avoid the genres of stories already ended", async () => {
+  const { db, provider, svc } = setup();
+  const row = {
+    hook: "h",
+    outline: { plot: "p", characters: [], beats: ["b"] },
+    plannedEpisodes: 1,
+  };
+  db.insert(schema.story)
+    .values([
+      { ...row, title: "a", genre: "giallo", status: "finished" },
+      { ...row, title: "b", genre: "giallo", status: "abandoned" },
+      { ...row, title: "c", genre: "fantasy", status: "active" },
+    ])
+    .run();
+  await svc.proposePremises();
+  expect(provider.pastGenres).toEqual([["giallo"]]);
+});
+
 test("starting a story persists it and episode 1 as an imported text", async () => {
   const { db, provider, svc } = setup(3);
   const ep = await svc.startStory(PREMISE);
@@ -113,7 +137,7 @@ test("starting a story persists it and episode 1 as an imported text", async () 
   expect(text).toMatchObject({ id: ep?.textId, storyId: story.id, episodeNumber: 1 });
   expect(db.select().from(schema.token).all().length).toBeGreaterThan(0);
   expect(provider.calls).toMatchObject({ outline: 1, episode: 1 });
-  expect(provider.episodeRequests[0].knownLemmas).toEqual(expect.arrayContaining(KNOWN));
+  expect(provider.episodeRequests[0]).toMatchObject({ newShare: 0.15, feedback: undefined });
 });
 
 test("planned episode count is clamped to 10", async () => {
@@ -123,10 +147,18 @@ test("planned episode count is clamped to 10", async () => {
 });
 
 test("a draft far off the level is regenerated; one within range is accepted", async () => {
-  const { db, provider, svc } = setup(3, [draft(9), draft(2, "b")]); // 31% new, then 9%
+  const { db, provider, svc } = setup(3, [draft(9), draft(3, "b")]); // 31% new, then 13%
   await svc.startStory(PREMISE);
   expect(provider.calls.episode).toBe(2);
-  expect(db.select().from(schema.sourceText).all()[0].content).toBe(draft(2, "b"));
+  expect(db.select().from(schema.sourceText).all()[0].content).toBe(draft(3, "b"));
+});
+
+test("a redraft is told the level of the rejected draft", async () => {
+  const { provider, svc } = setup(3, [draft(9), draft(3, "b")]);
+  await svc.startStory(PREMISE);
+  const [, retry] = provider.episodeRequests;
+  expect(retry.feedback?.share).toBeCloseTo(9 / 29);
+  expect(retry.feedback?.newWords).toHaveLength(9);
 });
 
 test("after 2 retries the closest draft is accepted", async () => {
@@ -149,7 +181,7 @@ test("marking an episode read records the day, sets read_at and prepares the nex
   const ep2 = await svc.currentEpisode(); // waits on the background generation
   expect(ep2).toMatchObject({ episodeNumber: 2 });
   expect(provider.calls.episode).toBe(2);
-  expect(provider.episodeRequests[1].previous).toEqual([ep1.content]);
+  expect(provider.episodeRequests[1].previous).toBe(ep1.content);
 
   // Read twice: nothing new happens.
   await svc.markEpisodeRead(ep1.textId);
@@ -179,7 +211,7 @@ test("an episode shows its outline beat as a summary only once read", async () =
   await svc.markEpisodeRead(ep1.textId);
   await svc.currentEpisode();
   const [first, second] = svc.activeStory()!.episodes;
-  expect(first).toMatchObject({ summary: "Ala trova un gatto.", words: 22 });
+  expect(first).toMatchObject({ summary: "Ala trova un gatto.", words: 23 });
   expect(first.readAt).not.toBeNull();
   expect(second).toMatchObject({ readAt: null, summary: null });
 });
@@ -204,7 +236,7 @@ test("reading the last episode of an abandoned story does not finish it", async 
 });
 
 test("a failed background generation is retried when the episode is asked for", async () => {
-  const { provider, svc } = setup(3, [draft(2), new Error("LLM down")]);
+  const { provider, svc } = setup(3, [draft(3), new Error("LLM down")]);
   const ep1 = (await svc.startStory(PREMISE))!;
   await svc.markEpisodeRead(ep1.textId);
   expect(await svc.currentEpisode()).toMatchObject({ episodeNumber: 2 });
@@ -242,14 +274,14 @@ function seedDictionary(db: DB, words: string[]) {
   }
 }
 
-// draft(2) with a non-Polish word; the dictionary has every other word.
+// draft(3) with a non-Polish word; the dictionary has every other word.
 function tortaSetup() {
   const db = freshDb();
   seedKnown(db);
-  seedDictionary(db, [...KNOWN, "nowea0", "nowea1"]);
+  seedDictionary(db, [...KNOWN, "nowea0", "nowea1", "nowea2"]);
   const provider = new StubProvider();
   provider.outline = async () => ({ plot: "p", characters: [], beats: ["b1", "b2"] });
-  provider.episode = async () => `${draft(2)} torta`;
+  provider.episode = async () => `${draft(3)} torta`;
   return { db, provider };
 }
 
@@ -260,7 +292,7 @@ test("a drafted episode with a non-Polish word is stored corrected", async () =>
   const ep = await svc.startStory(PREMISE);
 
   expect(correct).toHaveBeenCalledTimes(1);
-  expect(ep?.content).toBe(draft(2));
+  expect(ep?.content).toBe(draft(3));
   const surfaces = db
     .select()
     .from(schema.token)
@@ -271,7 +303,7 @@ test("a drafted episode with a non-Polish word is stored corrected", async () =>
 
 test("a clean episode makes one proofread call and no correction", async () => {
   const { db, provider } = tortaSetup();
-  provider.episode = async () => draft(2);
+  provider.episode = async () => draft(3);
   const proofread = vi.spyOn(provider, "proofread");
   const correct = vi.spyOn(provider, "correct");
   await storyService(db, { provider, analyze: fakeAnalyze, mweHeadwords: new Map() }).startStory(

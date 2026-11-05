@@ -94,9 +94,13 @@ export async function getGloss(
   const offered = senses.flatMap((s) =>
     s.italian ? [{ gloss: s.gloss, italian: s.italian }] : [],
   );
-  if (!provider.glossOccurrence || !input.token) {
-    return { italian: cached, occurrence: null, cached: true };
+  if (!input.token) return { italian: cached, occurrence: null, cached: true };
+  // A base form of a one-sense word has nothing to choose; an inflected form may be a fixed use.
+  const baseForm = surface.toLowerCase() === input.lemma.toLowerCase();
+  if (senses.length === 1 && offered.length === 1 && baseForm) {
+    return saveOccurrence(db, input, input.token, toMeaning({ index: 0 }, offered), true, provider);
   }
+  if (!provider.glossOccurrence) return { italian: cached, occurrence: null, cached: true };
   let answer: OccurrenceResult;
   try {
     answer = await provider.glossOccurrence({

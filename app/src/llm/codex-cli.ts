@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
-import { CliProvider } from "./cli";
+import { CliProvider, type LlmCall } from "./cli";
 import type { LlmTask, ProviderName } from "./provider";
 
 // Real Italian gloss via the `codex` CLI already on PATH. Codex exec can print
@@ -43,10 +43,17 @@ export function buildCodexArgs(prompt: string, outputPath: string): string[] {
   return ["exec", "--color", "never", "--output-last-message", outputPath, prompt];
 }
 
+// Codex runs every call on its configured default model.
+const MODELS: Record<LlmTask, string> = { gloss: "codex", story: "codex", check: "codex" };
+
 export class CodexCliProvider extends CliProvider {
   readonly name: ProviderName = "codex-cli";
+  protected readonly models = MODELS;
 
-  constructor(exec: (prompt: string, task: LlmTask) => Promise<string> = runCodex) {
-    super(exec);
+  constructor(
+    exec: (prompt: string, task: LlmTask) => Promise<string> = runCodex,
+    log?: (call: LlmCall) => void,
+  ) {
+    super(exec, log);
   }
 }

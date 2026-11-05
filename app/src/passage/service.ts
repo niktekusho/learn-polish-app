@@ -1,13 +1,22 @@
-import { and, asc, desc, eq, gte, isNotNull, isNull, lte, ne, notExists, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  gte,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  notExists,
+  or,
+} from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { knowledge, lemma, mweOccurrence, passageQuestion, sourceText, token } from "#/db/schema";
-import { knownLemmas } from "#/fsrs/index";
-import type { AnalyzeResponse } from "#/import/sidecar";
 import type { GlossProvider } from "#/llm/provider";
-import { proofreadText } from "#/proofread/proofread";
 import { NAME_POS } from "#/reader/name";
-import { wordPattern } from "#/reader/word-pattern";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -104,33 +113,17 @@ function realPassage(db: DB, lemmaId: number) {
   };
 }
 
-/** An LLM-written passage for the lemma, proofread and corrected with its target intact. */
-async function generatedPassage(
-  db: DB,
-  provider: GlossProvider,
-  analyze: (text: string) => Promise<AnalyzeResponse>,
-  l: { lemma: string; pos: string },
-) {
-  const p = await provider.passage!({ lemma: l.lemma, pos: l.pos, knownLemmas: knownLemmas(db) });
-  const { text } = await proofreadText(db, { provider, analyze }, p.passage);
-  if (!wordPattern(p.target).test(text)) {
-    throw new Error(`passage target ${JSON.stringify(p.target)} lost in correction`);
-  }
-  return { passage: text, target: p.target };
-}
-
 /**
- * Prepare one passage question per lemma lacking one: a real passage if a
- * read text has the lemma, else an LLM-written one, then one LLM call for the
- * question. A failure on a lemma caches nothing for it. Returns rows written.
+ * Prepare one passage question per lemma lacking one, from a read text that
+ * has the lemma, with one LLM call for the question. A lemma without a read
+ * sentence, or whose call fails, caches nothing. Returns rows written.
  */
 export async function preparePassages(
   db: DB,
   lemmaIds: number[],
   provider: GlossProvider,
-  analyze: (text: string) => Promise<AnalyzeResponse>,
 ): Promise<number> {
-  if (!provider.passage || !provider.passageQuestion) return 0;
+  if (!provider.passageQuestion) return 0;
   let written = 0;
   for (const lemmaId of lemmaIds) {
     const [l] = db
@@ -149,9 +142,9 @@ export async function preparePassages(
       )
       .all();
     if (!l) continue;
+    const p = realPassage(db, lemmaId);
+    if (!p) continue;
     try {
-      const real = realPassage(db, lemmaId);
-      const p = real ?? (await generatedPassage(db, provider, analyze, l));
       const q = await provider.passageQuestion({
         passage: p.passage,
         lemma: l.lemma,
@@ -162,8 +155,8 @@ export async function preparePassages(
           lemmaId,
           passage: p.passage,
           target: p.target,
-          source: real ? "text" : "generated",
-          textId: real?.textId ?? null,
+          source: "text",
+          textId: p.textId,
           question: q.question,
           choices: q.choices,
           correctIndex: q.correctIndex,
@@ -180,7 +173,7 @@ export async function preparePassages(
 
 /**
  * Lemmas worth a passage before they come up: receptive dues of the next 2
- * days with no prepared question, context-bound first (Passage is their only
+ * days with a read sentence and no prepared question, context-bound first (Passage is their only
  * receptive exercise), then by due date.
  */
 export function passagePrepTargets(db: DB, now = new Date(), cap = PREP_CAP): number[] {
@@ -196,6 +189,22 @@ export function passagePrepTargets(db: DB, now = new Date(), cap = PREP_CAP): nu
         lte(knowledge.due, horizon),
         isNull(lemma.flaggedAt),
         ne(lemma.pos, NAME_POS),
+        or(
+          exists(
+            db
+              .select({ id: token.id })
+              .from(token)
+              .innerJoin(sourceText, eq(sourceText.id, token.textId))
+              .where(and(eq(token.lemmaId, knowledge.lemmaId), isReadText)),
+          ),
+          exists(
+            db
+              .select({ id: mweOccurrence.id })
+              .from(mweOccurrence)
+              .innerJoin(sourceText, eq(sourceText.id, mweOccurrence.textId))
+              .where(and(eq(mweOccurrence.lemmaId, knowledge.lemmaId), isReadText)),
+          ),
+        ),
         notExists(
           db
             .select({ id: passageQuestion.id })
@@ -216,15 +225,11 @@ let preparing = false;
  * Background run after a Practice session: fire-and-forget, one at a time
  * (a second trigger while one runs is dropped).
  */
-export async function prepareUpcomingPassages(
-  db: DB,
-  provider: GlossProvider,
-  analyze: (text: string) => Promise<AnalyzeResponse>,
-): Promise<void> {
+export async function prepareUpcomingPassages(db: DB, provider: GlossProvider): Promise<void> {
   if (preparing) return;
   preparing = true;
   try {
-    await preparePassages(db, passagePrepTargets(db), provider, analyze);
+    await preparePassages(db, passagePrepTargets(db), provider);
   } finally {
     preparing = false;
   }

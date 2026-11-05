@@ -3,12 +3,14 @@
 // now, Ollama or an API later) is chosen in getGlossProvider() (llm/index.ts).
 
 import { z } from "zod";
-import { wordPattern } from "#/reader/word-pattern";
 
 export type ProviderName = "stub" | "claude-cli" | "codex-cli" | "ollama" | "api" | "manual"; // learner-written gloss; not produced by a GlossProvider
 
-/** Which model tier a CLI call needs: stories are longer, level-controlled Polish. */
-export type LlmTask = "gloss" | "story";
+/**
+ * Which model tier a CLI call needs: stories are longer, level-controlled
+ * Polish; a check reviews text a story-tier model wrote.
+ */
+export type LlmTask = "gloss" | "story" | "check";
 
 export interface GlossRequest {
   lemma: string;
@@ -299,22 +301,35 @@ export interface StoryOutline {
   beats: string[]; // one per episode: the count is the planned episode count
 }
 
+/** The level of a rejected draft: its share of content lemmas new to the learner, and which. */
+export interface LevelFeedback {
+  share: number;
+  newWords: string[];
+}
+
 export interface EpisodeRequest {
   premise: StoryPremise;
   outline: StoryOutline;
-  previous: string[]; // earlier episode texts, in order
+  previous: string | null; // the episode before this one; the plan covers the earlier ones
   episodeNumber: number;
   totalEpisodes: number;
-  knownLemmas: string[];
+  newShare: number; // target share of new content lemmas
+  feedback?: LevelFeedback; // set when redrafting
 }
 
-export function buildPremisesPrompt(): string {
+export const EPISODE_WORDS = "150-200";
+
+export function buildPremisesPrompt(pastGenres: string[]): string {
+  const avoid = pastGenres.length
+    ? `Evita i generi delle storie già lette: ${pastGenres.join(", ")}. `
+    : "";
   return (
     "Proponi 3 idee per una storia a puntate da leggere in polacco, per uno " +
-    "studente italiano principiante. Generi diversi tra loro (giallo, avventura, " +
-    "commedia, fantasy, quotidiano...). Per ognuna: titolo, genere e un'unica " +
-    "frase di aggancio, tutto IN ITALIANO. Rispondi SOLO con JSON valido, senza " +
-    'testo attorno, nel formato: {"premises":[{"title":"...","genre":"...","hook":"..."}]}'
+    "studente italiano principiante, di 3 generi diversi tra loro. " +
+    avoid +
+    "Per ognuna: titolo, genere e un'unica frase di aggancio, tutto IN ITALIANO. " +
+    "Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
+    '{"premises":[{"title":"...","genre":"...","hook":"..."}]}'
   );
 }
 
@@ -336,13 +351,19 @@ export function buildStoryOutlinePrompt(premise: StoryPremise): string {
   return (
     "Pianifica una storia a puntate in polacco per uno studente italiano " +
     "principiante (sotto A1). Decidi tu il numero di episodi in base alla trama, " +
-    "al massimo 10; ogni episodio sarà di circa 150 parole. Scrivi IN ITALIANO: " +
+    "al massimo 10; ogni episodio sarà di " +
+    `${EPISODE_WORDS} parole. Scrivi IN ITALIANO: ` +
     "la trama in breve, i personaggi (nome polacco + una descrizione breve) e, per " +
-    "ogni episodio, cosa succede. La storia deve arrivare a una conclusione. " +
-    "Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
-    '{"plot":"...","characters":["..."],"beats":["episodio 1: ...","episodio 2: ..."]}\n\n' +
+    "ogni episodio, in ordine, una frase su cosa succede. La storia deve arrivare a " +
+    "una conclusione. Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
+    '{"plot":"...","characters":["..."],"beats":["...","..."]}\n\n' +
     `Titolo: ${premise.title}\nGenere: ${premise.genre}\nIdea: ${premise.hook}`
   );
+}
+
+/** A plan line without the "episodio N:" prefix older outlines carry. */
+export function beatText(beat: string): string {
+  return beat.replace(/^\s*episodio\s+\d+\s*:\s*/i, "");
 }
 
 export function parseStoryOutlineJson(stdout: string): StoryOutline {
@@ -357,25 +378,52 @@ export function parseStoryOutlineJson(stdout: string): StoryOutline {
   );
 }
 
+function levelFeedbackLine(req: EpisodeRequest): string {
+  const f = req.feedback;
+  if (!f) return "";
+  const pct = (n: number) => `${Math.round(n * 100)}%`;
+  const verdict =
+    f.share > req.newShare
+      ? "troppe: usa parole più comuni e frasi più semplici"
+      : "troppo poche: introduci qualche parola meno comune";
+  return (
+    `\n\nLa bozza precedente aveva ${pct(f.share)} di parole nuove per lo studente, ` +
+    `${verdict} (obiettivo ${pct(req.newShare)}). Parole nuove della bozza: ` +
+    `${f.newWords.slice(0, 30).join(", ")}.`
+  );
+}
+
 export function buildEpisodePrompt(req: EpisodeRequest): string {
-  const previous = req.previous.length
-    ? req.previous.map((t, i) => `--- Episodio ${i + 1} ---\n${t}`).join("\n\n")
-    : "(nessuno: questo è il primo episodio)";
+  const previous = req.previous
+    ? `Episodio precedente (${req.episodeNumber - 1}):\n${req.previous}`
+    : "Episodio precedente: nessuno, questo è il primo episodio.";
   return (
     `Scrivi l'episodio ${req.episodeNumber} di ${req.totalEpisodes} di una storia ` +
-    "a puntate IN POLACCO per uno studente italiano principiante (sotto A1). " +
-    "Circa 150 parole. Grammatica semplice: frasi brevi, presente quando possibile. " +
-    "Usa soprattutto le parole che lo studente conosce (elenco sotto, in forma base; " +
-    "puoi fletterle), e circa il 10% di parole nuove. Segui il piano della storia e " +
-    "resta coerente con gli episodi precedenti. " +
-    (req.episodeNumber === req.totalEpisodes ? "È l'ultimo episodio: concludi la storia. " : "") +
+    "a puntate IN POLACCO per uno studente italiano principiante (sotto A1).\n\n" +
+    `Lunghezza: ${EPISODE_WORDS} parole.\n` +
+    "Lingua: polacco naturale, come lo scriverebbe un madrelingua; pensa in polacco. " +
+    "Dove l'italiano usa 'avere' + sensazione, il polacco usa un'altra costruzione " +
+    "(jest mi zimno, jestem głodny, czuje strach). Per un desiderio sceglie un verbo " +
+    "(chcę mieszkać w ciepłym domu, non 'chcę ciepły dom'). L'ordine delle parole è " +
+    "quello naturale (dlaczego tutaj jesteś). Se le parole semplici non bastano a dirlo " +
+    "in modo naturale, usa un'altra parola o riformula.\n" +
+    "Ritmo: ogni frase porta un fatto nuovo, un'azione o una battuta di dialogo; la " +
+    "struttura cambia di frase in frase, e le frasi si legano con i, a, ale, bo, kiedy.\n" +
+    "Dialoghi: come nei libri polacchi, ogni battuta va a capo e inizia con un " +
+    "trattino (– Gdzie jest kot? – pyta Ala.), senza virgolette.\n" +
+    "Livello: grammatica semplice e le parole più comuni del polacco; qualche parola " +
+    "meno comune, chiara dal contesto.\n" +
+    "Trama: segui il piano e resta coerente con l'episodio precedente. " +
+    (req.episodeNumber === req.totalEpisodes
+      ? "È l'ultimo episodio: concludi la storia.\n"
+      : "\n") +
     "Rispondi SOLO con il testo polacco dell'episodio, senza titolo, traduzione né " +
     "commenti.\n\n" +
     `Titolo: ${req.premise.title}\nTrama: ${req.outline.plot}\n` +
     `Personaggi: ${req.outline.characters.join("; ")}\n` +
-    `Piano degli episodi:\n${req.outline.beats.map((b, i) => `${i + 1}. ${b}`).join("\n")}\n\n` +
-    `Episodi precedenti:\n${previous}\n\n` +
-    `Parole conosciute: ${req.knownLemmas.join(", ")}`
+    `Piano degli episodi:\n${req.outline.beats.map((b, i) => `${i + 1}. ${beatText(b)}`).join("\n")}\n\n` +
+    previous +
+    levelFeedbackLine(req)
   );
 }
 
@@ -389,48 +437,10 @@ export function parseEpisodeText(stdout: string): string {
   return text;
 }
 
-export interface PassageRequest {
-  lemma: string;
-  pos: string;
-  knownLemmas: string[];
-}
-
-export interface GeneratedPassage {
-  passage: string;
-  target: string;
-}
-
 export interface PassageQuestionRequest {
   passage: string;
   lemma: string;
   target: string;
-}
-
-export function buildPassagePrompt(req: PassageRequest): string {
-  return (
-    "Scrivi 2 o 3 frasi brevi IN POLACCO per uno studente italiano principiante " +
-    "(sotto A1) che contengono la parola indicata, usata in modo che il suo " +
-    "significato sia chiaro dal contesto. Usa soprattutto le parole conosciute " +
-    "(elenco sotto, in forma base; puoi fletterle). Rispondi SOLO con JSON valido, " +
-    'senza testo attorno, nel formato: {"passage":"...","target":"..."} dove ' +
-    "target è la parola esattamente come appare nel testo.\n\n" +
-    `Parola: ${req.lemma}\nPOS: ${req.pos}\nParole conosciute: ${req.knownLemmas.join(", ")}`
-  );
-}
-
-export function parsePassageJson(stdout: string): GeneratedPassage {
-  const res = parseJsonOutput(
-    stdout,
-    "passage",
-    z.object({
-      passage: z.string().trim().min(1).max(600),
-      target: z.string().trim().min(1),
-    }),
-  );
-  if (!wordPattern(res.target).test(res.passage)) {
-    throw new Error(`passage target ${JSON.stringify(res.target)} not in passage`);
-  }
-  return res;
 }
 
 export function buildPassageQuestionPrompt(req: PassageQuestionRequest): string {
@@ -477,13 +487,19 @@ export interface ProofreadFlag {
 export function buildProofreadPrompt(text: string): string {
   return (
     "Sei un correttore di bozze madrelingua polacco. Il testo polacco qui sotto è per " +
-    "uno studente principiante: frasi semplici e brevi sono volute. Segnala SOLO gli " +
-    "errori certi, cioè ciò che un madrelingua giudicherebbe sbagliato: accordo di " +
+    "uno studente principiante: frasi semplici sono volute. Segnala ciò che un " +
+    "madrelingua giudicherebbe sbagliato o non direbbe mai così: accordo di " +
     "genere, numero e caso, reggenze, forme verbali sbagliate, parole che non esistono " +
-    "in polacco. Prima di segnalare, controlla chi è il soggetto e cosa intende la frase " +
+    "in polacco, e calchi dall'italiano: parole tutte esistenti ma in una costruzione " +
+    "che un madrelingua non userebbe (es. 'mam zimno' per 'avere freddo': si dice " +
+    "'jest mi zimno'; 'ma trochę strachu' per 'ha un po' di paura': 'czuje trochę " +
+    "strachu'; 'chcę ciepły dom': 'chcę mieszkać w ciepłym domu'; 'dlaczego jesteś " +
+    "tu': 'dlaczego tutaj jesteś'). In questi casi proponi nella reason la forma " +
+    "naturale. Prima di segnalare, controlla chi è il soggetto e cosa intende la frase " +
     "(es. 'Marco chce' è giusto: terza persona). Lo stile NON è un errore: non segnalare " +
-    "frasi corrette che si potrebbero dire meglio, scelte di parole possibili, ripetizioni. " +
-    "Nel dubbio, non segnalare. Rileggi tutto il testo fino alla fine ed elenca OGNI " +
+    "frasi naturali che si potrebbero dire meglio, scelte di parole possibili, ripetizioni. " +
+    "Se non sei sicuro che un madrelingua direbbe la frase così, segnalala. Rileggi " +
+    "tutto il testo fino alla fine ed elenca OGNI " +
     "errore, ogni occorrenza a sé anche quando lo stesso errore si ripete. Per ogni " +
     "errore, span è il testo sbagliato copiato " +
     'ESATTAMENTE dal testo (con le parole che concordano, es. "Duża torta") e reason una ' +
@@ -656,8 +672,7 @@ export interface GlossProvider extends Proofreader {
   glossOccurrence?(req: OccurrenceRequest): Promise<OccurrenceResult>;
   // Optional capability: comprehension-check MCQ generation for a whole text.
   comprehension?(req: ComprehensionRequest): Promise<ComprehensionResult>;
-  // Optional capabilities: Passage exercise preparation, run in the background.
-  passage?(req: PassageRequest): Promise<GeneratedPassage>;
+  // Optional capability: Passage exercise preparation, run in the background.
   passageQuestion?(req: PassageQuestionRequest): Promise<ChoiceQuestion>;
   // Optional capability: providers without it fail any import with an MWE
   // match or a Formula candidate.
@@ -668,7 +683,7 @@ export interface GlossProvider extends Proofreader {
 
 export interface StoryProvider extends Proofreader {
   readonly name: ProviderName;
-  premises(): Promise<StoryPremise[]>;
+  premises(pastGenres: string[]): Promise<StoryPremise[]>;
   outline(premise: StoryPremise): Promise<StoryOutline>;
   episode(req: EpisodeRequest): Promise<string>;
 }

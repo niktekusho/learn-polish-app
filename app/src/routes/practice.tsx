@@ -135,8 +135,7 @@ const getSummary = createServerFn()
       }
       // Prepare passage questions for the coming days, off the request path.
       const { prepareUpcomingPassages } = await import("#/passage/service");
-      const { analyze } = await import("#/import/sidecar");
-      prepareUpcomingPassages(db, getGlossProvider(), analyze).catch((err) =>
+      prepareUpcomingPassages(db, getGlossProvider()).catch((err) =>
         console.error("[passage] background prep failed:", err),
       );
     }

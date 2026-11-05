@@ -3,14 +3,12 @@ import type {
   ComprehensionRequest,
   ComprehensionResult,
   EpisodeRequest,
-  GeneratedPassage,
   GlossProvider,
   GlossRequest,
   MweCheckItem,
   OccurrenceRequest,
   OccurrenceResult,
   PassageQuestionRequest,
-  PassageRequest,
   ProofreadFlag,
   ProviderName,
   ReportReviewItem,
@@ -100,10 +98,6 @@ export class StubProvider implements GlossProvider, StoryProvider {
 
   async episode(req: EpisodeRequest): Promise<string> {
     return `Ala ma kota. To jest odcinek ${req.episodeNumber}. Kot jest mały.`;
-  }
-
-  async passage(req: PassageRequest): Promise<GeneratedPassage> {
-    return { passage: `To jest ${req.lemma}. Lubię ${req.lemma}.`, target: req.lemma };
   }
 
   async passageQuestion(req: PassageQuestionRequest): Promise<ChoiceQuestion> {

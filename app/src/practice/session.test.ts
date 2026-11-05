@@ -290,7 +290,7 @@ function addPassage(db: ReturnType<typeof freshDb>, lemmaId: number, target: str
       lemmaId,
       passage: `Idę ${target} sklepu. Kupuję chleb.`,
       target,
-      source: "generated",
+      source: "text",
       question: "Dove va la persona?",
       choices: ["al negozio", "a casa", "a scuola"],
       correctIndex: 0,

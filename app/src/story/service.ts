@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { sourceText, story } from "#/db/schema";
@@ -6,20 +6,28 @@ import { knownLemmas } from "#/fsrs/index";
 import type { MweChecker } from "#/dictionary/mwe-check";
 import { importAnalysis } from "#/import/checked-import";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import type { StoryPremise, StoryProvider } from "#/llm/provider";
+import {
+  beatText,
+  type EpisodeRequest,
+  type LevelFeedback,
+  type StoryPremise,
+  type StoryProvider,
+} from "#/llm/provider";
 import { proofreadText } from "#/proofread/proofread";
 import { episodeLine, newLemmaCount, recordActivity, wordCount } from "#/recap/service";
+import { levelOf } from "./metrics";
 
 type DB = BetterSQLite3Database<typeof schema>;
 type StoryRow = typeof story.$inferSelect;
 
 export const MAX_EPISODES = 10;
 // Share of an episode's content lemmas missing from the store.
-export const NEW_SHARE_TARGET = 0.1;
-export const NEW_SHARE_MIN = 0.05;
-export const NEW_SHARE_MAX = 0.15;
+export const NEW_SHARE_TARGET = 0.15;
+export const NEW_SHARE_MIN = 0.1;
+export const NEW_SHARE_MAX = 0.2;
 export const LEVEL_RETRIES = 2;
-const CONTENT_POS = new Set(["NOUN", "VERB", "ADJ", "ADV"]);
+
+export const inLevelRange = (share: number) => share >= NEW_SHARE_MIN && share <= NEW_SHARE_MAX;
 
 export interface StoryDeps {
   provider: StoryProvider;
@@ -44,20 +52,52 @@ export interface ReadResult {
   dayCompleted: boolean; // this read completed the day (both items done)
 }
 
+export interface WrittenEpisode {
+  draft: string; // the chosen draft, before the Proofread
+  text: string; // proofread and corrected
+  analysis: AnalyzeResponse; // of `text`
+  drafts: number;
+  rounds: number; // Corrections the Proofread took
+}
+
+/**
+ * Draft an episode, analyze it, accept it when the new-lemma share is in range,
+ * else redraft with that draft's level (LEVEL_RETRIES times) and keep the
+ * closest draft, then proofread and correct it (ADR-0009).
+ */
+export async function writeEpisode(
+  db: DB,
+  deps: Pick<StoryDeps, "provider" | "analyze">,
+  req: Omit<EpisodeRequest, "newShare" | "feedback">,
+): Promise<WrittenEpisode> {
+  const knownSet = new Set(knownLemmas(db).map((l) => l.toLowerCase()));
+  let best: { text: string; analysis: AnalyzeResponse; miss: number } | undefined;
+  let feedback: LevelFeedback | undefined;
+  let drafts = 0;
+  for (let attempt = 0; attempt <= LEVEL_RETRIES; attempt++) {
+    const text = await deps.provider.episode({ ...req, newShare: NEW_SHARE_TARGET, feedback });
+    drafts++;
+    const analysis = await deps.analyze(text);
+    const level = levelOf(analysis, knownSet);
+    const miss = Math.abs(level.share - NEW_SHARE_TARGET);
+    if (!best || miss < best.miss) best = { text, analysis, miss };
+    if (inLevelRange(level.share)) break;
+    feedback = level;
+  }
+  const chosen = best as NonNullable<typeof best>;
+  const checked = await proofreadText(db, deps, chosen.text, chosen.analysis);
+  return {
+    draft: chosen.text,
+    text: checked.text,
+    analysis: checked.analysis,
+    drafts,
+    rounds: checked.rounds,
+  };
+}
+
 // Episode generations in flight, per DB, keyed "storyId:episodeNumber": the
 // reader waits on a running background generation instead of starting another.
 const inFlight = new WeakMap<DB, Map<string, Promise<void>>>();
-
-/** Fraction of distinct content lemmas in `analysis` that are not in `known`. */
-function newShare(analysis: AnalyzeResponse, known: Set<string>): number {
-  const lemmas = new Set(
-    analysis.sentences.flatMap((s) =>
-      s.tokens.filter((t) => CONTENT_POS.has(t.pos)).map((t) => t.lemma.toLowerCase()),
-    ),
-  );
-  if (lemmas.size === 0) return 0;
-  return [...lemmas].filter((l) => !known.has(l)).length / lemmas.size;
-}
 
 /** The Story seam: provider and analyzer injected so tests use fakes. */
 export function storyService(db: DB, deps: StoryDeps) {
@@ -77,35 +117,19 @@ export function storyService(db: DB, deps: StoryDeps) {
       .all();
   }
 
-  /**
-   * Write episode `n`: draft, analyze, accept when the new-lemma share is in
-   * range, else redraft (LEVEL_RETRIES times) and keep the closest draft, then
-   * proofread and correct it.
-   */
+  /** Write episode `n` and import it. */
   async function generateEpisode(s: StoryRow, n: number): Promise<void> {
-    const known = knownLemmas(db);
-    const knownSet = new Set(known.map((l) => l.toLowerCase()));
-    const req = {
+    const previous = episodes(s.id).find((e) => e.episodeNumber === n - 1);
+    const checked = await writeEpisode(db, deps, {
       premise: { title: s.title, genre: s.genre, hook: s.hook },
       outline: s.outline,
-      previous: episodes(s.id)
-        .filter((e) => (e.episodeNumber ?? 0) < n)
-        .map((e) => e.content),
+      previous: previous?.content ?? null,
       episodeNumber: n,
       totalEpisodes: s.plannedEpisodes,
-      knownLemmas: known,
-    };
-    let best: { text: string; analysis: AnalyzeResponse; miss: number } | undefined;
-    for (let attempt = 0; attempt <= LEVEL_RETRIES; attempt++) {
-      const text = await deps.provider.episode(req);
-      const analysis = await deps.analyze(text);
-      const share = newShare(analysis, knownSet);
-      const miss = Math.abs(share - NEW_SHARE_TARGET);
-      if (!best || miss < best.miss) best = { text, analysis, miss };
-      if (share >= NEW_SHARE_MIN && share <= NEW_SHARE_MAX) break;
-    }
-    const chosen = best as NonNullable<typeof best>;
-    const checked = await proofreadText(db, deps, chosen.text, chosen.analysis);
+    });
+    console.info(
+      `[story] episode ${n} of story ${s.id}: ${checked.drafts} drafts, ${checked.rounds} corrections`,
+    );
     await importAnalysis(
       db,
       deps.checker ?? { name: deps.provider.name },
@@ -165,7 +189,12 @@ export function storyService(db: DB, deps: StoryDeps) {
 
   return {
     async proposePremises(): Promise<StoryPremise[]> {
-      return deps.provider.premises();
+      const past = db
+        .selectDistinct({ genre: story.genre })
+        .from(story)
+        .where(ne(story.status, "active"))
+        .all();
+      return deps.provider.premises(past.map((p) => p.genre));
     },
 
     /** Outline the story, persist it, and write episode 1 (the one visible wait). */
@@ -245,6 +274,7 @@ export function storyService(db: DB, deps: StoryDeps) {
         nextEpisode: all.find((e) => e.readAt === null)?.episodeNumber ?? all.length + 1,
         episodes: all.map((e) => {
           const n = e.episodeNumber as number;
+          const beat = s.outline.beats[n - 1];
           return {
             textId: e.id,
             episodeNumber: n,
@@ -252,10 +282,7 @@ export function storyService(db: DB, deps: StoryDeps) {
             words: wordCount(db, e.id),
             newWords: newLemmaCount(db, e.id),
             // The outline beat summarizes the episode: shown once read, it spoils nothing.
-            // Beats start with the "episodio N:" the outline prompt asks for.
-            summary: e.readAt
-              ? (s.outline.beats[n - 1]?.replace(/^\s*episodio\s+\d+\s*:\s*/i, "") ?? null)
-              : null,
+            summary: e.readAt ? (beat === undefined ? null : beatText(beat)) : null,
           };
         }),
       };

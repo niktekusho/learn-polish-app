@@ -93,7 +93,7 @@ test("a clean text makes one proofread call and no correction", async () => {
     { provider, analyze },
     "Duży tort jest gotowy.",
   );
-  expect(out).toMatchObject({ text: "Duży tort jest gotowy.", flags: [] });
+  expect(out).toMatchObject({ text: "Duży tort jest gotowy.", flags: [], rounds: 0 });
   expect(calls(provider)).toEqual({ proofread: 1, correct: 0 });
 });
 
@@ -115,10 +115,25 @@ test("dictionary and reviewer flags go to one correction, whose text is checked 
   expect(provider.calls.proofread).toEqual(["Duży torta jest gotowa.", "Duży tort jest gotowy."]);
 });
 
-test("a correction still flagged fails, naming the provider, the cause and the span", async () => {
-  const provider = fakeProofreader([], ["Duży torta jest gotowy."]);
-  const run = proofreadText(dictionaryDb(WORDS), { provider, analyze }, "Duży torta jest gotowy.");
+test("a correction still flagged is corrected again with what is left", async () => {
+  const provider = fakeProofreader([], ["Duży torta jest gotowy.", "Duży tort jest gotowy."]);
+  const out = await proofreadText(
+    dictionaryDb(WORDS),
+    { provider, analyze },
+    "Duża torta jest gotowa.",
+  );
+  expect(out).toMatchObject({ text: "Duży tort jest gotowy.", rounds: 2 });
+  expect(provider.calls.correct[1]).toEqual([
+    { span: "torta", reason: "not in the home dictionary" },
+  ]);
+});
+
+test("a text still flagged after three corrections fails, naming the provider, the cause and the span", async () => {
+  const stuck = "Duży torta jest gotowy.";
+  const provider = fakeProofreader([], [stuck, stuck, stuck, "Duży tort jest gotowy."]);
+  const run = proofreadText(dictionaryDb(WORDS), { provider, analyze }, stuck);
   await expect(run).rejects.toThrow(/"stub".*still flagged.*«torta»: not in the home dictionary/);
+  expect(provider.calls.correct).toHaveLength(3);
 });
 
 test("a provider that cannot proofread fails the text", async () => {

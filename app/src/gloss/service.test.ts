@@ -512,3 +512,41 @@ test("regenerate also deletes the lemma's occurrence glosses", async () => {
 
   expect(db.select().from(schema.occurrenceGloss).all()).toHaveLength(0);
 });
+
+test("a one-sense word tapped in its base form takes that sense without a call; an inflected form still asks", async () => {
+  const db = freshDb();
+  insertEntryBatch(db, [
+    {
+      word: "kot",
+      pos: "noun",
+      ipa: null,
+      etymology: null,
+      isMwe: false,
+      senses: [{ gloss: "cat", rawGloss: null, tags: [] }],
+      forms: [],
+    },
+  ]);
+  const [first] = importSentence(db, [["Kot ", "kot", "NOUN"]]);
+  const [base] = importSentence(db, [["kot ", "kot", "NOUN"]]);
+  const [inflected] = importSentence(db, [["kota ", "kot", "NOUN"]]);
+  const provider = meaningProvider(() => ({ index: 0 }));
+  const click = (tok: typeof schema.token.$inferSelect, sentence: string) =>
+    getGloss(
+      db,
+      {
+        lemmaId: tok.lemmaId!,
+        lemma: "kot",
+        pos: "NOUN",
+        sentence,
+        token: { id: tok.id, surface: tok.surface },
+      },
+      provider,
+    );
+
+  await click(first, "Kot śpi.");
+  expect(provider.calls).toBe(1);
+  expect(await click(base, "Widzę, że kot śpi.")).toMatchObject({ occurrence: "IT:cat" });
+  expect(provider.calls).toBe(1);
+  await click(inflected, "Mam kota.");
+  expect(provider.calls).toBe(2);
+});

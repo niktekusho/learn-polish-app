@@ -2,6 +2,8 @@ import { expect, test } from "vitest";
 import {
   buildComprehensionPrompt,
   buildCorrectionPrompt,
+  buildEpisodePrompt,
+  buildPremisesPrompt,
   buildProofreadPrompt,
   buildOccurrencePrompt,
   buildSenseGlossPrompt,
@@ -10,7 +12,6 @@ import {
   parseEpisodeText,
   parseMweCheckJson,
   parseOccurrenceJson,
-  parsePassageJson,
   parsePassageQuestionJson,
   parsePremisesJson,
   parseProofreadJson,
@@ -194,17 +195,6 @@ test("episode text: trims fences, rejects empty and runaway output", () => {
   expect(() => parseEpisodeText("a".repeat(5000))).toThrow();
 });
 
-test("generated passage: the target must appear in the passage", () => {
-  const ok = { passage: "Idę do sklepu.", target: "do" };
-  expect(parsePassageJson(JSON.stringify(ok))).toEqual(ok);
-  expect(() => parsePassageJson(JSON.stringify({ ...ok, target: "za" }))).toThrow(/not in/);
-  // Inside another word is not an occurrence.
-  const inside = { passage: "Idę domu.", target: "do" };
-  expect(() => parsePassageJson(JSON.stringify(inside))).toThrow(/not in/);
-  const accented = { passage: "Żółw śpi.", target: "żółw" };
-  expect(parsePassageJson(JSON.stringify(accented))).toEqual(accented);
-});
-
 test("passage question: 3–4 distinct choices with an in-range answer", () => {
   const q = { question: "Dove?", choices: ["a", "b", "c"], correctIndex: 2 };
   expect(parsePassageQuestionJson(JSON.stringify(q))).toEqual(q);
@@ -262,4 +252,36 @@ test("proofread and correction prompts carry the text and every flagged span", (
 test("corrected text: trims fences, rejects empty output", () => {
   expect(parseCorrectedText("```\nDuży tort.\n```")).toBe("Duży tort.");
   expect(() => parseCorrectedText(" ")).toThrow();
+});
+
+const EPISODE = {
+  premise: { title: "Il gatto di Ala", genre: "quotidiano", hook: "Ala cerca il gatto." },
+  outline: {
+    plot: "Ala cerca Burek.",
+    characters: ["Ala"],
+    beats: ["episodio 1: Burek sparisce", "Episodio 2 : Ala chiede aiuto", "lo trovano"],
+  },
+  episodeNumber: 2,
+  totalEpisodes: 3,
+  newShare: 0.15,
+};
+
+test("episode prompt numbers each plan line once", () => {
+  const prompt = buildEpisodePrompt({ ...EPISODE, previous: "Burek nie ma." });
+  expect(prompt).toContain("1. Burek sparisce\n2. Ala chiede aiuto\n3. lo trovano");
+  expect(prompt).not.toMatch(/episodio \d+ ?:/i);
+});
+
+test("episode prompt carries the previous episode, or says there is none", () => {
+  expect(buildEpisodePrompt({ ...EPISODE, previous: "Burek nie ma." })).toContain(
+    "Episodio precedente (1):\nBurek nie ma.",
+  );
+  expect(buildEpisodePrompt({ ...EPISODE, episodeNumber: 1, previous: null })).toContain(
+    "primo episodio",
+  );
+});
+
+test("premises prompt asks to avoid the genres of past stories", () => {
+  expect(buildPremisesPrompt(["fantasy", "giallo"])).toContain("fantasy, giallo");
+  expect(buildPremisesPrompt([])).not.toContain("Evita");
 });

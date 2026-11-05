@@ -17,10 +17,13 @@ export interface Proofread {
   text: string; // corrected when anything was flagged
   analysis: AnalyzeResponse; // of `text`
   flags: ProofreadFlag[]; // what the first check flagged; empty for a clean text
+  rounds: number; // Corrections it took; 0 for a clean text
 }
 
+export const CORRECTION_ROUNDS = 3;
+
 const LETTER = /\p{L}/u;
-const NOT_IN_DICTIONARY = "not in the home dictionary";
+export const NOT_IN_DICTIONARY = "not in the home dictionary";
 
 /**
  * One flag per distinct non-name word absent from the home dictionary. Words
@@ -67,8 +70,9 @@ function gluedRuns(analysis: AnalyzeResponse): AnalyzedToken[][] {
 }
 
 /**
- * Proofread a generated text; when flagged, correct it once and proofread the
- * correction. Throws, naming the provider, when a check fails or flags remain.
+ * Proofread a generated text; while flagged, correct what is left and proofread
+ * again, CORRECTION_ROUNDS times at most. Throws, naming the provider, when a
+ * check fails or flags remain.
  */
 export async function proofreadText(
   db: DB,
@@ -95,27 +99,30 @@ export async function proofreadText(
     ...(await withProvider("Proofread", proofread.call(provider, t))),
   ];
 
-  const first = analysis ?? (await deps.analyze(text));
-  const flags = await check(text, first);
-  if (flags.length === 0) return { text, analysis: first, flags };
-
-  const corrected = await withProvider("Correction", correct.call(provider, text, flags));
-  const after = await deps.analyze(corrected);
-  const left = await check(corrected, after);
+  let current = { text, analysis: analysis ?? (await deps.analyze(text)) };
+  const flags = await check(current.text, current.analysis);
+  let left = flags;
+  let rounds = 0;
+  while (left.length > 0 && rounds < CORRECTION_ROUNDS) {
+    const corrected = await withProvider("Correction", correct.call(provider, current.text, left));
+    current = { text: corrected, analysis: await deps.analyze(corrected) };
+    left = await check(current.text, current.analysis);
+    rounds++;
+  }
   if (left.length > 0) {
     throw new Error(
       `Correction by provider "${provider.name}" is still flagged: ` +
         left.map((f) => `«${f.span}»: ${f.reason}`).join("; "),
     );
   }
-  return { text: corrected, analysis: after, flags };
+  return { ...current, flags, rounds };
 }
 
 /**
  * Whether a word is a home dictionary form or headword, ignoring case. An
  * empty dictionary knows every word, like the other dictionary checks.
  */
-function homeDictionary(db: DB): (word: string) => boolean {
+export function homeDictionary(db: DB): (word: string) => boolean {
   if (db.select({ id: dictEntry.id }).from(dictEntry).limit(1).all().length === 0)
     return () => true;
   return (word) => {

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CliProvider } from "./cli";
+import { CliProvider, type LlmCall } from "./cli";
 import type { LlmTask, ProviderName } from "./provider";
 
 // Real Italian gloss via the `claude` CLI already on PATH (bills the user's
@@ -13,8 +13,12 @@ import type { LlmTask, ProviderName } from "./provider";
 
 const TIMEOUT_MS = 60_000;
 // Without --model the CLI uses the plan's default (a large model). Glosses are short.
-const MODEL = process.env.GLOSS_MODEL || "claude-haiku-5-5";
-const STORY_MODEL = process.env.STORY_MODEL || "claude-sonnet-5-5";
+// A checking call runs on a stronger model than the one that wrote the text.
+const MODELS: Record<LlmTask, string> = {
+  gloss: process.env.GLOSS_MODEL || "claude-haiku-5-5",
+  story: process.env.STORY_MODEL || "claude-sonnet-5-5",
+  check: process.env.CHECK_MODEL || "claude-opus-5-5",
+};
 
 // Strips everything a gloss call does not need (tools, MCP, settings/hooks,
 // skills, Chrome, session files) so each call sends a minimal prompt. --bare is
@@ -41,8 +45,8 @@ const EMPTY_CWD = mkdtempSync(join(tmpdir(), "gloss-"));
 // Node hands it as piped input, waits 3s, warns "no stdin data received", and
 // exits non-zero. Closing stdin makes it run the prompt argument directly. The
 // prompt is a single argv element, so the pasted sentence can't shell-inject.
-function runClaude(prompt: string, task: LlmTask): Promise<string> {
-  const model = task === "story" ? STORY_MODEL : MODEL;
+export function runClaude(prompt: string, task: LlmTask): Promise<string> {
+  const model = MODELS[task];
   return new Promise((resolve, reject) => {
     const child = spawn("claude", ["--model", model, ...LEAN_ARGS, "-p", prompt], {
       cwd: EMPTY_CWD,
@@ -67,8 +71,12 @@ function runClaude(prompt: string, task: LlmTask): Promise<string> {
 
 export class ClaudeCliProvider extends CliProvider {
   readonly name: ProviderName = "claude-cli";
+  protected readonly models = MODELS;
 
-  constructor(exec: (prompt: string, task: LlmTask) => Promise<string> = runClaude) {
-    super(exec);
+  constructor(
+    exec: (prompt: string, task: LlmTask) => Promise<string> = runClaude,
+    log?: (call: LlmCall) => void,
+  ) {
+    super(exec, log);
   }
 }

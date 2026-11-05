@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { parseGloss } from "./provider";
 import { ClaudeCliProvider } from "./claude-cli";
+import type { LlmCall } from "./cli";
 
 const req = { lemma: "robić", pos: "VERB", sentence: "Robię obiad w kuchni." };
 
@@ -34,7 +35,7 @@ test("provider drops an echoed surface form before the arrow", async () => {
   expect(await provider.gloss(swoj)).toBe("proprio");
 });
 
-test("story calls are tagged so they can use STORY_MODEL", async () => {
+test("story and check calls are tagged with their model tier", async () => {
   const tasks: string[] = [];
   const provider = new ClaudeCliProvider(async (_prompt, task) => {
     tasks.push(task);
@@ -44,10 +45,27 @@ test("story calls are tagged so they can use STORY_MODEL", async () => {
   await provider.episode({
     premise: { title: "t", genre: "g", hook: "h" },
     outline: { plot: "p", characters: [], beats: ["b"] },
-    previous: [],
+    previous: null,
     episodeNumber: 1,
     totalEpisodes: 1,
-    knownLemmas: [],
+    newShare: 0.15,
   });
-  expect(tasks).toEqual(["gloss", "story"]);
+  await provider.proofread("Ala ma kota.").catch(() => {});
+  expect(tasks).toEqual(["gloss", "story", "check"]);
+});
+
+test("every call is logged with its model, size, duration and outcome", async () => {
+  const calls: LlmCall[] = [];
+  const provider = new ClaudeCliProvider(
+    async () => "fare",
+    (c) => calls.push(c),
+  );
+  await provider.gloss(req);
+  await expect(provider.proofread("Ala ma kota.")).rejects.toThrow();
+  expect(calls).toMatchObject([
+    { call: "gloss", model: "claude-haiku-5-5", error: null },
+    { call: "proofread", model: "claude-opus-5-5", error: expect.stringMatching(/not JSON/) },
+  ]);
+  expect(calls[0].promptChars).toBeGreaterThan(0);
+  expect(calls[0].ms).toBeGreaterThanOrEqual(0);
 });

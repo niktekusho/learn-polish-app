@@ -214,6 +214,20 @@ export const lemmaSlipRepair = sqliteTable("lemma_slip_repair", {
   seenAt: integer("seen_at", { mode: "timestamp" }),
 });
 
+/** One call to a CLI LLM provider, kept to audit usage. */
+export const llmCall = sqliteTable("llm_call", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  at: integer("at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  provider: text("provider").notNull(),
+  call: text("call").notNull(), // e.g. "episode", "proofread"
+  model: text("model").notNull(),
+  promptChars: integer("prompt_chars").notNull(),
+  ms: integer("ms").notNull(),
+  error: text("error"), // null when the output parsed
+});
+
 /**
  * One Report review (CONTEXT.md): the primary gloss and Context-bound mark
  * before and after, so the learner can see and undo it.
@@ -344,8 +358,8 @@ export const passageQuestion = sqliteTable(
       .references(() => lemma.id, { onDelete: "cascade" }),
     passage: text("passage").notNull(),
     target: text("target").notNull(),
-    // 'text': cut from a read text (textId); 'generated': written by the LLM.
-    source: text("source", { enum: ["text", "generated"] }).notNull(),
+    // Cut from a read text (textId).
+    source: text("source", { enum: ["text"] }).notNull(),
     textId: integer("text_id").references(() => sourceText.id, { onDelete: "set null" }),
     question: text("question").notNull(), // Italian
     choices: text("choices", { mode: "json" }).$type<string[]>().notNull(),

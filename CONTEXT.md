@@ -245,7 +245,7 @@ meaning layered on top. See ADR-0002. Shown in the UI as _Dizionario_.
 
 **Story**:
 An LLM-generated serial fiction at the learner's level, built from known lemmas plus
-~10% new ones. Its outline and episode count (at most 10) are set when the learner picks
+~15% new ones. Its outline and episode count (at most 10) are set when the learner picks
 one of the proposed premises. Shown in the UI as _Storia_.
 
 **Episode**:
@@ -267,15 +267,14 @@ daily routine is done.
 _Avoid_: summary, report
 
 **Proofread**:
-The check every LLM-generated Polish text (an **Episode**, a generated **Passage
-exercise** passage) passes before it is stored. The **Home dictionary** flags non-name
-words absent from its forms; an LLM reviewer flags grammatical and lexical errors, never
-style. Anything flagged gets a **Correction**.
+The check every LLM-generated Polish text (an **Episode**) passes before it is stored. The **Home dictionary** flags non-name
+words absent from its forms; an LLM reviewer flags grammatical and lexical errors, including Italian calques (_mam zimno_ for
+_jest mi zimno_), never style. Anything flagged gets a **Correction**.
 
 **Correction**:
-One LLM rewrite of a generated text that fixes the spans a **Proofread** flagged and
-whatever agrees with them. The result is proofread again; anything still flagged fails
-loudly. Not shown in the reader.
+An LLM rewrite of a generated text that fixes the spans a **Proofread** flagged and
+whatever agrees with them. The result is proofread again, for a few rounds at most;
+anything still flagged after the last fails loudly. Not shown in the reader.
 
 **Conversation**:
 A spoken role-play with an LLM character from the current **Story**, set right after the
