@@ -6,6 +6,7 @@ import { speak } from "#/audio/speak";
 import type { DictLookupResult } from "#/dictionary/service";
 import type { GlossResult } from "#/gloss/service";
 import { type CaseKey, caseOfForm, italianTags, posLabel } from "./labels";
+import { ReportButton } from "#/report/ReportButton";
 import { nameForm } from "./name";
 import type { KnowledgeFlags, ReaderToken } from "./types";
 import {
@@ -124,6 +125,23 @@ const suppressFormulaFn = createServerFn({ method: "POST" })
     suppressFormula(db, data.lemmaId);
   });
 
+// Server-only: report the lemma from this token (CONTEXT.md "Report").
+const reportLemmaFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        lemmaId: z.number().int(),
+        tokenId: z.number().int().optional(),
+        note: z.string().max(500),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { db } = await import("#/db/index");
+    const { reportLemma } = await import("#/report/review");
+    reportLemma(db, data.lemmaId, data.note, data.tokenId);
+  });
+
 // ts-fsrs Rating values used by the two learner actions.
 const RATING_KNOWN = 4; // Easy: long interval, marks the word learned
 const RATING_LEARNING = 1; // Again: short interval, keep it in rotation
@@ -136,6 +154,7 @@ export function WordPanel({
   onSuppressed,
   onPromoted,
   onGraded,
+  onReported,
   onClose,
 }: {
   token: ReaderToken;
@@ -147,8 +166,13 @@ export function WordPanel({
   // The clicked token moved to a new Formula unit.
   onPromoted?: (formula: { lemmaId: number; lemma: string; pos: string }) => void;
   onGraded: (lemmaId: number, flags: KnowledgeFlags) => void;
+  onReported?: () => void;
   onClose: () => void;
 }) {
+  const [reportedId, setReportedId] = useState<number | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const reported = token.flagged || reportedId === token.lemmaId;
   const [gloss, setGloss] = useState<string | null>(null);
   const [occurrence, setOccurrence] = useState<string | null>(null);
   const [occurrenceError, setOccurrenceError] = useState<string | null>(null);
@@ -274,6 +298,23 @@ export function WordPanel({
     }
   }
 
+  async function report(note: string) {
+    if (token.lemmaId === null) return;
+    setReporting(true);
+    setReportError(null);
+    try {
+      // An MWE's token is its first word: its surface is no Name candidate.
+      const tokenId = token.pos === "MWE" ? undefined : token.id;
+      await reportLemmaFn({ data: { lemmaId: token.lemmaId, tokenId, note } });
+      setReportedId(token.lemmaId);
+      onReported?.();
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : "Non riuscito.");
+    } finally {
+      setReporting(false);
+    }
+  }
+
   async function suppress(fn: typeof suppressMweFn, question: string) {
     if (token.lemmaId == null || !window.confirm(question)) return;
     setMarking(true);
@@ -304,6 +345,17 @@ export function WordPanel({
     <PanelShell
       label="Parola"
       onClose={onClose}
+      actions={
+        !reported && (
+          <ReportButton
+            key={token.lemmaId}
+            busy={reporting}
+            hint="Esce dalla pratica fino alla revisione, alla fine della prossima pratica."
+            popover="absolute top-full right-0 mt-1"
+            onReport={report}
+          />
+        )
+      }
       title={
         <>
           <b lang="pl" className="font-serif text-2xl font-bold">
@@ -334,6 +386,12 @@ export function WordPanel({
         </>
       }
     >
+      {reported && (
+        <p className="mt-2 text-sm text-ink-3">
+          Segnalata: la revisione arriva alla fine della prossima pratica.
+        </p>
+      )}
+      {reportError && <p className={ERROR_LINE}>{reportError}</p>}
       {typeof speechSynthesis !== "undefined" && (
         <div className="mt-3 mb-1 flex flex-wrap gap-2">
           <button type="button" onClick={() => speak(token.surface)} className={CHIP}>
@@ -555,12 +613,14 @@ export function NamePanel({ token, onClose }: { token: ReaderToken; onClose: () 
 function PanelShell({
   label,
   title,
+  actions,
   footer,
   onClose,
   children,
 }: {
   label: string;
   title: ReactNode;
+  actions?: ReactNode; // beside Chiudi; a popover anchors to the title row
   footer?: ReactNode;
   onClose: () => void;
   children: ReactNode;
@@ -606,8 +666,9 @@ function PanelShell({
         <div className="h-1 w-10 rounded-full bg-ink-3/30" />
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-5 pb-5">
-        <div className="flex items-start gap-2">
+        <div className="relative flex items-start gap-2">
           <div className="min-w-0 flex-1 pt-2">{title}</div>
+          {actions}
           <button type="button" onClick={onClose} aria-label="Chiudi" className={ICON_BUTTON}>
             <X size={20} />
           </button>

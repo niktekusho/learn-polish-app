@@ -14,6 +14,7 @@ export interface ReaderToken {
   tags: string[] | null;
   known: boolean;
   stillLearning: boolean;
+  flagged: boolean; // a Report waits for its review (CONTEXT.md "Report")
 }
 
 // The server's verdict after grading a lemma, used to update highlights live.

@@ -3,7 +3,12 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "#/db/schema";
 import { dictEntry, gloss, lemma, occurrenceGloss, token } from "#/db/schema";
 import { classifyToken, FORMULA_POS } from "#/import/classify";
-import { analysisSentence, ensureReceptiveKnowledge, upsertLemma } from "#/import/pipeline";
+import {
+  type AssignedLemma,
+  analysisSentence,
+  ensureReceptiveKnowledge,
+  upsertLemma,
+} from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import { NAME_POS } from "#/reader/name";
 import { correctLemma } from "./lemma-correction";
@@ -33,13 +38,13 @@ export function formulaHeadword(db: DB, surface: string, tokenLemma: string): st
 /**
  * Formula candidates in an analysis, checked in their sentences. Returns the
  * accepted token positions (as persistAnalysis counts them) with their
- * headword. Throws when the check cannot run: nothing has been saved yet.
+ * formula lemma. Throws when the check cannot run: nothing has been saved yet.
  */
 export async function resolveFormulas(
   db: DB,
   checker: MweChecker,
   analysis: AnalyzeResponse,
-): Promise<Map<number, string>> {
+): Promise<Map<number, AssignedLemma>> {
   const candidates: { position: number; headword: string; sentence: string }[] = [];
   let position = 0;
   for (const s of analysis.sentences) {
@@ -55,7 +60,11 @@ export async function resolveFormulas(
     }
   }
   const accepted = await checkInContext(db, checker, "Formula", candidates);
-  return new Map(candidates.filter((_, i) => accepted[i]).map((c) => [c.position, c.headword]));
+  return new Map(
+    candidates
+      .filter((_, i) => accepted[i])
+      .map((c) => [c.position, { lemma: c.headword, pos: FORMULA_POS }]),
+  );
 }
 
 export interface FormulaRepair {

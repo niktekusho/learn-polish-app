@@ -115,7 +115,7 @@ test("purgeStubGlosses removes only stub rows", () => {
   expect(getStats(db).stubGlosses).toBe(0);
 });
 
-test("repairNames cleans PROPN lemmas imported as vocabulary, and is idempotent", () => {
+test("repairNames cleans PROPN lemmas imported as vocabulary, keeps Story characters, and is idempotent", () => {
   const db = freshDb();
   db.insert(schema.dictEntry)
     .values([
@@ -123,7 +123,19 @@ test("repairNames cleans PROPN lemmas imported as vocabulary, and is idempotent"
       { word: "Hanna", pos: "name" },
       { word: "bułka", pos: "noun" },
       { word: "masło", pos: "noun" },
+      { word: "iskra", pos: "noun" },
     ])
+    .run();
+  db.insert(schema.story)
+    .values({
+      title: "Il drago",
+      genre: "fiaba",
+      hook: "",
+      outline: { plot: "", characters: ["Iskra – piccolo drago"], beats: [] },
+      plannedEpisodes: 1,
+      status: "active",
+      createdAt: new Date(),
+    })
     .run();
   const [{ id: textId }] = db
     .insert(schema.sourceText)
@@ -141,6 +153,7 @@ test("repairNames cleans PROPN lemmas imported as vocabulary, and is idempotent"
     ["Bułka", "PROPN"],
     ["bułka", "NOUN"],
     ["Masło", "PROPN"],
+    ["Iskra", "PROPN"],
     ["🤗", "PROPN"],
     ["Dzię", "PROPN"],
   ];
@@ -176,6 +189,7 @@ test("repairNames cleans PROPN lemmas imported as vocabulary, and is idempotent"
     );
   expect(lemmas.map((l) => `${l.lemma}/${l.pos}`).sort()).toEqual([
     "Hanna/PROPN",
+    "Iskra/PROPN",
     "Kasia/PROPN",
     "Marco/PROPN",
     "bułka/NOUN",

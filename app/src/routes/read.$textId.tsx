@@ -36,6 +36,7 @@ const getText = createServerFn()
         lemma: schema.lemma.lemma,
         pos: schema.lemma.pos,
         tags: schema.token.tags,
+        flaggedAt: schema.lemma.flaggedAt,
         receptiveState: schema.knowledge.state,
       })
       .from(schema.token)
@@ -51,8 +52,9 @@ const getText = createServerFn()
       .orderBy(asc(schema.token.position))
       .all();
 
-    const tokens: ReaderToken[] = rows.map(({ receptiveState, ...t }) => ({
+    const tokens: ReaderToken[] = rows.map(({ receptiveState, flaggedAt, ...t }) => ({
       ...t,
+      flagged: flaggedAt !== null,
       ...knowledgeFlags(receptiveState),
     }));
 
@@ -64,6 +66,7 @@ const getText = createServerFn()
         startPosition: schema.mweOccurrence.startPosition,
         endPosition: schema.mweOccurrence.endPosition,
         sentenceIndex: schema.mweOccurrence.sentenceIndex,
+        flaggedAt: schema.lemma.flaggedAt,
       })
       .from(schema.mweOccurrence)
       .innerJoin(schema.lemma, eq(schema.mweOccurrence.lemmaId, schema.lemma.id))
@@ -100,6 +103,7 @@ type MweInfo = {
   startPosition: number;
   endPosition: number;
   sentenceIndex: number;
+  flaggedAt: Date | null;
 };
 
 function Reader() {
@@ -308,6 +312,7 @@ function Reader() {
                   tags: null,
                   known: false,
                   stillLearning: false,
+                  flagged: occ?.flaggedAt != null,
                 });
               }}
               onSuppressed={() => {
@@ -319,6 +324,7 @@ function Reader() {
                 router.invalidate();
               }}
               onGraded={markGraded}
+              onReported={() => router.invalidate()}
               onClose={() => setSelected(null)}
             />
           )}

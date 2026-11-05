@@ -199,7 +199,9 @@ export function buildMweCheckPrompt(items: MweCheckItem[]): string {
     "oppure come parole separate con il loro senso normale (false). Esempio: " +
     '"to jest" = "that is to say" in "To jest chleb." è false. Un\'espressione può ' +
     'essere una sola parola: "proszę" = "please" in "Proszę o chleb." è false (verbo ' +
-    '"chiedere"), in "Proszę – mówi Marco." è true. Rispondi SOLO con ' +
+    '"chiedere"), in "Proszę – mówi Marco." è true. Un nome proprio pure: "Iskra" = ' +
+    '"nome proprio del personaggio Iskra – piccolo drago" in "Iskra leci." è true, in ' +
+    '"Iskra wyleciała z pieca." è false (scintilla). Rispondi SOLO con ' +
     'JSON valido, senza testo attorno, nel formato: {"keep":[true,false]} con un ' +
     "valore per voce, nello stesso ordine.\n\n" +
     items
@@ -539,13 +541,14 @@ export function parseCorrectedText(stdout: string): string {
 export interface ReportReviewItem {
   lemma: string;
   pos: string;
-  kind: "wrong" | "context";
   note: string | null;
   gloss: string | null; // current primary gloss
   manual: boolean; // the primary gloss is a Manual gloss
   contextBound: boolean;
   senses: { index: number; gloss: string; italian: string }[];
   sentences: string[];
+  // Capitalized occurrences that may be a Name (CONTEXT.md "Report review").
+  names: { index: number; surface: string; sentence: string }[];
   previous: {
     glossBefore: string | null;
     glossAfter: string | null;
@@ -561,6 +564,7 @@ export type GlossVerdict = "keep" | { sense: number } | { italian: string; noSen
 export interface ReportVerdict {
   gloss: GlossVerdict;
   contextBound: boolean;
+  names: number[]; // indices of the item's Name candidates that are a Name
   reason: string;
 }
 
@@ -569,12 +573,17 @@ const yesNo = (b: boolean) => (b ? "sì" : "no");
 function reportItemText(it: ReportReviewItem, n: number): string {
   const lines = [
     `${n}. Lemma: ${it.lemma} (${it.pos})`,
-    `Segnalazione: ${it.kind === "wrong" ? "glossa sbagliata" : "serve il contesto"}${it.note ? ` — «${it.note}»` : ""}`,
+    `Nota dello studente: ${it.note ? `«${it.note}»` : "(nessuna)"}`,
     `Glossa attuale: ${it.gloss ?? "(nessuna)"}${it.manual ? " [manuale: tienila]" : ""}`,
     `Dipendente dal contesto: ${yesNo(it.contextBound)}`,
     `Sensi:\n${it.senses.map((s) => `${s.index}. ${s.gloss} (${s.italian})`).join("\n") || "(nessuno)"}`,
     `Frasi:\n${it.sentences.map((s) => `- ${s}`).join("\n") || "(nessuna)"}`,
   ];
+  if (it.names.length > 0) {
+    lines.push(
+      `Occorrenze con maiuscola:\n${it.names.map((c) => `${c.index}. «${c.surface.trim()}» in: ${c.sentence}`).join("\n")}`,
+    );
+  }
   const p = it.previous;
   if (p) {
     lines.push(
@@ -587,17 +596,20 @@ function reportItemText(it: ReportReviewItem, n: number): string {
 export function buildReportReviewPrompt(items: ReportReviewItem[]): string {
   return (
     "Sei un lessicografo polacco-italiano. Uno studente italiano principiante ha " +
-    "segnalato queste parole polacche durante gli esercizi. Per ogni voce prendi due " +
-    'decisioni indipendenti. gloss, la glossa principale: "keep" se va bene; ' +
+    "segnalato queste parole polacche: qualcosa non va, la sua nota dice cosa pensa. " +
+    'Per ogni voce prendi tre decisioni indipendenti. gloss, la glossa principale: "keep" se va bene; ' +
     '{"sense":N} per sostituirla con la glossa italiana del senso N; ' +
     '{"italian":"...","noSenseFits":true} (1-4 parole) solo se nessun senso va bene o ' +
     'non ci sono sensi. Una glossa manuale si tiene sempre: "keep". contextBound: true ' +
     'se la parola non si può tradurre da sola senza una frase (es. "do" = "a", "fino a", ' +
     '"in" o "per" a seconda della frase), false se una glossa breve basta (es. "też" = ' +
-    '"anche"). reason: una riga in italiano che spiega entrambe le decisioni. Una ' +
+    '"anche"). names: i numeri delle occorrenze con maiuscola che nella loro frase sono ' +
+    'un nome proprio (il drago "Iskra" in "Smok Iskra leci."), non la parola comune ' +
+    '("Iskra wyleciała z pieca." è una scintilla); [] se nessuna o se non ce ne sono. ' +
+    "reason: una riga in italiano che spiega le decisioni. Una " +
     "revisione precedente annullata è stata rifiutata dallo studente: non ripeterla. " +
     "Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
-    '{"reviews":[{"gloss":"keep","contextBound":false,"reason":"..."}]} con una voce ' +
+    '{"reviews":[{"gloss":"keep","contextBound":false,"names":[],"reason":"..."}]} con una voce ' +
     "per parola, nello stesso ordine.\n\n" +
     items.map((it, i) => reportItemText(it, i + 1)).join("\n\n")
   );
@@ -610,6 +622,7 @@ const reportVerdict = z.object({
     z.object({ italian: z.string().trim().min(1).max(60), noSenseFits: z.boolean() }),
   ]),
   contextBound: z.boolean(),
+  names: z.array(z.number().int().min(0)).default([]),
   reason: z.string().trim().min(1).max(300),
 });
 

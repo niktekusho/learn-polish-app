@@ -25,14 +25,14 @@ const ATTEMPTS = 3;
 
 /**
  * Judge each candidate in its sentence (CONTEXT.md "Multi-word expression",
- * "Formula") with ONE provider call, retried. Throws, naming the provider and
+ * "Formula", "Name") with ONE provider call, retried. Throws, naming the provider and
  * the cause, when the check cannot run; no candidates means no call.
  * A candidate's `meaning` overrides the one looked up for its headword.
  */
 export async function checkInContext(
   db: DB,
   checker: MweChecker,
-  kind: "MWE" | "Formula",
+  kind: "MWE" | "Formula" | "Name",
   candidates: { headword: string; sentence: string; meaning?: string }[],
 ): Promise<boolean[]> {
   if (candidates.length === 0) return [];

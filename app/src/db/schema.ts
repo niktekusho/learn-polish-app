@@ -1,5 +1,13 @@
 import { relations, sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import {
+  type AnySQLiteColumn,
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 // ---------------------------------------------------------------------------
 // Vocab store (backlog #3). Model per CONTEXT.md:
@@ -68,6 +76,10 @@ export const lemma = sqliteTable(
     // A wrong Report (CONTEXT.md "Report"): kept out of practice until its Report review.
     flaggedAt: integer("flagged_at", { mode: "timestamp" }),
     flagNote: text("flag_note"),
+    // The token a reader Report was made on: its text's same-form tokens are Name candidates.
+    flagTokenId: integer("flag_token_id").references((): AnySQLiteColumn => token.id, {
+      onDelete: "set null",
+    }),
     // Meaning only exists in a sentence (CONTEXT.md "Context-bound lemma"):
     // never asked as a single word, still read aloud.
     contextBound: integer("context_bound", { mode: "boolean" }).notNull().default(false),
@@ -210,10 +222,9 @@ export const reportReview = sqliteTable(
   "report_review",
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
-    lemmaId: integer("lemma_id")
-      .notNull()
-      .references(() => lemma.id, { onDelete: "cascade" }),
-    kind: text("kind", { enum: ["wrong", "context"] }).notNull(),
+    // Null once a Name decision left the lemma without tokens and deleted it.
+    lemmaId: integer("lemma_id").references(() => lemma.id, { onDelete: "set null" }),
+    word: text("word").notNull(),
     note: text("note"),
     glossBefore: text("gloss_before"),
     glossProviderBefore: text("gloss_provider_before", {
@@ -223,6 +234,11 @@ export const reportReview = sqliteTable(
     markBefore: integer("mark_before", { mode: "boolean" }).notNull(),
     markAfter: integer("mark_after", { mode: "boolean" }).notNull(),
     reason: text("reason").notNull(),
+    // Tokens the review moved to a Name, with the lemma each came from.
+    names: text("names", { mode: "json" })
+      .$type<{ tokenId: number; lemma: string; pos: string; name: string }[]>()
+      .notNull()
+      .default([]),
     reviewedAt: integer("reviewed_at", { mode: "timestamp" })
       .notNull()
       .$defaultFn(() => new Date()),

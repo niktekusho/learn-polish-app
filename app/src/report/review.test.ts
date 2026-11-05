@@ -7,7 +7,16 @@ import * as schema from "#/db/schema";
 import { senseKey } from "#/dictionary/service";
 import type { GlossProvider, ReportReviewItem, ReportVerdict } from "#/llm/provider";
 import { StubProvider } from "#/llm/stub";
-import { listReviews, pendingReports, reviewReports, takeCorrections, undoReview } from "./review";
+import { insertEntryBatch } from "#/dictionary/loader";
+import { persistAnalysis } from "#/import/pipeline";
+import {
+  listReviews,
+  pendingReports,
+  reportLemma,
+  reviewReports,
+  takeCorrections,
+  undoReview,
+} from "./review";
 
 type DB = ReturnType<typeof freshDb>;
 
@@ -125,8 +134,8 @@ test("an unknown sense key leaves that lemma pending while the other applies", a
     flagged: "",
   });
   const provider = fake([
-    { gloss: { sense: 5 }, contextBound: false, reason: "x" },
-    { gloss: { sense: 0 }, contextBound: false, reason: "Forma flessa nella glossa." },
+    { gloss: { sense: 5 }, contextBound: false, names: [], reason: "x" },
+    { gloss: { sense: 0 }, contextBound: false, names: [], reason: "Forma flessa nella glossa." },
   ]);
 
   expect(await reviewReports(db, provider)).toBe(1);
@@ -144,12 +153,22 @@ test("free Italian is rejected when dictionary senses exist, unless no sense fit
     flagged: "",
   });
   const reject = fake([
-    { gloss: { italian: "soltanto", noSenseFits: false }, contextBound: false, reason: "x" },
+    {
+      gloss: { italian: "soltanto", noSenseFits: false },
+      contextBound: false,
+      names: [],
+      reason: "x",
+    },
   ]);
   expect(await reviewReports(db, reject)).toBe(0);
 
   const accept = fake([
-    { gloss: { italian: "soltanto", noSenseFits: true }, contextBound: false, reason: "x" },
+    {
+      gloss: { italian: "soltanto", noSenseFits: true },
+      contextBound: false,
+      names: [],
+      reason: "x",
+    },
   ]);
   expect(await reviewReports(db, accept)).toBe(1);
   expect(primary(db, withSenses)).toMatchObject({ italian: "soltanto", provider: "claude-cli" });
@@ -163,24 +182,11 @@ test("a manual primary gloss is never replaced", async () => {
     senses: [["only", "soltanto"]],
     flagged: "",
   });
-  await reviewReports(db, fake([{ gloss: { sense: 0 }, contextBound: false, reason: "x" }]));
+  await reviewReports(
+    db,
+    fake([{ gloss: { sense: 0 }, contextBound: false, names: [], reason: "x" }]),
+  );
   expect(primary(db, id)).toMatchObject({ italian: "solo", provider: "manual" });
-});
-
-test("a context-bound mark is reviewed once: turned off and its gloss replaced independently", async () => {
-  const db = freshDb();
-  const id = seed(db, "też", { gloss: "per", senses: [["also", "anche"]], contextBound: true });
-  expect(pendingReports(db)).toMatchObject([{ lemma: "też", kind: "context" }]);
-
-  await reviewReports(db, fake([{ gloss: { sense: 0 }, contextBound: false, reason: "x" }]));
-  expect(lemmaRow(db, id).contextBound).toBe(false);
-  expect(primary(db, id).italian).toBe("anche");
-
-  // Marked again by the learner: pending again. Kept on by a review: settled.
-  db.update(schema.lemma).set({ contextBound: true }).where(eq(schema.lemma.id, id)).run();
-  expect(pendingReports(db)).toHaveLength(1);
-  await reviewReports(db, fake([{ gloss: "keep", contextBound: true, reason: "x" }]));
-  expect(pendingReports(db)).toHaveLength(0);
 });
 
 test("a provider failure leaves every Report pending and out of practice", async () => {
@@ -201,13 +207,13 @@ test("a provider failure leaves every Report pending and out of practice", async
 test("corrections are shown once; Maintenance lists every review", async () => {
   const db = freshDb();
   seed(db, "tylko", { gloss: "ma anche", senses: [["only", "solo, soltanto"]], flagged: "" });
-  seed(db, "do", { gloss: "a", contextBound: true });
+  seed(db, "do", { gloss: "a", contextBound: true, flagged: "" });
   db.insert(schema.lemmaSlipRepair).values({ slip: "myśli", target: "myśleć" }).run();
   await reviewReports(
     db,
     fake([
-      { gloss: { sense: 0 }, contextBound: false, reason: "x" },
-      { gloss: "keep", contextBound: true, reason: "x" },
+      { gloss: { sense: 0 }, contextBound: false, names: [], reason: "x" },
+      { gloss: "keep", contextBound: true, names: [], reason: "x" },
     ]),
   );
 
@@ -223,7 +229,10 @@ test("corrections are shown once; Maintenance lists every review", async () => {
 test("undo restores gloss and mark, and is disabled once either changed since", async () => {
   const db = freshDb();
   const id = seed(db, "tylko", { gloss: "ma anche", senses: [["only", "solo"]], flagged: "" });
-  await reviewReports(db, fake([{ gloss: { sense: 0 }, contextBound: true, reason: "x" }]));
+  await reviewReports(
+    db,
+    fake([{ gloss: { sense: 0 }, contextBound: true, names: [], reason: "x" }]),
+  );
   const [review] = listReviews(db);
   expect(review.undoable).toBe(true);
 
@@ -234,7 +243,10 @@ test("undo restores gloss and mark, and is disabled once either changed since", 
 
   // A second review, then the gloss is edited: no longer undoable.
   db.update(schema.lemma).set({ flaggedAt: new Date() }).where(eq(schema.lemma.id, id)).run();
-  await reviewReports(db, fake([{ gloss: { sense: 0 }, contextBound: false, reason: "x" }]));
+  await reviewReports(
+    db,
+    fake([{ gloss: { sense: 0 }, contextBound: false, names: [], reason: "x" }]),
+  );
   db.update(schema.gloss).set({ italian: "solamente" }).where(eq(schema.gloss.lemmaId, id)).run();
   const [latest] = listReviews(db);
   expect(latest.undoable).toBe(false);
@@ -244,7 +256,10 @@ test("undo restores gloss and mark, and is disabled once either changed since", 
 test("undoing a review that changed nothing files a Report the next review sees", async () => {
   const db = freshDb();
   const id = seed(db, "tylko", { gloss: "solo", flagged: "" });
-  await reviewReports(db, fake([{ gloss: "keep", contextBound: false, reason: "Va bene." }]));
+  await reviewReports(
+    db,
+    fake([{ gloss: "keep", contextBound: false, names: [], reason: "Va bene." }]),
+  );
   const [review] = listReviews(db);
   expect(review.changed).toBe(false);
 
@@ -252,10 +267,167 @@ test("undoing a review that changed nothing files a Report the next review sees"
   expect(lemmaRow(db, id)).toMatchObject({ flagNote: "è sbagliata" });
   expect(lemmaRow(db, id).flaggedAt).not.toBeNull();
 
-  const next = fake([{ gloss: "keep", contextBound: false, reason: "x" }]);
+  const next = fake([{ gloss: "keep", contextBound: false, names: [], reason: "x" }]);
   await reviewReports(db, next);
   expect(next.calls[0][0]).toMatchObject({
     note: "è sbagliata",
     previous: { reason: "Va bene.", undone: true },
   });
+});
+
+function w(surface: string, lemma: string, pos: string) {
+  return { surface, lemma, pos, tags: [], is_space: false };
+}
+
+/** "Smok Iskra leci. Iskra śpi. Widzę iskry." with the dragon stored as the noun, then as an adjective slip. */
+function seedDragon(db: DB) {
+  insertEntryBatch(db, [
+    {
+      word: "iskra",
+      pos: "noun",
+      ipa: null,
+      etymology: null,
+      isMwe: false,
+      senses: [{ gloss: "spark", rawGloss: null, tags: [] }],
+      forms: ["iskra", "iskry", "iskro"].map((form) => ({ form, tags: [] })),
+    },
+  ]);
+  persistAnalysis(
+    db,
+    { content: "Smok Iskra leci. Iskra śpi. Widzę iskry." },
+    {
+      sentences: [
+        {
+          tokens: [
+            w("Smok ", "smok", "NOUN"),
+            w("Iskra ", "iskra", "NOUN"),
+            w("leci.", "lecieć", "VERB"),
+          ],
+        },
+        { tokens: [w("Iskra ", "iskra", "ADJ"), w("śpi.", "spać", "VERB")] },
+        { tokens: [w("Widzę ", "widzieć", "VERB"), w("iskry.", "iskra", "NOUN")] },
+      ],
+    },
+    new Date(),
+    new Map(),
+  );
+  const rows = db
+    .select({ id: schema.token.id, lemmaId: schema.token.lemmaId, surface: schema.token.surface })
+    .from(schema.token)
+    .all();
+  const dragon = rows.find((t) => t.surface === "Iskra ")!;
+  return { noun: dragon.lemmaId!, tokenId: dragon.id };
+}
+
+function lemmasOf(db: DB, surface: string) {
+  return db
+    .select({ lemma: schema.lemma.lemma, pos: schema.lemma.pos })
+    .from(schema.token)
+    .innerJoin(schema.lemma, eq(schema.token.lemmaId, schema.lemma.id))
+    .where(eq(schema.token.surface, surface))
+    .all();
+}
+
+test("a reader Report moves the Name uses to the Name and deletes the word left without tokens", async () => {
+  const db = freshDb();
+  const { noun, tokenId } = seedDragon(db);
+  // The lowercase spark keeps the noun alive until it goes too.
+  db.delete(schema.token).where(eq(schema.token.surface, "iskry.")).run();
+  reportLemma(db, noun, "è il nome del drago", tokenId);
+  const provider = fake([{ gloss: "keep", contextBound: false, names: [0, 1], reason: "Nome." }]);
+
+  expect(await reviewReports(db, provider)).toBe(1);
+  expect(provider.calls[0][0].names.map((c) => c.sentence)).toEqual([
+    "Smok Iskra leci.",
+    "Iskra śpi.",
+  ]);
+  expect(lemmasOf(db, "Iskra ")).toEqual([
+    { lemma: "Iskra", pos: "PROPN" },
+    { lemma: "Iskra", pos: "PROPN" },
+  ]);
+  const words = db.select().from(schema.lemma).where(eq(schema.lemma.lemma, "iskra")).all();
+  expect(words).toHaveLength(0);
+  expect(takeCorrections(db).map((c) => c.line)).toEqual(["iskra: 2 occorrenze ora Iskra"]);
+});
+
+test("undoing a Name decision returns the occurrences to the word, which starts as new", async () => {
+  const db = freshDb();
+  const { noun, tokenId } = seedDragon(db);
+  db.delete(schema.token).where(eq(schema.token.surface, "iskry.")).run();
+  reportLemma(db, noun, "", tokenId);
+  await reviewReports(db, fake([{ gloss: "keep", contextBound: false, names: [0], reason: "x" }]));
+  const [review] = listReviews(db);
+  expect(review.undoable).toBe(true);
+
+  undoReview(db, review.reviewId!);
+  expect(lemmasOf(db, "Iskra ")).toEqual([
+    { lemma: "iskra", pos: "NOUN" },
+    { lemma: "iskra", pos: "ADJ" },
+  ]);
+  const [restored] = db
+    .select({ id: schema.lemma.id })
+    .from(schema.lemma)
+    .where(and(eq(schema.lemma.lemma, "iskra"), eq(schema.lemma.pos, "NOUN")))
+    .all();
+  const state = db
+    .select()
+    .from(schema.knowledge)
+    .where(eq(schema.knowledge.lemmaId, restored.id))
+    .all();
+  expect(state).toMatchObject([{ track: "receptive", reps: 0 }]);
+  expect(listReviews(db)[0].undoable).toBe(false);
+});
+
+test("a Practice Report offers only capitalized occurrences, and a word with uses left stays", async () => {
+  const db = freshDb();
+  const { noun } = seedDragon(db);
+  reportLemma(db, noun, "");
+  const provider = fake([{ gloss: "keep", contextBound: false, names: [0], reason: "x" }]);
+
+  expect(await reviewReports(db, provider)).toBe(1);
+  expect(provider.calls[0][0].names.map((c) => c.sentence)).toEqual(["Smok Iskra leci."]);
+  expect(lemmasOf(db, "iskry.")).toEqual([{ lemma: "iskra", pos: "NOUN" }]);
+  expect(lemmasOf(db, "Iskra ")).toEqual([
+    { lemma: "Iskra", pos: "PROPN" },
+    { lemma: "iskra", pos: "ADJ" },
+  ]);
+});
+
+test("a Name index outside the candidates leaves the Report pending", async () => {
+  const db = freshDb();
+  const { noun } = seedDragon(db);
+  reportLemma(db, noun, "");
+  expect(
+    await reviewReports(
+      db,
+      fake([{ gloss: "keep", contextBound: false, names: [3], reason: "x" }]),
+    ),
+  ).toBe(0);
+  expect(pendingReports(db)).toHaveLength(1);
+});
+
+test("a lemma an earlier verdict in the batch deleted is skipped, and the batch goes on", async () => {
+  const db = freshDb();
+  const { noun, tokenId } = seedDragon(db);
+  db.delete(schema.token).where(eq(schema.token.surface, "iskry.")).run();
+  const [adjective] = db
+    .select({ id: schema.lemma.id })
+    .from(schema.lemma)
+    .where(and(eq(schema.lemma.lemma, "iskra"), eq(schema.lemma.pos, "ADJ")))
+    .all();
+  reportLemma(db, noun, "", tokenId);
+  reportLemma(db, adjective.id, "");
+  const tylko = seed(db, "tylko", { gloss: "ma anche", senses: [["only", "solo"]], flagged: "" });
+  const provider = fake([
+    { gloss: "keep", contextBound: false, names: [0, 1], reason: "Nome." },
+    { gloss: "keep", contextBound: false, names: [0], reason: "Nome." },
+    { gloss: { sense: 0 }, contextBound: false, names: [], reason: "x" },
+  ]);
+
+  expect(await reviewReports(db, provider)).toBe(2);
+  expect(primary(db, tylko).italian).toBe("solo");
+  expect(listReviews(db).map((r) => r.line)).toEqual([
+    'tylko: "ma anche" → "solo"',
+    "iskra: 2 occorrenze ora Iskra",
+  ]);
 });

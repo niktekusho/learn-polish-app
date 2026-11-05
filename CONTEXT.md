@@ -69,7 +69,12 @@ A proper noun in a text: a person (_Kasia_) or a place (_Warszawa_). Never a **T
 unit**: it has no Italian meaning to learn. Only its inflection is of interest, so the
 reader shows the base form and case of an inflected name (_Kasi_ → _Kasia_, genitive).
 A word tagged proper noun only because it is capitalized (_Bułka_ at sentence start) is
-not a Name when the **Home dictionary** has it as a common word and not as a name. Shown in the UI as _Nome proprio_.
+not a Name when the **Home dictionary** has it as a common word and not as a name. A
+**Story** character's name is the exception: in an **Episode**, a capitalized form of it
+is that Name with the character's name as base form, even when the word is also a common
+word (the dragon _Iskra_, _Iskro_ beside the noun _iskra_, "scintilla"). Lowercase it is
+the common word; at sentence start it is checked in its sentence. An occurrence a
+**Report review** judged a Name is one too. Shown in the UI as _Nome proprio_.
 _Avoid_: proper noun (as a data term), PROPN
 
 **L1**:
@@ -166,29 +171,31 @@ _Avoid_: redo, relearning step (FSRS term for a same-day scheduled review)
 **Context-bound lemma**:
 A lemma whose Italian meaning cannot be given without a sentence: _do_ is "a", "fino a",
 "in" or "per" depending on the sentence, and "per" alone points just as well to _dla_.
-Marked by the learner, one lemma at a time, never by word type: _też_ and _podczas_ are
-function words that translate fine alone. A beginner's mark can be wrong, so each one
-gets a **Report review**. Never asked as a single word (recognition,
+Decided one lemma at a time by a **Report review**, never by word type: _też_ and
+_podczas_ are function words that translate fine alone. Never asked as a single word (recognition,
 **Spoken recall**); still practised through **Read-aloud**, where the sentence carries
 the meaning. Shown in the UI as _Serve il contesto_.
 _Avoid_: function word (as a data term), ambiguous word
 
 **Report**:
-The learner telling Practice that an item's lemma is broken. Two kinds: _wrong_ (wrong
-meaning, garbled gloss, not a word at all), which takes the lemma out of **Practice**
-until its **Report review**, and _needs context_, which makes it **Context-bound** at
-once. No **Knowledge state** is graded: a broken item says nothing about memory.
-Shown in the UI as _Segnala_, with _Significato sbagliato_ (_Domanda sbagliata_ on a
-**Passage exercise**) for _wrong_.
+The learner telling the app that something about a lemma is wrong, from a **Practice**
+item or from the reader, with an optional note for the **Report review** (_serve il
+contesto_, _è un nome_). Takes the lemma out of **Practice** until its review. No
+**Knowledge state** is graded: a broken item says nothing about memory. Shown in the UI
+as _Segnala_.
 _Avoid_: flag (code term), bug report
 
 **Report review**:
 The automatic answer to a **Report**, batched when a **Practice** session ends. A
-**Lemma slip** is repaired from the **Home dictionary**. Any other lemma gets two
-independent decisions, its primary **Gloss** (kept or replaced) and its **Context-bound**
-mark (on or off), with a one-line reason. A **Manual gloss** is never replaced. Shown at
+**Lemma slip** is repaired from the **Home dictionary**. Any other lemma gets three
+independent decisions, with a one-line reason: its primary **Gloss** (kept or replaced),
+its **Context-bound** mark (on or off), and which of its capitalized occurrences are a
+**Name**, each judged in its sentence. A **Manual gloss** is never replaced. A Name use
+takes the **Home dictionary** headword as base form (_Iskro_ → _Iskra_); a lemma left
+with no occurrence is deleted with its **Knowledge state**, which was earned on a Name. Shown at
 the start of the next **Practice**, and undoable at any time while what it wrote is still
-current. Undoing a review that changed nothing is a new **Report**, and the next review
+current. Undoing a Name decision returns the occurrences to the common word, which
+starts as new. Undoing a review that changed nothing is a new **Report**, and the next review
 sees the old one. Shown in the UI as _Corretti_, together with **Lemma slip** repairs.
 _Avoid_: correction (that is a fix to generated text), moderation
 

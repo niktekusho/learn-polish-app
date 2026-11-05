@@ -13,8 +13,10 @@ import {
   mweOccurrence,
   occurrenceGloss,
   passageQuestion,
+  reportReview,
   reviewLog,
   sourceText,
+  story,
   token,
 } from "#/db/schema";
 import { wipeDictionary } from "#/dictionary/loader";
@@ -27,6 +29,12 @@ import { ensureReceptiveKnowledge, upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import { type ProofreadDeps, proofreadText, textChanges } from "#/proofread/proofread";
 import { isName, NAME_POS } from "#/reader/name";
+import {
+  moveToNames,
+  type NameMove,
+  resolveCharacterNames,
+  storyCharacters,
+} from "#/story/character-names";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -147,10 +155,12 @@ export interface NameRepair {
 /**
  * A PROPN lemma can carry vocabulary data classifyToken would not create: Names lose
  * knowledge, glosses and reviews and merge into their base, common words join their
- * lemma, no-letter lemmas and fragments go. Idempotent.
+ * lemma, no-letter lemmas and fragments go. Idempotent. A Story character or a Name a
+ * Report review decided stays a Name, though it is also a common word (CONTEXT.md "Name").
  */
 export function repairNames(db: DB): NameRepair {
   const out: NameRepair = { deleted: 0, commonWords: 0, merged: 0, cleared: 0 };
+  const decided = decidedNames(db);
   db.transaction((tx) => {
     const relink = (from: number, to: number | null) =>
       tx.update(token).set({ lemmaId: to }).where(eq(token.lemmaId, from)).run();
@@ -169,7 +179,9 @@ export function repairNames(db: DB): NameRepair {
     for (const l of tx.select().from(lemma).where(eq(lemma.pos, NAME_POS)).all()) {
       const classified = NAME_FRAGMENTS.has(l.lemma)
         ? ({ kind: "skip" } as const)
-        : classifyToken(tx, { lemma: l.lemma, pos: NAME_POS, is_space: false });
+        : decided.has(l.lemma)
+          ? ({ kind: "name", lemma: l.lemma } as const)
+          : classifyToken(tx, { lemma: l.lemma, pos: NAME_POS, is_space: false });
       switch (classified.kind) {
         case "skip":
           relink(l.id, null);
@@ -208,6 +220,22 @@ export function repairNames(db: DB): NameRepair {
     }
   });
   return out;
+}
+
+/** Names decided by a Story outline or a standing Report review. */
+function decidedNames(db: DB): Set<string> {
+  const characters = db
+    .select({ id: story.id })
+    .from(story)
+    .all()
+    .flatMap((s) => storyCharacters(db, s.id).map((c) => c.name));
+  const reviewed = db
+    .select({ names: reportReview.names })
+    .from(reportReview)
+    .where(isNull(reportReview.undoneAt))
+    .all()
+    .flatMap((r) => r.names.map((m) => m.name));
+  return new Set([...characters, ...reviewed]);
 }
 
 export interface SlipRepair {
@@ -460,5 +488,41 @@ function dropRemovedNonWords(
       tx.delete(lemma).where(eq(lemma.id, l.id)).run();
     }
     return unused.length;
+  });
+}
+
+export interface CharacterNameRepair {
+  moved: number; // Episode tokens relinked to their character's Name
+  deletedLemmas: number; // lemmas left without tokens
+}
+
+/**
+ * Apply the Story character rule (CONTEXT.md "Name") to stored Episodes, for
+ * those imported before it. A check that cannot run throws with nothing changed.
+ */
+export async function repairCharacterNames(
+  db: DB,
+  checker: MweChecker,
+): Promise<CharacterNameRepair> {
+  const moves: NameMove[] = [];
+  for (const t of db.select().from(sourceText).where(isNotNull(sourceText.storyId)).all()) {
+    const tokens = db
+      .select()
+      .from(token)
+      .where(eq(token.textId, t.id))
+      .orderBy(asc(token.position))
+      .all();
+    const sentences: { tokens: { surface: string }[] }[] = [];
+    for (const tok of tokens) {
+      sentences[tok.sentenceIndex] ??= { tokens: [] };
+      sentences[tok.sentenceIndex].tokens.push(tok);
+    }
+    const characters = storyCharacters(db, t.storyId as number);
+    const names = await resolveCharacterNames(db, checker, { sentences }, characters);
+    for (const [position, name] of names) moves.push({ tokenId: tokens[position].id, name });
+  }
+  return db.transaction((tx) => {
+    const { from, deletedLemmas } = moveToNames(tx, moves);
+    return { moved: from.length, deletedLemmas };
   });
 }

@@ -1,19 +1,19 @@
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Check, Flag, Mic, MicOff, RotateCcw, X } from "lucide-react";
+import { ArrowLeft, Check, Mic, MicOff, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { PushToTalk } from "#/audio/recorder";
 import { ListenButton } from "#/audio/speak";
 import type { ClientPracticeItem } from "#/practice/session";
 import { Corrections } from "#/report/Corrections";
+import { ReportButton } from "#/report/ReportButton";
 import { wordPattern } from "#/reader/word-pattern";
 import {
   TRACK,
   BTN_BAD,
   BTN_GOOD,
   BTN_PRIMARY,
-  BTN_QUIET,
   CHOICE,
   CHOICE_STATE,
   ICON_BUTTON,
@@ -97,25 +97,15 @@ const submitSelfGrade = createServerFn({ method: "POST" })
     return selfGradeItem(db, data.sessionId, data.itemId, data.saidIt);
   });
 
-// "wrong": flag the lemma out of practice until its Report review.
-// "context": mark it context-bound (no more single-word exercises).
+// The lemma leaves practice until its Report review.
 const submitReport = createServerFn({ method: "POST" })
   .validator((d: unknown) =>
-    z
-      .object({
-        sessionId: z.string(),
-        itemId: z.string(),
-        kind: z.enum(["wrong", "context"]),
-        note: z.string().max(500),
-      })
-      .parse(d),
+    z.object({ sessionId: z.string(), itemId: z.string(), note: z.string().max(500) }).parse(d),
   )
   .handler(async ({ data }) => {
     const { db } = await import("#/db/index");
-    const { markContextBound, reportItem } = await import("#/practice/session");
-    return data.kind === "context"
-      ? markContextBound(db, data.sessionId, data.itemId)
-      : reportItem(db, data.sessionId, data.itemId, data.note);
+    const { reportItem } = await import("#/practice/session");
+    return reportItem(db, data.sessionId, data.itemId, data.note);
   });
 
 // End-of-session note (slot line). Null while the session isn't finished.
@@ -427,12 +417,12 @@ function PracticeSession() {
     }
   }
 
-  async function report(kind: "wrong" | "context", note: string) {
+  async function report(note: string) {
     if (busy) return;
     setBusy(true);
     try {
       const { dropped } = await submitReport({
-        data: { sessionId: data.sessionId, itemId: item.id, kind, note },
+        data: { sessionId: data.sessionId, itemId: item.id, note },
       });
       setItems((prev) => prev.filter((it) => !dropped.includes(it.id)));
       setAnswered((prev) => ({ ...prev, [item.id]: prev[item.id] ?? false }));
@@ -450,7 +440,17 @@ function PracticeSession() {
 
   const bar = (
     <Bar done={answeredCount / total} count={`${answeredCount + 1} / ${total}`}>
-      <ReportMenu key={item.id} passage={item.kind === "passage"} busy={busy} onReport={report} />
+      <ReportButton
+        key={item.id}
+        busy={busy}
+        hint={
+          item.kind === "passage"
+            ? "La domanda viene scartata e riscritta."
+            : "Esce dalla pratica fino alla revisione a fine sessione."
+        }
+        popover="absolute top-full right-2 mt-1"
+        onReport={report}
+      />
       {micToggle}
     </Bar>
   );
@@ -757,90 +757,6 @@ function Bar({
       </div>
       {children}
     </header>
-  );
-}
-
-const POPOVER =
-  "absolute top-full right-2 z-20 mt-1 grid w-[min(300px,calc(100%-16px))] rounded bg-panel p-3 shadow-card";
-
-function ReportMenu({
-  passage,
-  busy,
-  onReport,
-}: {
-  passage: boolean;
-  busy: boolean;
-  onReport: (kind: "wrong" | "context", note: string) => void;
-}) {
-  const [step, setStep] = useState<"menu" | "note" | null>(null);
-  const [note, setNote] = useState("");
-  const option =
-    "grid min-h-12 gap-px rounded border-[1.5px] border-rule bg-panel px-3 py-2 text-left";
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setStep(step ? null : "menu")}
-        disabled={busy}
-        aria-label="Segnala"
-        aria-expanded={step !== null}
-        className={ICON_BUTTON}
-      >
-        <Flag size={20} />
-      </button>
-      {step === "menu" && (
-        <div className={`${POPOVER} gap-2`}>
-          <span className={LABEL}>Segnala</span>
-          <button type="button" onClick={() => setStep("note")} className={option}>
-            <b className="font-semibold">
-              {passage ? "Domanda sbagliata" : "Significato sbagliato"}
-            </b>
-            <small className="text-sm text-ink-3">Esce dalla pratica fino alla revisione</small>
-          </button>
-          {!passage && (
-            <button type="button" onClick={() => onReport("context", "")} className={option}>
-              <b className="font-semibold">Serve il contesto</b>
-              <small className="text-sm text-ink-3">
-                Non chiederla più da sola: solo in una frase
-              </small>
-            </button>
-          )}
-        </div>
-      )}
-      {step === "note" && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            onReport("wrong", note);
-          }}
-          className={`${POPOVER} gap-2`}
-        >
-          <label htmlFor="report-note" className="text-sm font-semibold text-ink-2">
-            Cosa non va? <span className="font-normal text-ink-3">(facoltativo)</span>
-          </label>
-          <textarea
-            id="report-note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            maxLength={500}
-            rows={3}
-            autoFocus
-            className="rounded border-[1.5px] border-rule bg-panel px-3 py-2 font-serif text-base"
-          />
-          <p className="text-sm text-ink-3">
-            Esce dalla pratica fino alla revisione a fine sessione.
-          </p>
-          <div className="flex justify-end gap-2">
-            <button type="button" onClick={() => setStep(null)} className={BTN_QUIET}>
-              Annulla
-            </button>
-            <button type="submit" disabled={busy} className={BTN_PRIMARY}>
-              Segnala
-            </button>
-          </div>
-        </form>
-      )}
-    </>
   );
 }
 

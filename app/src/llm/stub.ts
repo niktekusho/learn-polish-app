@@ -56,6 +56,7 @@ export class StubProvider implements GlossProvider, StoryProvider {
     return items.map((it) => ({
       gloss: it.senses.length > 0 ? { sense: 0 } : "keep",
       contextBound: it.contextBound,
+      names: [],
       reason: "Revisione stub.",
     }));
   }

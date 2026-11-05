@@ -6,7 +6,7 @@ import { detectMwes, loadMweHeadwords, type MweMatch, type MweToken } from "#/di
 import { correctLemma } from "#/dictionary/lemma-correction";
 import { initialKnowledgeFields } from "#/fsrs/index";
 import { NAME_POS } from "#/reader/name";
-import { classifyToken, FORMULA_POS } from "./classify";
+import { classifyToken } from "./classify";
 import type { AnalyzeResponse } from "./sidecar";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -16,6 +16,11 @@ export interface ImportResult {
   tokenCount: number;
   lemmaCount: number; // distinct lemmas in this text
   mweCount: number; // MWE occurrences detected in this text
+}
+
+export interface AssignedLemma {
+  lemma: string;
+  pos: string;
 }
 
 interface TextInput {
@@ -45,10 +50,10 @@ export function persistAnalysis(
   now = new Date(),
   // Injectable so pipeline tests stay sidecar- and dictionary-free.
   mweHeadwords?: Map<string, string[]>,
-  // Accepted Formula positions from resolveFormulas, with their headword.
-  formulas = new Map<number, string>(),
+  // Lemmas decided before saving, by token position: accepted Formulas, Story character Names.
+  assigned = new Map<number, AssignedLemma>(),
   // The MWE matches to save; importAnalysis passes only the ones its check accepted.
-  mwes = analysisMwes(db, analysis, formulas, mweHeadwords),
+  mwes = analysisMwes(db, analysis, assigned, mweHeadwords),
 ): ImportResult {
   return db.transaction((tx) => {
     const textId = input.textId ?? insertText(tx, input);
@@ -63,9 +68,9 @@ export function persistAnalysis(
     let position = 0;
     for (let s = 0; s < analysis.sentences.length; s++) {
       for (const tok of analysis.sentences[s].tokens) {
-        const assigned = tokenLemma(tx, tok, formulas.get(position));
-        const lemmaId = assigned && upsertLemma(tx, assigned.lemma, assigned.pos);
-        if (lemmaId !== null && assigned?.pos !== NAME_POS && !seen.has(lemmaId)) {
+        const saved = tokenLemma(tx, tok, assigned.get(position));
+        const lemmaId = saved && upsertLemma(tx, saved.lemma, saved.pos);
+        if (lemmaId !== null && saved?.pos !== NAME_POS && !seen.has(lemmaId)) {
           seen.add(lemmaId);
           ensureReceptiveKnowledge(tx, lemmaId, now);
         }
@@ -127,12 +132,12 @@ function insertText(db: DB, input: TextInput): number {
 function tokenLemma(
   db: DB,
   tok: AnalyzeResponse["sentences"][number]["tokens"][number],
-  formula: string | undefined,
-): { lemma: string; pos: string } | null {
+  assigned: AssignedLemma | undefined,
+): AssignedLemma | null {
   const classified = classifyToken(db, tok);
-  if (classified.kind === "name") return { lemma: classified.lemma, pos: NAME_POS };
   if (classified.kind === "skip") return null;
-  if (formula) return { lemma: formula, pos: FORMULA_POS };
+  if (assigned) return assigned;
+  if (classified.kind === "name") return { lemma: classified.lemma, pos: NAME_POS };
   return correctLemma(db, tok.surface, classified.lemma, classified.pos);
 }
 
@@ -143,7 +148,7 @@ function tokenLemma(
 export function analysisMwes(
   db: DB,
   analysis: AnalyzeResponse,
-  formulas = new Map<number, string>(),
+  assigned = new Map<number, AssignedLemma>(),
   mweHeadwords?: Map<string, string[]>,
 ): MweMatch[] {
   const tokens: MweToken[] = [];
@@ -151,7 +156,7 @@ export function analysisMwes(
   analysis.sentences.forEach((s, sentenceIndex) => {
     for (const tok of s.tokens) {
       if (!tok.is_space) {
-        const lemma = tokenLemma(db, tok, formulas.get(position))?.lemma ?? null;
+        const lemma = tokenLemma(db, tok, assigned.get(position))?.lemma ?? null;
         tokens.push({ surface: tok.surface, lemma, position, sentenceIndex, isSpace: false });
       }
       position++;
@@ -161,7 +166,7 @@ export function analysisMwes(
 }
 
 /** A sentence's text as its tokens spell it. */
-export function analysisSentence(s: AnalyzeResponse["sentences"][number]): string {
+export function analysisSentence(s: { tokens: { surface: string }[] }): string {
   return s.tokens
     .map((t) => t.surface)
     .join("")

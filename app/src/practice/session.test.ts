@@ -8,14 +8,7 @@ import { dueLemmas, initialKnowledgeFields } from "#/fsrs/index";
 import { listContextBound, unmarkContextBound } from "#/maintenance/ops";
 import type { GlossProvider, ReportVerdict } from "#/llm/provider";
 import { pendingReports, reviewReports } from "#/report/review";
-import {
-  answerItem,
-  buildSession,
-  markContextBound,
-  reportItem,
-  resumeSession,
-  sessionSummary,
-} from "./session";
+import { answerItem, buildSession, reportItem, resumeSession, sessionSummary } from "./session";
 
 function freshDb() {
   const sqlite = new Database(":memory:");
@@ -126,9 +119,7 @@ test("report flags the lemma out of practice without grading; its review brings 
 
   expect(db.select().from(schema.reviewLog).all()).toHaveLength(0); // no FSRS write
   expect(resumeSession(session.sessionId)!.answered).toEqual([{ itemId: bad.id, correct: false }]);
-  expect(pendingReports(db)).toMatchObject([
-    { lemma: "tylko", kind: "wrong", note: "wrong gloss" },
-  ]);
+  expect(pendingReports(db)).toMatchObject([{ lemma: "tylko", note: "wrong gloss" }]);
 
   // Flagged: neither a target nor a distractor.
   const next = buildSession(db, { limit: 20 });
@@ -143,6 +134,7 @@ test("report flags the lemma out of practice without grading; its review brings 
     verdictProvider({
       gloss: { italian: "solo", noSenseFits: true },
       contextBound: false,
+      names: [],
       reason: "Glossa sbagliata.",
     }),
   );
@@ -152,7 +144,7 @@ test("report flags the lemma out of practice without grading; its review brings 
   expect(fixed?.kind === "recognition-mcq" && fixed.choices).toContain("solo");
 });
 
-test("needs context drops the lemma from single-word exercises but keeps read-aloud; unmark restores it", () => {
+test("a context-bound lemma leaves the single-word exercises but keeps read-aloud; unmark restores it", () => {
   const db = freshDb();
   for (const [w, g] of [
     ["kot", "gatto"],
@@ -175,12 +167,8 @@ test("needs context drops the lemma from single-word exercises but keeps read-al
       ...initialKnowledgeFields(new Date("2026-01-01")),
     })
     .run();
-  const session = buildSession(db, { limit: 20 });
-  const item = session.items.find((i) => i.kind === "recognition-mcq" && i.prompt === "do")!;
-  markContextBound(db, session.sessionId, item.id);
+  db.update(schema.lemma).set({ contextBound: true }).where(eq(schema.lemma.id, doId)).run();
 
-  expect(db.select().from(schema.reviewLog).all()).toHaveLength(0);
-  expect(pendingReports(db)).toMatchObject([{ lemma: "do", kind: "context" }]);
   expect(listContextBound(db)).toMatchObject([{ lemma: "do" }]);
   expect(dueLemmas(db, "receptive").map((d) => d.lemma)).not.toContain("do");
   expect(dueLemmas(db, "productive").map((d) => d.lemma)).not.toContain("do");
@@ -386,6 +374,6 @@ test("reporting a passage deletes its question so it is prepared again", () => {
   const { session, item, doId } = passageSession(db);
   reportItem(db, session.sessionId, item.id, "");
   expect(db.select().from(schema.passageQuestion).all()).toHaveLength(0);
-  expect(pendingReports(db).filter((p) => p.kind === "wrong")).toHaveLength(0);
+  expect(pendingReports(db)).toHaveLength(0);
   expect(dueLemmas(db, "receptive").map((d) => d.lemmaId)).not.toContain(doId);
 });

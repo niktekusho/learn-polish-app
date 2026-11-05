@@ -56,6 +56,7 @@ const actionInput = z.object({
     "clear-dictionary",
     "recheck-mwes",
     "repair-names",
+    "repair-character-names",
     "repair-formulas",
     "proofread-episodes",
   ]),
@@ -87,6 +88,14 @@ const runAction = createServerFn({ method: "POST" })
         return {
           deleted: r.deleted,
           note: `Names: ${r.merged} variants merged, ${r.commonWords} common words relinked, ${r.cleared} knowledge/gloss/review rows cleared. Morph tags: ${b.filled} texts filled, ${b.skipped} skipped (tokens differ), ${b.failed} failed (sidecar unreachable or erroring).`,
+        };
+      }
+      case "repair-character-names": {
+        const { getGlossProvider } = await import("#/llm/index");
+        const r = await ops.repairCharacterNames(db, getGlossProvider());
+        return {
+          deleted: r.deletedLemmas,
+          note: `${r.moved} occurrences moved to their character.`,
         };
       }
       case "repair-formulas": {
@@ -398,7 +407,7 @@ function Maintenance() {
         />
         <ActionRow
           title="Repair names + backfill morph tags"
-          description="Names lose knowledge, glosses and reviews, variants merge, capitalized common words join their lemma, emoji and fragments go. Then texts with untagged tokens are re-analyzed through the sidecar to store their morph tags."
+          description="Names lose knowledge, glosses and reviews, variants merge, capitalized common words join their lemma (Story characters and reviewed Names excepted), emoji and fragments go. Then texts with untagged tokens are re-analyzed through the sidecar to store their morph tags."
           button="Repair + backfill"
           pending={pending === "repair-names"}
           disabled={pending !== null}
@@ -407,6 +416,20 @@ function Maintenance() {
               "repair-names",
               "Repair names and backfill morph tags? Names' knowledge, glosses and review history are deleted.",
               "emoji/fragment lemmas",
+            )
+          }
+        />
+        <ActionRow
+          title="Repair Story character names"
+          description="In every Episode, a capitalized form of a Story character's name becomes that Name (Iskro, Iskrę → Iskra), even when it is also a common word. At sentence start it is checked in its sentence first. A word left with no uses is deleted with its knowledge. Fails without changes if the provider cannot run the check."
+          button="Repair characters"
+          pending={pending === "repair-character-names"}
+          disabled={pending !== null}
+          onClick={() =>
+            run(
+              "repair-character-names",
+              "Move Story character names to their Name? Words left with no uses are deleted with their knowledge.",
+              "words left with no uses",
             )
           }
         />

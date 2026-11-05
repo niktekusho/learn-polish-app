@@ -225,8 +225,15 @@ test("MWE check: one verdict per item, in order", () => {
 test("report review: a malformed item is null, a wrong item count fails the call", () => {
   const ok = { gloss: { sense: 0 }, contextBound: true, reason: "Dipende dalla frase." };
   const out = JSON.stringify({ reviews: [ok, { gloss: "replace", contextBound: false }] });
-  expect(parseReportReviewJson(out, 2)).toEqual([ok, null]);
+  expect(parseReportReviewJson(out, 2)).toEqual([{ ...ok, names: [] }, null]);
   expect(() => parseReportReviewJson(JSON.stringify({ reviews: [ok] }), 2)).toThrow(/2/);
+});
+
+test("report review: Name decisions are candidate indices, anything else makes the item null", () => {
+  const ok = { gloss: "keep", contextBound: false, names: [0, 2], reason: "Nome del drago." };
+  const bad = [-1, 1.5, "0"].map((index) => ({ ...ok, names: [index] }));
+  const out = JSON.stringify({ reviews: [ok, ...bad] });
+  expect(parseReportReviewJson(out, 4)).toEqual([ok, null, null, null]);
 });
 
 test("proofread: parses flagged spans, an empty list is valid", () => {

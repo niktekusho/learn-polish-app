@@ -27,6 +27,7 @@ import {
 } from "#/fsrs/index";
 import { analyze, transcribe } from "#/import/sidecar";
 import { practiceLine, recordActivity } from "#/recap/service";
+import { reportLemma } from "#/report/review";
 import { NAME_POS } from "#/reader/name";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -637,11 +638,11 @@ export function selfGradeItem(
 }
 
 /**
- * Learner reports the item's gloss as wrong. Flags the lemma — dueLemmas skips
- * it until cleared in Maintenance — and closes the item. No FSRS write: a
- * broken item says nothing about memory. Works after an answer too (the grade
- * then stands). Drops the lemma's pending Retry, returning its ids: a wrong
- * gloss is the usual reason for both the miss and the report.
+ * Learner reports the item (CONTEXT.md "Report"). The lemma leaves Practice
+ * until its Report review, and the item closes. No FSRS write: a broken item
+ * says nothing about memory. Works after an answer too (the grade then
+ * stands). Drops the lemma's pending Retry, returning its ids: a wrong gloss
+ * is the usual reason for both the miss and the report.
  */
 export function reportItem(
   db: DB,
@@ -655,21 +656,7 @@ export function reportItem(
     db.delete(passageQuestion).where(eq(passageQuestion.id, stored.item.questionId)).run();
     return closeReported(db, s, stored, itemId);
   }
-  db.update(lemma)
-    .set({ flaggedAt: new Date(), flagNote: note.trim() || null })
-    .where(eq(lemma.id, stored.item.lemmaId))
-    .run();
-  return closeReported(db, s, stored, itemId);
-}
-
-/**
- * Learner marks the item's lemma as context-bound: it leaves the single-word
- * exercises for good (until unmarked in Maintenance) and keeps Read-aloud.
- * Closes the item like reportItem.
- */
-export function markContextBound(db: DB, sessionId: string, itemId: string): { dropped: string[] } {
-  const { s, stored } = heldItem(sessionId, itemId);
-  db.update(lemma).set({ contextBound: true }).where(eq(lemma.id, stored.item.lemmaId)).run();
+  reportLemma(db, stored.item.lemmaId, note);
   return closeReported(db, s, stored, itemId);
 }
 
