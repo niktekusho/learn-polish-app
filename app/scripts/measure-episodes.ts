@@ -85,14 +85,13 @@ async function polishEpisodePrompt(req: EpisodeRequest): Promise<string> {
     "PO POLSKU dla włoskiego ucznia, który dopiero zaczyna (poniżej A1).\n\n" +
     `Długość: ${EPISODE_WORDS} słów.\n` +
     "Język: naturalna polszczyzna, tak jak napisałby to rodzimy użytkownik. Tam, gdzie " +
-    "włoski mówi 'avere' + odczucie, polski ma inną konstrukcję (jest mi zimno, jestem " +
-    "głodny, czuje strach). Pragnienie wyraża czasownik (chcę mieszkać w ciepłym domu, nie " +
-    "'chcę ciepły dom'). Szyk zdania jest naturalny (dlaczego tutaj jesteś). Jeśli proste " +
+    "włoski mówi 'avere' + odczucie, polski ma inną konstrukcję. Pragnienie wyraża " +
+    "czasownik, a nie sam przedmiot pragnienia. Szyk zdania jest naturalny. Jeśli proste " +
     "słowa nie wystarczą, żeby powiedzieć coś naturalnie, użyj innego słowa albo powiedz to inaczej.\n" +
     "Rytm: każde zdanie wnosi nowy fakt, działanie albo kwestię dialogu; budowa zdań się " +
-    "zmienia, a zdania łączą się przez i, a, ale, bo, kiedy.\n" +
+    "zmienia, a zdania łączą się spójnikami.\n" +
     "Dialogi: jak w polskich książkach, każda kwestia zaczyna się od nowej linii i od " +
-    "półpauzy (– Gdzie jest kot? – pyta Ala.), bez cudzysłowu.\n" +
+    "półpauzy (–), bez cudzysłowu.\n" +
     "Poziom: prosta gramatyka i najczęstsze polskie słowa; kilka rzadszych słów, " +
     "zrozumiałych z kontekstu.\n" +
     "Fabuła: trzymaj się planu (jest po włosku) i zachowaj spójność z poprzednim odcinkiem. " +

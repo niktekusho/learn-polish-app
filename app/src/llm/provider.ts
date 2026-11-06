@@ -402,15 +402,14 @@ export function buildEpisodePrompt(req: EpisodeRequest): string {
     "a puntate IN POLACCO per uno studente italiano principiante (sotto A1).\n\n" +
     `Lunghezza: ${EPISODE_WORDS} parole.\n` +
     "Lingua: polacco naturale, come lo scriverebbe un madrelingua; pensa in polacco. " +
-    "Dove l'italiano usa 'avere' + sensazione, il polacco usa un'altra costruzione " +
-    "(jest mi zimno, jestem głodny, czuje strach). Per un desiderio sceglie un verbo " +
-    "(chcę mieszkać w ciepłym domu, non 'chcę ciepły dom'). L'ordine delle parole è " +
-    "quello naturale (dlaczego tutaj jesteś). Se le parole semplici non bastano a dirlo " +
+    "Dove l'italiano usa 'avere' + sensazione, il polacco usa un'altra costruzione. " +
+    "Per un desiderio usa un verbo, non solo l'oggetto desiderato. L'ordine delle " +
+    "parole è quello naturale del polacco. Se le parole semplici non bastano a dirlo " +
     "in modo naturale, usa un'altra parola o riformula.\n" +
     "Ritmo: ogni frase porta un fatto nuovo, un'azione o una battuta di dialogo; la " +
-    "struttura cambia di frase in frase, e le frasi si legano con i, a, ale, bo, kiedy.\n" +
+    "struttura cambia di frase in frase, e le frasi si legano con congiunzioni.\n" +
     "Dialoghi: come nei libri polacchi, ogni battuta va a capo e inizia con un " +
-    "trattino (– Gdzie jest kot? – pyta Ala.), senza virgolette.\n" +
+    "trattino lungo (–), senza virgolette.\n" +
     "Livello: grammatica semplice e le parole più comuni del polacco; qualche parola " +
     "meno comune, chiara dal contesto.\n" +
     "Trama: segui il piano e resta coerente con l'episodio precedente. " +
@@ -492,8 +491,8 @@ export function buildProofreadPrompt(text: string): string {
     "genere, numero e caso, reggenze, forme verbali sbagliate, parole che non esistono " +
     "in polacco, e calchi dall'italiano: parole tutte esistenti ma in una costruzione " +
     "che un madrelingua non userebbe (es. 'mam zimno' per 'avere freddo': si dice " +
-    "'jest mi zimno'; 'ma trochę strachu' per 'ha un po' di paura': 'czuje trochę " +
-    "strachu'; 'chcę ciepły dom': 'chcę mieszkać w ciepłym domu'; 'dlaczego jesteś " +
+    "'jest mi zimno'; 'ma trochę strachu' per 'ha un po' di paura': 'trochę się " +
+    "boi'; 'chcę ciepły dom': 'chcę mieszkać w ciepłym domu'; 'dlaczego jesteś " +
     "tu': 'dlaczego tutaj jesteś'). In questi casi proponi nella reason la forma " +
     "naturale. Prima di segnalare, controlla chi è il soggetto e cosa intende la frase " +
     "(es. 'Marco chce' è giusto: terza persona). Lo stile NON è un errore: non segnalare " +
