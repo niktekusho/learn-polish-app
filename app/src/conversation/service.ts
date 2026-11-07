@@ -126,7 +126,7 @@ export function conversationService(db: DB, deps: ConversationDeps) {
   }
 
   /**
-   * Write the scene that follows `episodeId`, unless it exists or is being written. Without
+   * Write the Conversation that follows `episodeId`, unless it exists or is being written. Without
    * a Learner profile nothing is written: the screen asks for the profile first.
    */
   function prepareScene(episodeId: number): Promise<void> {

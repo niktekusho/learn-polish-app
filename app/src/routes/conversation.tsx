@@ -146,9 +146,10 @@ function ConversationPage() {
       </Notice>
     );
   }
-  // A reroll replaces the scene: a new key starts its screen afresh.
+  // A reroll replaces the setting, Goal and opening: a new key starts the screen afresh.
   const c = current.conversation;
-  return <ConversationScreen key={`${c.id}:${c.opening.line}`} initial={c} />;
+  const key = JSON.stringify([c.id, c.scene, c.steps.map((s) => s.text), c.opening.line]);
+  return <ConversationScreen key={key} initial={c} />;
 }
 
 type Line = { who: "character" | "learner"; text: string; italian?: string };
@@ -221,7 +222,8 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
     try {
       await rerollFn({ data: { id: c.id } });
       await router.invalidate();
-    } catch {
+    } finally {
+      // A reroll that wrote the same scene keeps the key, so this screen stays mounted.
       setPhase("idle");
     }
   }

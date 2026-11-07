@@ -41,8 +41,8 @@ function sceneReply(n: number, req: SceneRequest): SceneResult {
     opening: {
       line: `Otwarcie ${n}.`,
       italian: `Apertura ${n}.`,
-      hint: ["chleb"],
-      modelLine: "Poproszę chleb.",
+      hint: [`chleb${n}`],
+      modelLine: `Poproszę chleb ${n}.`,
     },
     voices: req.voices && req.characters.map((_, i) => req.voices![i % req.voices!.length].id),
   };
@@ -235,7 +235,9 @@ test("reroll replaces the Goal, role facts, opening and first Hint pair", async 
     steps: [{ text: "Passo A2" }, { text: "Passo B2" }, { text: "Passo C2" }],
     opening: { line: "Otwarcie 2." },
   });
-  expect(db.select().from(schema.conversation).all()).toHaveLength(1);
+  const rows = db.select().from(schema.conversation).all();
+  expect(rows).toHaveLength(1);
+  expect(rows[0].opening).toMatchObject({ hint: ["chleb2"], modelLine: "Poproszę chleb 2." });
 });
 
 test("a scene cannot be rerolled once the learner has spoken", async () => {
