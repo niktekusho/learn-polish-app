@@ -17,8 +17,9 @@ Read during review. Tooling already enforces formatting (`vp fmt`), lint (`vp li
 
 ## Judgement rules
 
-- **Touch targets.** Every tappable element is at least 44px tall, a link inside prose
-  included: make it a button or pad it to 44px.
+- **Touch targets.** Every tappable element is at least 44px tall. The `app/touch-target`
+  lint rule (`scripts/lint-touch-target.mjs`) checks the classes; words in running text are
+  exempt because they fill the line box.
 - **Row order.** When a result depends on which row comes first or last, the query has an
   explicit `orderBy`. Without it the order is whatever index SQLite picks, and a test with
   a few rows rarely shows the difference.

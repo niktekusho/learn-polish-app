@@ -15,7 +15,9 @@ export default defineConfig({
     "sidecar/**/*.py": () => "uv run --directory sidecar pytest -q",
   },
   lint: {
+    jsPlugins: ["./scripts/lint-touch-target.mjs"],
     rules: {
+      "app/touch-target": "error",
       "no-unused-vars": ["error", { ignoreRestSiblings: true }],
       "no-unused-labels": "error",
       "no-unused-private-class-members": "error",

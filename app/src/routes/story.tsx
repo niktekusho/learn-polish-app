@@ -390,7 +390,7 @@ function PremisePicker() {
                   key={i}
                   type="button"
                   onClick={() => start(p)}
-                  className={`grid content-start gap-2 rounded-lg bg-card p-4 pb-5 text-left shadow-card ${REVEAL}`}
+                  className={`grid min-h-11 content-start gap-2 rounded-lg bg-card p-4 pb-5 text-left shadow-card ${REVEAL}`}
                   style={order(i)}
                 >
                   <Premise premise={p} />

@@ -75,7 +75,7 @@ function Import() {
         <button
           type="submit"
           disabled={pending}
-          className="rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
+          className="min-h-11 rounded bg-blue-600 px-4 py-2 font-medium text-white disabled:opacity-50"
         >
           {pending ? "Analyzing…" : "Import"}
         </button>

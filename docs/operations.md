@@ -50,7 +50,9 @@ on the phone.
   scripted Conversation session, against the prod sidecar on `:10001` (`SIDECAR_URL`
   overrides). To keep its writes off the dev DB, copy it first and pass the copy:
   `sqlite3 app/data/app.db ".backup /tmp/scratch.db"`, then
-  `DATABASE_PATH=/tmp/scratch.db pnpm dev:stub`.
+  `DATABASE_PATH=/tmp/scratch.db pnpm dev:stub`. `PORT` moves it off `:3000` when another dev
+  server holds that port: `PORT=3100 … pnpm dev:stub`, then `BASE_URL=http://127.0.0.1:3100`
+  for the scripts below.
 - **LLM model and effort:** `CLAUDE_<TIER>_MODEL` and `CLAUDE_<TIER>_EFFORT` (tiers `GLOSS`,
   `STORY`, `CHECK`, `CONVERSATION`; Codex uses `CODEX_` instead) override one task tier, e.g.
   `CLAUDE_STORY_EFFORT=low`. Defaults: Haiku, Sonnet, Opus and Haiku (`CONVERSATION`) at medium effort; Codex runs
@@ -65,6 +67,10 @@ on the phone.
   resumes after the last finished cell.
 - **Screenshot a page:** `scripts/shoot.sh <path> <out.png> [W,H]` against the dev server
   (`BASE_URL` overrides). Sizes for the three prototype frames are in the script.
+- **Tap through a screen:** `node scripts/drive.mts <path> <outdir> <step>...` clicks by text
+  or selector and screenshots between steps, e.g. `"click:Tocca per leggere" shot:polish`.
+  Steps are listed in the script. It prints the page's console errors and exits 1 when a step
+  finds no element.
 - **Check everything:** `pnpm check` runs the pre-commit checks on the whole tree (format, dashes, lint,
   plural, spacing, typecheck, tests). The sidecar's pytest is not in it.
 - **Deploy gate:** a deploy runs `pnpm check` before `build`; a red one becomes a

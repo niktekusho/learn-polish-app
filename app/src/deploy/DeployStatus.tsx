@@ -23,7 +23,7 @@ export function DeployStatus() {
       {status && status.sha !== CLIENT_SHA && (
         <button
           onClick={() => location.reload()}
-          className="sticky top-0 z-50 w-full bg-blue-600 px-4 py-2 text-white font-medium"
+          className="sticky top-0 z-50 min-h-11 w-full bg-blue-600 px-4 py-2 text-white font-medium"
         >
           New version available: tap to reload
         </button>

@@ -263,7 +263,7 @@ function Maintenance() {
                     await unmarkContextBoundFn({ data: { lemmaId: c.lemmaId } });
                     await router.invalidate();
                   }}
-                  className="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50"
+                  className="min-h-11 rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50"
                 >
                   Unmark
                 </button>
@@ -299,7 +299,7 @@ function Maintenance() {
                       setRestoring(null);
                     }
                   }}
-                  className="rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                  className="min-h-11 rounded border border-gray-300 px-3 py-1 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   {restoring === m.lemmaId ? "Restoring…" : "Restore"}
                 </button>
@@ -337,7 +337,7 @@ function Maintenance() {
             type="button"
             onClick={runUpdate}
             disabled={importing}
-            className="rounded border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+            className="min-h-11 rounded border border-blue-300 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
           >
             {importing ? "Updating…" : "Download latest and import"}
           </button>
@@ -526,7 +526,7 @@ function ActionRow(props: {
         type="button"
         onClick={props.onClick}
         disabled={props.disabled}
-        className="shrink-0 rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+        className="min-h-11 shrink-0 rounded border border-red-300 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
       >
         {props.pending ? "Working…" : props.button}
       </button>
