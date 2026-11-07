@@ -21,7 +21,8 @@ its own `app/data/app.db`. Runbook: `docs/operations.md`.
   workflow YAML just to get instant deploys instead of a 2-minute delay.
 - **In-place build:** rejected. `vite build` empties `dist/` while prod serves from it, and a
   failed build leaves prod broken.
-- **Tests as a deploy gate:** rejected for now. A successful build is the only gate.
+- **Tests as a deploy gate:** rejected at first, then adopted. A deploy runs `pnpm check`
+  (format, lint, typecheck, tests) before the build.
 
 ## Consequences
 

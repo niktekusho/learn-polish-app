@@ -2,7 +2,7 @@
 
 Read during review. Tooling already enforces formatting (`vp fmt`), lint (`vp lint`), types
 (`pnpm --filter app typecheck`), and counted words going through `plural()`
-(`scripts/check-plural.sh`). Review what tooling cannot see.
+(`scripts/check-plural.sh`). `pnpm check` runs them all. Review what tooling cannot see.
 
 ## Sources
 

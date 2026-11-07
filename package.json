@@ -12,7 +12,8 @@
     "start:sidecar": "cd sidecar && uv run uvicorn main:app --port 10001",
     "prepare": "vp config",
     "fmt": "vp fmt",
-    "fmt:check": "vp fmt --check"
+    "fmt:check": "vp fmt --check",
+    "check": "sh scripts/check.sh"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

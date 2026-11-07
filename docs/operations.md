@@ -53,9 +53,11 @@ on the phone.
   reply, tokens and API time.
 - **Screenshot a page:** `scripts/shoot.sh <path> <out.png> [W,H]` against the dev server
   (`BASE_URL` overrides). Sizes for the three prototype frames are in the script.
-- **Deploy gate:** a deploy runs `typecheck` and `test` before `build`; a red one becomes a
-  failed deploy. Commits run `vp fmt`, `vp lint`, the plural check, and reject a
-  `Co-Authored-By` line.
+- **Check everything:** `pnpm check` runs the pre-commit checks on the whole tree (format, dashes, lint,
+  plural, spacing, typecheck, tests). The sidecar's pytest is not in it.
+- **Deploy gate:** a deploy runs `pnpm check` before `build`; a red one becomes a
+  failed deploy. Commits run the same checks on the staged files (tests only for related
+  files), and reject a `Co-Authored-By` line.
 - **Repair names + backfill morph tags** (maintenance page): run once on prod after the deploy that stops tracking
   names as vocabulary (#2), with the sidecar up. It cleans names imported before then and
   re-analyzes older texts to store their morph tags; texts the sidecar could not analyze
