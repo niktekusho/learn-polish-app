@@ -1,6 +1,14 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { ArrowRight, ChevronRight, Ellipsis, FilePlus, Flame, Wrench } from "lucide-react";
+import {
+  ArrowRight,
+  ChevronRight,
+  CircleUserRound,
+  Ellipsis,
+  FilePlus,
+  Flame,
+  Wrench,
+} from "lucide-react";
 import { useState } from "react";
 import type { Track } from "#/fsrs/index";
 import { BTN_PRIMARY, BTN_QUIET, ICON_BUTTON, LABEL_TYPE, TRACK, Tick, streakDays } from "#/ui";
@@ -78,6 +86,7 @@ function Home() {
         {menu && <div aria-hidden className="fixed inset-0 z-10" onClick={() => setMenu(false)} />}
         {menu && (
           <div className="absolute top-full right-3 z-20 grid min-w-[210px] rounded bg-panel p-2 shadow-card">
+            <MenuLink to="/profile" icon={<CircleUserRound size={20} />} label="Il tuo profilo" />
             <MenuLink to="/import" icon={<FilePlus size={20} />} label="Importa testo" />
             <MenuLink to="/maintenance" icon={<Wrench size={20} />} label="Manutenzione" />
           </div>
@@ -184,7 +193,7 @@ function MenuLink({
   icon,
   label,
 }: {
-  to: "/import" | "/maintenance";
+  to: "/profile" | "/import" | "/maintenance";
   icon: React.ReactNode;
   label: string;
 }) {

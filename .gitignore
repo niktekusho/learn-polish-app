@@ -14,3 +14,8 @@ __pycache__/
 
 # Ignore clips dump
 clips-dump/
+
+# Piper voice models and /speak audio cache, if PIPER_VOICES_DIR or SPEAK_CACHE_DIR point inside the repo
+*.onnx
+*.onnx.json
+speak-cache/

@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LlmCall } from "#/llm/cli";
-import type { EpisodeRequest } from "#/llm/provider";
+import type { EpisodeRequest, LlmTask } from "#/llm/provider";
 
 interface Sample {
   words: number;
@@ -132,13 +132,17 @@ async function setup() {
   const { db } = await import("#/db/index");
   const { knownLemmas } = await import("#/fsrs/index");
   const { analyze } = await import("#/import/sidecar");
-  const { ClaudeCliProvider, runClaude } = await import("#/llm/claude-cli");
+  const { ClaudeCliProvider, claudeTiers, readClaudeReply, runClaude } =
+    await import("#/llm/claude-cli");
   const { dictionaryFlags, homeDictionary, NOT_IN_DICTIONARY } =
     await import("#/proofread/proofread");
   const { episodeMetrics } = await import("#/story/metrics");
   const { inLevelRange } = await import("#/story/service");
   const calls: LlmCall[] = [];
   const provider = new ClaudeCliProvider(runClaude, (c) => calls.push(c));
+  const tiers = claudeTiers();
+  const ask = async (prompt: string, task: LlmTask) =>
+    readClaudeReply(await runClaude(prompt, tiers[task])).text;
   const known = new Set(knownLemmas(db).map((l) => l.toLowerCase()));
   const inDictionary = homeDictionary(db);
 
@@ -155,7 +159,7 @@ async function setup() {
       text,
     };
   }
-  return { db, analyze, provider, runClaude, calls, measure };
+  return { db, analyze, provider, ask, calls, measure };
 }
 
 async function run(label: string, n: number, out: string) {
@@ -225,7 +229,7 @@ function emptySample(): Sample {
 }
 
 async function ab(n: number, out: string) {
-  const { runClaude, measure } = await setup();
+  const { ask, measure } = await setup();
   const { buildEpisodePrompt, parseEpisodeText } = await import("#/llm/provider");
   const { NEW_SHARE_TARGET } = await import("#/story/service");
   const { z } = await import("zod");
@@ -244,16 +248,13 @@ async function ab(n: number, out: string) {
   });
   for (let i = 0; i < n; i++) {
     for (const lang of ["it", "pl"] as const) {
-      const text = parseEpisodeText(await runClaude(prompts[lang], "story"));
+      const text = parseEpisodeText(await ask(prompts[lang], "story"));
       runs[lang].samples.push(await measure(text));
     }
     // Blind: a coin decides which text is A.
     const itFirst = Math.random() < 0.5;
     const [a, b] = itFirst ? (["it", "pl"] as const) : (["pl", "it"] as const);
-    const raw = await runClaude(
-      judgePrompt(runs[a].samples[i].text, runs[b].samples[i].text),
-      "check",
-    );
+    const raw = await ask(judgePrompt(runs[a].samples[i].text, runs[b].samples[i].text), "check");
     try {
       const j = judgement.parse(JSON.parse(raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, "")));
       verdicts.push({

@@ -299,7 +299,8 @@ _Avoid_: sub-goal, task, goal (for a single entry)
 **Learner profile**:
 A few facts about the learner (name, job, city, partner, hobbies), written once in
 Italian. In a **Conversation** the learner plays themself from this profile, unless the
-**Goal** assigns a role, in which case the card states the role's facts.
+**Goal** assigns a role, in which case the card states the role's facts. Shown in the UI as
+_Il tuo profilo_.
 
 **Character memory**:
 What a **Story** character knows about the learner from past **Conversations** in that

@@ -1,6 +1,8 @@
 import { relations, sql } from "drizzle-orm";
 import {
   type AnySQLiteColumn,
+  blob,
+  check,
   index,
   integer,
   real,
@@ -201,6 +203,26 @@ export const dailyActivity = sqliteTable(
 );
 
 /**
+ * The Learner profile (CONTEXT.md): Italian facts the learner plays themself from in a
+ * Conversation. The check on `id` keeps it to one row.
+ */
+export const learnerProfile = sqliteTable(
+  "learner_profile",
+  {
+    id: integer("id").primaryKey().default(1),
+    name: text("name").notNull(),
+    job: text("job").notNull(),
+    city: text("city").notNull(),
+    partner: text("partner").notNull(),
+    hobbies: text("hobbies").notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [check("learner_profile_single_row", sql`${t.id} = 1`)],
+);
+
+/**
  * A repaired Lemma slip (CONTEXT.md), shown once to the learner as
  * "myśli → myśleć". Text, not FKs: the slip row is deleted by the repair.
  */
@@ -214,7 +236,10 @@ export const lemmaSlipRepair = sqliteTable("lemma_slip_repair", {
   seenAt: integer("seen_at", { mode: "timestamp" }),
 });
 
-/** One call to a CLI LLM provider, kept to audit usage. */
+/**
+ * One call to a CLI LLM provider, kept to audit usage and tune prompts and models.
+ * Rows from before the full log have null text, usage and effort.
+ */
 export const llmCall = sqliteTable("llm_call", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   at: integer("at", { mode: "timestamp" })
@@ -223,7 +248,15 @@ export const llmCall = sqliteTable("llm_call", {
   provider: text("provider").notNull(),
   call: text("call").notNull(), // e.g. "episode", "proofread"
   model: text("model").notNull(),
+  effort: text("effort"),
   promptChars: integer("prompt_chars").notNull(),
+  prompt: blob("prompt", { mode: "buffer" }), // gzip
+  response: blob("response", { mode: "buffer" }), // gzip; raw CLI output when no reply could be read
+  // Includes the cached part, so input_tokens - cache_read_tokens is what the call paid in full.
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  cacheReadTokens: integer("cache_read_tokens"),
+  apiMs: integer("api_ms"),
   ms: integer("ms").notNull(),
   error: text("error"), // null when the output parsed
 });

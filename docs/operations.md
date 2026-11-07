@@ -18,6 +18,8 @@ one, and swaps to it only if the build succeeds. Decisions and reasons: ADR-0006
 | Deploy log                 | `~/Library/Logs/learn-polish-deploy.log`                          |
 | launchd jobs               | `~/Library/LaunchAgents/com.niktekusho.learn-polish{,-deploy}.plist` (sources in `ops/`) |
 | Dev database               | `app/data/app.db` in whichever checkout runs `pnpm dev`           |
+| Piper voice models         | `~/.cache/learn-polish/piper-voices` (`PIPER_VOICES_DIR`), downloaded on first use |
+| `/speak` audio cache       | `~/.cache/learn-polish/speak-cache` (`SPEAK_CACHE_DIR`), safe to delete |
 
 URLs (tailnet only):
 
@@ -42,7 +44,13 @@ on the phone.
 - **Try a branch on the phone:** `pnpm dev` in that checkout, open the test-env URL. It uses
   that checkout's `app/data/app.db`, never the prod DB. `pnpm dev` starts the app and a dev
   sidecar on `:8000`. To run only the app, `SIDECAR_URL=http://localhost:10001 pnpm dev:app`
-  reuses the prod sidecar, which is safe because the sidecar stores nothing.
+  reuses the prod sidecar, which is safe because the sidecar stores nothing but
+  model files and the `/speak` audio cache, both shared by dev and prod and safe to delete.
+- **LLM model and effort:** `CLAUDE_<TIER>_MODEL` and `CLAUDE_<TIER>_EFFORT` (tiers `GLOSS`,
+  `STORY`, `CHECK`; Codex uses `CODEX_` instead) override one task tier, e.g.
+  `CLAUDE_STORY_EFFORT=low`. Defaults: Haiku, Sonnet and Opus at medium effort; Codex runs
+  its configured model. Every call lands in the `llm_call` table with its gzipped prompt and
+  reply, tokens and API time.
 - **Screenshot a page:** `scripts/shoot.sh <path> <out.png> [W,H]` against the dev server
   (`BASE_URL` overrides). Sizes for the three prototype frames are in the script.
 - **Deploy gate:** a deploy runs `typecheck` and `test` before `build`; a red one becomes a

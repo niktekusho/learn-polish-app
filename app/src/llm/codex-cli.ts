@@ -1,59 +1,98 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { spawn } from "node:child_process";
-import { CliProvider, type LlmCall } from "./cli";
+import {
+  CliProvider,
+  type CliExec,
+  type CliReply,
+  type CliRun,
+  type LlmCall,
+  type ModelChoice,
+  NO_USAGE,
+  spawnCli,
+  tiersFromEnv,
+} from "./cli";
 import type { LlmTask, ProviderName } from "./provider";
 
-// Real Italian gloss via the `codex` CLI already on PATH. Codex exec can print
-// progress/log output, so the final assistant message is captured with
-// --output-last-message and parsed from that file.
+// Real Italian gloss via the `codex` CLI already on PATH. `codex exec --json` prints
+// one JSON event per line: the reply is the last agent message, and the usage comes
+// with `turn.completed`. It reports no API time.
 
-const TIMEOUT_MS = 60_000;
+// "codex" is Codex's configured default model, which gets no --model flag.
+const DEFAULT_MODEL = "codex";
+const MODELS: Record<LlmTask, string> = {
+  gloss: DEFAULT_MODEL,
+  story: DEFAULT_MODEL,
+  check: DEFAULT_MODEL,
+};
 
-async function runCodex(prompt: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), "learn-polish-codex-"));
-  const outputPath = join(dir, "last-message.txt");
+export const codexTiers = (env: Record<string, string | undefined> = process.env) =>
+  tiersFromEnv("CODEX", MODELS, env);
 
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn("codex", buildCodexArgs(prompt, outputPath), {
-        stdio: ["ignore", "ignore", "pipe"],
-        timeout: TIMEOUT_MS,
-      });
+export function buildCodexArgs(prompt: string, { model, effort }: ModelChoice): string[] {
+  return [
+    "exec",
+    "--color",
+    "never",
+    "--json",
+    ...(model === DEFAULT_MODEL ? [] : ["-m", model]),
+    "-c",
+    `model_reasoning_effort="${effort}"`,
+    prompt,
+  ];
+}
 
-      let stderr = "";
-      child.stderr.on("data", (d) => {
-        stderr += d;
-      });
-      child.on("error", reject);
-      child.on("close", (code) => {
-        if (code === 0) resolve();
-        else reject(new Error(`codex exited ${code}: ${stderr.trim()}`));
-      });
-    });
+const runCodex: CliExec = (prompt, choice) => spawnCli("codex", buildCodexArgs(prompt, choice));
 
-    return await readFile(outputPath, "utf8");
-  } finally {
-    await rm(dir, { recursive: true, force: true });
+interface CodexEvent {
+  type?: string;
+  item?: { type?: string; text?: string };
+  usage?: { input_tokens?: number; cached_input_tokens?: number; output_tokens?: number };
+  error?: { message?: string };
+  message?: string;
+}
+
+function readCodexReply(run: CliRun): CliReply {
+  if (run.code !== 0) throw new Error(`codex exited ${run.code}: ${run.stderr.trim()}`);
+  let text: string | null = null;
+  let usage = NO_USAGE;
+  // An `error` event can be a stream error Codex retries, so only a missing reply fails on it.
+  let lastError: string | null = null;
+  for (const line of run.stdout.split("\n")) {
+    let event: CodexEvent;
+    try {
+      event = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (event.type === "item.completed" && event.item?.type === "agent_message") {
+      text = event.item.text ?? null;
+    } else if (event.type === "turn.completed" && event.usage) {
+      usage = {
+        inputTokens: event.usage.input_tokens ?? null,
+        outputTokens: event.usage.output_tokens ?? null,
+        cacheReadTokens: event.usage.cached_input_tokens ?? null,
+        apiMs: null,
+      };
+    } else if (event.type === "turn.failed") {
+      throw new Error(`codex turn failed: ${event.error?.message ?? "no message"}`);
+    } else if (event.type === "error") {
+      lastError = event.message ?? null;
+    }
   }
+  if (text === null) throw new Error(`codex printed no agent message: ${lastError ?? "no error"}`);
+  return { text, usage };
 }
-
-export function buildCodexArgs(prompt: string, outputPath: string): string[] {
-  return ["exec", "--color", "never", "--output-last-message", outputPath, prompt];
-}
-
-// Codex runs every call on its configured default model.
-const MODELS: Record<LlmTask, string> = { gloss: "codex", story: "codex", check: "codex" };
 
 export class CodexCliProvider extends CliProvider {
   readonly name: ProviderName = "codex-cli";
-  protected readonly models = MODELS;
 
   constructor(
-    exec: (prompt: string, task: LlmTask) => Promise<string> = runCodex,
-    log?: (call: LlmCall) => void,
+    exec: CliExec = runCodex,
+    log: (call: LlmCall) => void = () => {},
+    tiers = codexTiers(),
   ) {
-    super(exec, log);
+    super(exec, log, tiers);
+  }
+
+  protected readReply(run: CliRun) {
+    return readCodexReply(run);
   }
 }

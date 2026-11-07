@@ -1,31 +1,40 @@
-import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CliProvider, type LlmCall } from "./cli";
+import { z } from "zod";
+import {
+  CliProvider,
+  type CliExec,
+  type CliReply,
+  type CliRun,
+  type LlmCall,
+  type ModelChoice,
+  spawnCli,
+  tiersFromEnv,
+} from "./cli";
 import type { LlmTask, ProviderName } from "./provider";
 
 // Real Italian gloss via the `claude` CLI already on PATH (bills the user's
-// subscription, no API key). One-shot per lemma: `claude -p "<prompt>"` prints
-// the gloss to stdout. Batching is deliberately NOT here — see
-// /tmp/learn-polish-gloss-provider-handoff.md for the deferred import-time
-// batch decision. This is the click-path provider only.
+// subscription, no API key). One-shot per call: `claude -p "<prompt>"` prints
+// the reply and its usage as one JSON object.
 
-const TIMEOUT_MS = 60_000;
 // Without --model the CLI uses the plan's default (a large model). Glosses are short.
 // A checking call runs on a stronger model than the one that wrote the text.
 const MODELS: Record<LlmTask, string> = {
-  gloss: process.env.GLOSS_MODEL || "claude-haiku-5-5",
-  story: process.env.STORY_MODEL || "claude-sonnet-5-5",
-  check: process.env.CHECK_MODEL || "claude-opus-5-5",
+  gloss: "claude-haiku-5-5",
+  story: "claude-sonnet-5-5",
+  check: "claude-opus-5-5",
 };
+
+export const claudeTiers = (env: Record<string, string | undefined> = process.env) =>
+  tiersFromEnv("CLAUDE", MODELS, env);
 
 // Strips everything a gloss call does not need (tools, MCP, settings/hooks,
 // skills, Chrome, session files) so each call sends a minimal prompt. --bare is
 // not usable: it drops OAuth, so it would bill an API key instead of the subscription.
 const LEAN_ARGS = [
-  "--effort",
-  "medium",
+  "--output-format",
+  "json",
   "--tools",
   "",
   "--system-prompt",
@@ -40,43 +49,70 @@ const LEAN_ARGS = [
 // Empty cwd: no CLAUDE.md or .claude/ discovery.
 const EMPTY_CWD = mkdtempSync(join(tmpdir(), "gloss-"));
 
-// Run `claude -p <prompt>` with stdin closed. spawn (not execFile) so we can set
-// stdin to 'ignore' (= /dev/null): claude -p otherwise treats the non-TTY pipe
-// Node hands it as piped input, waits 3s, warns "no stdin data received", and
-// exits non-zero. Closing stdin makes it run the prompt argument directly. The
-// prompt is a single argv element, so the pasted sentence can't shell-inject.
-export function runClaude(prompt: string, task: LlmTask): Promise<string> {
-  const model = MODELS[task];
-  return new Promise((resolve, reject) => {
-    const child = spawn("claude", ["--model", model, ...LEAN_ARGS, "-p", prompt], {
-      cwd: EMPTY_CWD,
-      stdio: ["ignore", "pipe", "pipe"],
-      timeout: TIMEOUT_MS,
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.on("data", (d) => {
-      stdout += d;
-    });
-    child.stderr.on("data", (d) => {
-      stderr += d;
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(`claude exited ${code}: ${stderr.trim() || stdout.trim()}`));
-    });
+// The prompt is a single argv element, so the pasted sentence can't shell-inject.
+export function runClaude(prompt: string, { model, effort }: ModelChoice): Promise<CliRun> {
+  return spawnCli("claude", ["--model", model, "--effort", effort, ...LEAN_ARGS, "-p", prompt], {
+    cwd: EMPTY_CWD,
   });
+}
+
+const claudeResult = z.object({
+  is_error: z.boolean(),
+  subtype: z.string().optional(),
+  result: z.string().optional(),
+  duration_api_ms: z.number().optional(),
+  usage: z
+    .object({
+      input_tokens: z.number().optional(),
+      cache_creation_input_tokens: z.number().optional(),
+      cache_read_input_tokens: z.number().optional(),
+      output_tokens: z.number().optional(),
+    })
+    .optional(),
+});
+
+export function readClaudeReply(run: CliRun): CliReply {
+  if (run.code !== 0) {
+    throw new Error(`claude exited ${run.code}: ${run.stderr.trim() || run.stdout.trim()}`);
+  }
+  let json: z.infer<typeof claudeResult>;
+  try {
+    json = claudeResult.parse(JSON.parse(run.stdout));
+  } catch {
+    throw new Error("claude output is not its JSON result");
+  }
+  if (json.is_error || json.result === undefined) {
+    throw new Error(`claude returned an error: ${json.subtype ?? "no result"}`);
+  }
+  const u = json.usage;
+  // The CLI counts cached and freshly cached input apart from input_tokens.
+  const inputTokens =
+    u?.input_tokens === undefined
+      ? null
+      : u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+  return {
+    text: json.result,
+    usage: {
+      inputTokens,
+      outputTokens: u?.output_tokens ?? null,
+      cacheReadTokens: u?.cache_read_input_tokens ?? null,
+      apiMs: json.duration_api_ms ?? null,
+    },
+  };
 }
 
 export class ClaudeCliProvider extends CliProvider {
   readonly name: ProviderName = "claude-cli";
-  protected readonly models = MODELS;
 
   constructor(
-    exec: (prompt: string, task: LlmTask) => Promise<string> = runClaude,
-    log?: (call: LlmCall) => void,
+    exec: CliExec = runClaude,
+    log: (call: LlmCall) => void = () => {},
+    tiers = claudeTiers(),
   ) {
-    super(exec, log);
+    super(exec, log, tiers);
+  }
+
+  protected readReply(run: CliRun) {
+    return readClaudeReply(run);
   }
 }

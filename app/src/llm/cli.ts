@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import {
   buildComprehensionPrompt,
   buildCorrectionPrompt,
@@ -59,28 +60,112 @@ export type LlmCallName =
   | "outline"
   | "episode";
 
+/** Token counts and API time a CLI reports; null where it reports none. */
+export interface Usage {
+  inputTokens: number | null; // includes cacheReadTokens
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  apiMs: number | null;
+}
+
+export interface CliReply {
+  text: string;
+  usage: Usage;
+}
+
 /** One LLM call, as the call log records it. */
-export interface LlmCall {
+export interface LlmCall extends Usage {
   call: LlmCallName;
   model: string;
-  promptChars: number;
+  effort: string;
+  prompt: string;
+  response: string | null; // the reply, or the raw CLI output when there is none
   ms: number;
   error: string | null; // null when the output parsed
 }
 
+export interface ModelChoice {
+  model: string;
+  effort: string;
+}
+
+/** A finished CLI process. A timeout kills it, which leaves `code` null. */
+export interface CliRun {
+  code: number | null;
+  stdout: string;
+  stderr: string;
+}
+
+export type CliExec = (prompt: string, choice: ModelChoice) => Promise<CliRun>;
+
+const TIMEOUT_MS = 60_000;
+
+// stdin is 'ignore' (= /dev/null): `claude -p` otherwise treats the non-TTY pipe
+// Node hands it as piped input, waits 3s, warns "no stdin data received", and
+// exits non-zero. A spawn error (CLI not on PATH) rejects; any exit resolves.
+export function spawnCli(
+  command: string,
+  args: string[],
+  options: { cwd?: string } = {},
+): Promise<CliRun> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+      timeout: TIMEOUT_MS,
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => {
+      stdout += d;
+    });
+    child.stderr.on("data", (d) => {
+      stderr += d;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code, stdout, stderr }));
+  });
+}
+
 /**
- * A provider that sends each prompt to a CLI and parses its stdout. Subclasses
- * supply only the shell-out, injectable so tests skip the process, and the
- * model each task tier runs on. Every call, parsed or not, goes to `log`.
+ * Model and effort per task tier, from `<CLI>_<TIER>_MODEL` and `<CLI>_<TIER>_EFFORT`
+ * (e.g. CLAUDE_STORY_EFFORT=low), falling back to `models` at medium effort.
+ */
+export function tiersFromEnv(
+  cli: "CLAUDE" | "CODEX",
+  models: Record<LlmTask, string>,
+  env: Record<string, string | undefined>,
+): Record<LlmTask, ModelChoice> {
+  const choice = (task: LlmTask) => ({
+    model: env[`${cli}_${task.toUpperCase()}_MODEL`] || models[task],
+    effort: env[`${cli}_${task.toUpperCase()}_EFFORT`] || "medium",
+  });
+  return { gloss: choice("gloss"), story: choice("story"), check: choice("check") };
+}
+
+export const NO_USAGE: Usage = {
+  inputTokens: null,
+  outputTokens: null,
+  cacheReadTokens: null,
+  apiMs: null,
+};
+
+/**
+ * A provider that sends each prompt to a CLI and parses the reply out of its JSON
+ * output. Subclasses supply the shell-out, injectable so tests skip the process,
+ * and how to read a reply from it. Every call, parsed or not, goes to `log`.
  */
 export abstract class CliProvider implements GlossProvider, StoryProvider {
   abstract readonly name: ProviderName;
-  protected abstract readonly models: Record<LlmTask, string>;
 
   constructor(
-    private readonly exec: (prompt: string, task: LlmTask) => Promise<string>,
-    private readonly log: (call: LlmCall) => void = () => {},
+    private readonly exec: CliExec,
+    private readonly log: (call: LlmCall) => void,
+    private readonly tiers: Record<LlmTask, ModelChoice>,
   ) {}
+
+  /** The reply text and usage of a finished run; throws when the CLI failed. */
+  protected abstract readReply(run: CliRun): CliReply;
 
   private async run<T>(
     call: LlmCallName,
@@ -89,14 +174,22 @@ export abstract class CliProvider implements GlossProvider, StoryProvider {
     parse: (out: string) => T,
   ) {
     const start = Date.now();
-    const entry = { call, model: this.models[task], promptChars: prompt.length };
+    const choice = this.tiers[task];
+    let response: string | null = null;
+    let usage = NO_USAGE;
+    const log = (error: string | null) =>
+      this.log({ call, ...choice, prompt, response, ...usage, ms: Date.now() - start, error });
     try {
-      const out = parse(await this.exec(prompt, task));
-      this.log({ ...entry, ms: Date.now() - start, error: null });
+      const ran = await this.exec(prompt, choice);
+      response = ran.stdout || null;
+      const reply = this.readReply(ran);
+      response = reply.text;
+      usage = reply.usage;
+      const out = parse(reply.text);
+      log(null);
       return out;
     } catch (err) {
-      const error = err instanceof Error ? err.message : String(err);
-      this.log({ ...entry, ms: Date.now() - start, error });
+      log(err instanceof Error ? err.message : String(err));
       throw err;
     }
   }

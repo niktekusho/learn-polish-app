@@ -1,11 +1,15 @@
+import hashlib
 import io
 import os
+import wave
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
 import spacy
-from fastapi import FastAPI, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 app = FastAPI(title="learn-polish-sidecar")
@@ -139,3 +143,90 @@ def transcribe(audio: UploadFile) -> TranscribeResponse:
         flush=True,
     )
     return TranscribeResponse(text=text)
+
+
+@dataclass(frozen=True)
+class Voice:
+    model: str  # Piper voice name in rhasspy/piper-voices
+    label: str  # Italian, shown to the learner
+
+
+VOICES = {
+    "bass": Voice("pl_PL-bass-high", "Voce maschile molto grave"),
+    "darkman": Voice("pl_PL-darkman-medium", "Voce maschile media"),
+    "gosia": Voice("pl_PL-gosia-medium", "Voce femminile"),
+    "mc_speech": Voice("pl_PL-mc_speech-medium", "Voce maschile grave"),
+    "mls_6892": Voice("pl_PL-mls_6892-low", "Voce maschile, audio meno nitido"),
+}
+
+_CACHE_ROOT = Path.home() / ".cache" / "learn-polish"
+PIPER_VOICES_DIR = Path(os.environ.get("PIPER_VOICES_DIR", _CACHE_ROOT / "piper-voices"))
+SPEAK_CACHE_DIR = Path(os.environ.get("SPEAK_CACHE_DIR", _CACHE_ROOT / "speak-cache"))
+
+Synthesize = Callable[[str, str], bytes]  # (Piper model, text) -> WAV bytes
+
+
+@lru_cache(maxsize=None)
+def _piper_voice(model: str):
+    from piper import PiperVoice
+    from piper.download_voices import download_voice
+
+    PIPER_VOICES_DIR.mkdir(parents=True, exist_ok=True)
+    download_voice(model, PIPER_VOICES_DIR)  # skips files already on disk
+    return PiperVoice.load(PIPER_VOICES_DIR / f"{model}.onnx")
+
+
+def piper_synthesize(model: str, text: str) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        _piper_voice(model).synthesize_wav(text, w)
+    return buf.getvalue()
+
+
+def get_synthesizer() -> Synthesize:
+    return piper_synthesize
+
+
+def get_speak_cache_dir() -> Path:
+    return SPEAK_CACHE_DIR
+
+
+class VoiceInfo(BaseModel):
+    id: str
+    label: str
+
+
+@app.get("/voices")
+def voices() -> list[VoiceInfo]:
+    return [VoiceInfo(id=id, label=v.label) for id, v in VOICES.items()]
+
+
+class SpeakRequest(BaseModel):
+    text: str
+    voice: str
+
+
+@app.post("/speak")
+def speak(
+    req: SpeakRequest,
+    synthesize: Synthesize = Depends(get_synthesizer),
+    cache_dir: Path = Depends(get_speak_cache_dir),
+) -> Response:
+    voice = VOICES.get(req.voice)
+    if voice is None:
+        known = ", ".join(VOICES)
+        raise HTTPException(400, f"Unknown voice '{req.voice}'. Known voices: {known}.")
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(400, "Text is empty.")
+
+    # Keyed by the Piper model, so changing a catalog entry's model never serves old audio.
+    path = cache_dir / voice.model / f"{hashlib.sha256(text.encode()).hexdigest()}.wav"
+    if path.exists():
+        return Response(path.read_bytes(), media_type="audio/wav")
+    audio = synthesize(voice.model, text)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_bytes(audio)
+    tmp.replace(path)  # a crash mid-write never leaves a truncated cache entry
+    return Response(audio, media_type="audio/wav")

@@ -46,3 +46,26 @@ export async function transcribe(audio: Blob): Promise<string> {
   }
   return ((await res.json()) as { text: string }).text;
 }
+
+/** A Piper voice from the sidecar's catalog (ADR-0004 amendment 2026-10-21). */
+export interface Voice {
+  id: string;
+  label: string; // Italian, for the learner
+}
+
+export async function voices(): Promise<Voice[]> {
+  const res = await fetch(`${SIDECAR_URL}/voices`);
+  if (!res.ok) {
+    throw new Error(`sidecar /voices failed: ${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as Voice[];
+}
+
+/** Piper TTS: the sidecar's response as is, WAV on success or `{detail}` JSON on a 4xx. */
+export function speak(text: string, voice: string): Promise<Response> {
+  return fetch(`${SIDECAR_URL}/speak`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text, voice }),
+  });
+}

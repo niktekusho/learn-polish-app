@@ -11,11 +11,13 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as StoryRouteImport } from './routes/story'
 import { Route as RecapRouteImport } from './routes/recap'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PracticeRouteImport } from './routes/practice'
 import { Route as MaintenanceRouteImport } from './routes/maintenance'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReadTextIdRouteImport } from './routes/read.$textId'
+import { Route as ApiSpeakRouteImport } from './routes/api/speak'
 import { Route as ApiDeployStatusRouteImport } from './routes/api/deploy-status'
 
 const StoryRoute = StoryRouteImport.update({
@@ -26,6 +28,11 @@ const StoryRoute = StoryRouteImport.update({
 const RecapRoute = RecapRouteImport.update({
   id: '/recap',
   path: '/recap',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PracticeRoute = PracticeRouteImport.update({
@@ -53,6 +60,11 @@ const ReadTextIdRoute = ReadTextIdRouteImport.update({
   path: '/read/$textId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSpeakRoute = ApiSpeakRouteImport.update({
+  id: '/api/speak',
+  path: '/api/speak',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDeployStatusRoute = ApiDeployStatusRouteImport.update({
   id: '/api/deploy-status',
   path: '/api/deploy-status',
@@ -64,9 +76,11 @@ export interface FileRoutesByFullPath {
   '/import': typeof ImportRoute
   '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
+  '/profile': typeof ProfileRoute
   '/recap': typeof RecapRoute
   '/story': typeof StoryRoute
   '/api/deploy-status': typeof ApiDeployStatusRoute
+  '/api/speak': typeof ApiSpeakRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRoutesByTo {
@@ -74,9 +88,11 @@ export interface FileRoutesByTo {
   '/import': typeof ImportRoute
   '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
+  '/profile': typeof ProfileRoute
   '/recap': typeof RecapRoute
   '/story': typeof StoryRoute
   '/api/deploy-status': typeof ApiDeployStatusRoute
+  '/api/speak': typeof ApiSpeakRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRoutesById {
@@ -85,9 +101,11 @@ export interface FileRoutesById {
   '/import': typeof ImportRoute
   '/maintenance': typeof MaintenanceRoute
   '/practice': typeof PracticeRoute
+  '/profile': typeof ProfileRoute
   '/recap': typeof RecapRoute
   '/story': typeof StoryRoute
   '/api/deploy-status': typeof ApiDeployStatusRoute
+  '/api/speak': typeof ApiSpeakRoute
   '/read/$textId': typeof ReadTextIdRoute
 }
 export interface FileRouteTypes {
@@ -97,9 +115,11 @@ export interface FileRouteTypes {
     | '/import'
     | '/maintenance'
     | '/practice'
+    | '/profile'
     | '/recap'
     | '/story'
     | '/api/deploy-status'
+    | '/api/speak'
     | '/read/$textId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -107,9 +127,11 @@ export interface FileRouteTypes {
     | '/import'
     | '/maintenance'
     | '/practice'
+    | '/profile'
     | '/recap'
     | '/story'
     | '/api/deploy-status'
+    | '/api/speak'
     | '/read/$textId'
   id:
     | '__root__'
@@ -117,9 +139,11 @@ export interface FileRouteTypes {
     | '/import'
     | '/maintenance'
     | '/practice'
+    | '/profile'
     | '/recap'
     | '/story'
     | '/api/deploy-status'
+    | '/api/speak'
     | '/read/$textId'
   fileRoutesById: FileRoutesById
 }
@@ -128,9 +152,11 @@ export interface RootRouteChildren {
   ImportRoute: typeof ImportRoute
   MaintenanceRoute: typeof MaintenanceRoute
   PracticeRoute: typeof PracticeRoute
+  ProfileRoute: typeof ProfileRoute
   RecapRoute: typeof RecapRoute
   StoryRoute: typeof StoryRoute
   ApiDeployStatusRoute: typeof ApiDeployStatusRoute
+  ApiSpeakRoute: typeof ApiSpeakRoute
   ReadTextIdRoute: typeof ReadTextIdRoute
 }
 
@@ -148,6 +174,13 @@ declare module '@tanstack/react-router' {
       path: '/recap'
       fullPath: '/recap'
       preLoaderRoute: typeof RecapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/practice': {
@@ -185,6 +218,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReadTextIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/speak': {
+      id: '/api/speak'
+      path: '/api/speak'
+      fullPath: '/api/speak'
+      preLoaderRoute: typeof ApiSpeakRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/deploy-status': {
       id: '/api/deploy-status'
       path: '/api/deploy-status'
@@ -200,9 +240,11 @@ const rootRouteChildren: RootRouteChildren = {
   ImportRoute: ImportRoute,
   MaintenanceRoute: MaintenanceRoute,
   PracticeRoute: PracticeRoute,
+  ProfileRoute: ProfileRoute,
   RecapRoute: RecapRoute,
   StoryRoute: StoryRoute,
   ApiDeployStatusRoute: ApiDeployStatusRoute,
+  ApiSpeakRoute: ApiSpeakRoute,
   ReadTextIdRoute: ReadTextIdRoute,
 }
 export const routeTree = rootRouteImport

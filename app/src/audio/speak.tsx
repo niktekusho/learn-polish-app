@@ -12,6 +12,15 @@ export function speak(text: string) {
   speechSynthesis.speak(u);
 }
 
+let playing: HTMLAudioElement | null = null;
+
+/** Hear Polish text in a Piper voice from the sidecar's catalog (ADR-0004 amendment 2026-10-21). */
+export function playVoice(text: string, voice: string): Promise<void> {
+  playing?.pause();
+  playing = new Audio(`/api/speak?${new URLSearchParams({ text, voice })}`);
+  return playing.play();
+}
+
 export function ListenButton({ text, label = "Ascolta" }: { text: string; label?: string }) {
   if (typeof speechSynthesis === "undefined") return null;
   return (

@@ -1,8 +1,11 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
+import { Volume2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { z } from "zod";
+import { playVoice } from "#/audio/speak";
 import type { DictImportStatus, DictVersion } from "#/dictionary/import-job";
+import type { Voice } from "#/import/sidecar";
 import type { ContextBoundLemma, MaintenanceStats } from "#/maintenance/ops";
 import { Corrections } from "#/report/Corrections";
 import type { Correction } from "#/report/review";
@@ -136,24 +139,31 @@ const getDictImportStatus = createServerFn().handler(async (): Promise<DictImpor
   return getImportStatus();
 });
 
+// null when the sidecar is down, so the rest of the page still loads.
+const loadVoices = createServerFn().handler(async (): Promise<Voice[] | null> => {
+  const { voices } = await import("#/import/sidecar");
+  return voices().catch(() => null);
+});
+
 export const Route = createFileRoute("/maintenance")({
   component: Maintenance,
   loader: async () => {
-    const [stats, reviews, contextBound, suppressed, dictVersion] = await Promise.all([
+    const [stats, reviews, contextBound, suppressed, dictVersion, voices] = await Promise.all([
       loadStats(),
       loadReviews(),
       loadContextBound(),
       loadSuppressed(),
       loadDictVersion(),
+      loadVoices(),
     ]);
-    return { stats, reviews, contextBound, suppressed, dictVersion };
+    return { stats, reviews, contextBound, suppressed, dictVersion, voices };
   },
 });
 
 type Action = z.infer<typeof actionInput>["action"];
 
 function Maintenance() {
-  const { stats, reviews, contextBound, suppressed, dictVersion } = Route.useLoaderData();
+  const { stats, reviews, contextBound, suppressed, dictVersion, voices } = Route.useLoaderData();
   const [restoring, setRestoring] = useState<number | null>(null);
   const router = useRouter();
   const [pending, setPending] = useState<Action | null>(null);
@@ -352,6 +362,8 @@ function Maintenance() {
         )}
       </div>
 
+      <VoicePreview voices={voices} />
+
       <div className="mt-8 space-y-6">
         <ActionRow
           title="Clear imported texts"
@@ -518,6 +530,61 @@ function ActionRow(props: {
       >
         {props.pending ? "Working…" : props.button}
       </button>
+    </div>
+  );
+}
+
+function VoicePreview({ voices }: { voices: Voice[] | null }) {
+  const [text, setText] = useState("Dzień dobry, poproszę dwie bułki.");
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <div className="mt-8 rounded border border-rule p-4">
+      <h2 className="font-semibold">Voci</h2>
+      <p className="mt-1 text-sm text-ink-2">
+        Le voci dei personaggi nelle conversazioni. La prima frase in una voce richiede qualche
+        secondo, poi resta in memoria.
+      </p>
+      {voices === null ? (
+        <p className="mt-3 text-sm text-bad-ink">Il sidecar non risponde.</p>
+      ) : (
+        <>
+          <label htmlFor="voice-text" className="mt-3 block text-sm text-ink-3">
+            Frase
+          </label>
+          <input
+            id="voice-text"
+            lang="pl"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            className="mt-1 min-h-11 w-full rounded border border-rule bg-panel px-3 font-serif text-ink"
+          />
+          <ul className="mt-3 divide-y divide-rule">
+            {voices.map((v) => (
+              <li key={v.id} className="flex items-center justify-between gap-4 py-1.5">
+                <span>
+                  {v.label}
+                  <span className="block text-sm text-ink-3">{v.id}</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={!text.trim()}
+                  onClick={() => {
+                    setError(null);
+                    playVoice(text, v.id).catch(() =>
+                      setError(`${v.label}: audio non disponibile.`),
+                    );
+                  }}
+                  className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-accent-soft px-4 text-sm font-semibold text-accent-ink disabled:opacity-50"
+                >
+                  <Volume2 size={17} /> Ascolta
+                </button>
+              </li>
+            ))}
+          </ul>
+          {error && <p className="mt-2 text-sm text-bad-ink">{error}</p>}
+        </>
+      )}
     </div>
   );
 }

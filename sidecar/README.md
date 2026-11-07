@@ -2,8 +2,8 @@
 
 FastAPI service hosting the Python ML pieces the TS app calls over localhost HTTP:
 morphology (spaCy `pl_core_news_sm`,
-[ADR-0001](../docs/adr/0001-typescript-app-with-python-morphology-sidecar.md)) and ASR
-(faster-whisper, [ADR-0004](../docs/adr/0004-sidecar-hosts-asr-and-tts.md)).
+[ADR-0001](../docs/adr/0001-typescript-app-with-python-morphology-sidecar.md)), ASR
+(faster-whisper) and TTS (Piper), [ADR-0004](../docs/adr/0004-sidecar-hosts-asr-and-tts.md).
 
 ## Runtime
 
@@ -33,6 +33,21 @@ From the repo root, `pnpm dev` starts this alongside the app.
   keep the last received clip on disk (`$TMPDIR/learn-polish-last-clip.*`) — play it to
   split "bad transcript" into capture-side (silent/garbled audio) vs model-side (clear
   audio, wrong text).
+- `GET /voices` → `[{"id": "gosia", "label": "Voce femminile"}, ...]`: the Piper voice
+  catalog, the 5 single-speaker Polish voices `bass`, `darkman`, `gosia`, `mc_speech`,
+  `mls_6892`. Labels are Italian, for the learner.
+- `POST /speak`: body `{"text": "...", "voice": "gosia"}` → `audio/wav`. An unknown voice
+  or blank text is a 400 with a `detail` message. Each voice's model is downloaded from
+  HuggingFace (`rhasspy/piper-voices`, 63MB each, `bass` 114MB) into `PIPER_VOICES_DIR`
+  (default `~/.cache/learn-polish/piper-voices`) on its first use and loaded once per
+  process. To fetch all five ahead of time:
+  ```sh
+  uv run python -m piper.download_voices --data-dir ~/.cache/learn-polish/piper-voices \
+    pl_PL-bass-high pl_PL-darkman-medium pl_PL-gosia-medium pl_PL-mc_speech-medium pl_PL-mls_6892-low
+  ```
+  Synthesized audio is cached as WAV files in `SPEAK_CACHE_DIR` (default
+  `~/.cache/learn-polish/speak-cache`), keyed by voice model and text, so a repeated line
+  is served from disk. Deleting the directory is safe.
 - `POST /analyze` — body `{"text": "..."}`, returns tokens grouped by sentence:
 
 ```jsonc
@@ -58,7 +73,11 @@ resolved: the analyzer's best single lemma per token is returned (disambiguation
 
 ## Tests & benchmark
 
-Both are plain scripts — no pytest, no fixtures.
+`uv run pytest` runs every test file. The older files also run as plain scripts.
+
+- **`test_speak.py`**: /voices and /speak, including the audio cache, with a fake
+  synthesizer injected through FastAPI's `dependency_overrides`: no voice model is
+  downloaded.
 
 - **`test_analyze.py`** — correctness of the backlog #2 acceptance case (`Robię obiad w
   kuchni.` → `robić, obiad, w, kuchnia`) and sentence splitting.
