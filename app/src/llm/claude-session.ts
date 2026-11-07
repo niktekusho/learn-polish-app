@@ -1,3 +1,4 @@
+// Protocol facts (flags, event shapes): docs/research/claude-cli-stream-json.md
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { EMPTY_CWD, LEAN_ARGS, claudeTiers, readClaudeReply } from "./claude-cli";
