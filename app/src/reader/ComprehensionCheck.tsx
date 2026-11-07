@@ -26,7 +26,7 @@ type Question = { question: string; choices: string[]; correctIndex: number };
 
 // End-of-text comprehension check (roadmap): Italian MCQs about the text,
 // answered all-at-once, graded client-side. The answer key travels to the
-// client deliberately — single-user local app, nothing persisted, so a
+// client deliberately: single-user local app, nothing persisted, so a
 // server-grading round-trip buys nothing (unlike Practice, which feeds FSRS).
 export function ComprehensionCheck({
   textId,

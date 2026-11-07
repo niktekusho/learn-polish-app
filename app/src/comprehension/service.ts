@@ -17,7 +17,7 @@ export interface ComprehensionCheck {
  *
  * Lazily generated on the first check click (mirrors the lazy-gloss decision):
  * ONE provider call produces all questions, written in one transaction so a
- * junk response caches nothing. Questions are disposable derived data — no
+ * junk response caches nothing. Questions are disposable derived data: no
  * manual tier; the recourse for bad questions is regenerateComprehensionCheck.
  * The answer key is part of the cached question; grading happens client-side
  * and learner responses are never persisted (roadmap).
@@ -55,7 +55,7 @@ export async function getComprehensionCheck(
   try {
     result = await provider.comprehension({ text: text.content });
   } catch (err) {
-    // Log server-side (the pnpm dev terminal) — the error otherwise only
+    // Log server-side (the pnpm dev terminal): the error otherwise only
     // surfaces as the UI's generic "failed" state, hiding the real cause
     // (e.g. `claude exited 1: 401 Invalid authentication credentials`).
     console.error(`[comprehension] provider "${provider.name}" failed for text ${textId}:`, err);
@@ -99,7 +99,7 @@ export async function getComprehensionCheck(
 }
 
 /**
- * Discard ALL cached questions for the text and generate fresh — the explicit
+ * Discard ALL cached questions for the text and generate fresh: the explicit
  * user "regenerate" recourse for bad questions (wrong key, ambiguous
  * distractors).
  */

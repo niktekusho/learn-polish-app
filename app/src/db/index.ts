@@ -8,7 +8,7 @@ import * as schema from "./schema";
 
 // Anchor paths to this module (the app package), not process.cwd(): starting
 // the server from the repo root vs app/ must not silently open two different
-// DBs. DATABASE_PATH / MIGRATIONS_DIR override for tests/deploys — required for
+// DBs. DATABASE_PATH / MIGRATIONS_DIR override for tests/deploys: required for
 // the production build, where this module is bundled into dist/server/assets/
 // and the relative anchors below point inside dist/ (see `pnpm start`).
 const DB_PATH =

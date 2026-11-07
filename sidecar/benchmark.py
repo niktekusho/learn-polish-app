@@ -43,7 +43,7 @@ GOLD: list[tuple[str, list[tuple[str, str, str]]]] = [
     ]),
 ]
 
-# Regression floors — set just below the current measured accuracy. Raise when the
+# Regression floors: set just below the current measured accuracy. Raise when the
 # analyzer improves; a drop below these fails the run (exit 1).
 LEMMA_FLOOR = 0.90
 POS_FLOOR = 0.90
@@ -86,7 +86,7 @@ def main() -> int:
 
     lemma_acc = lemma_ok / total
     pos_acc = pos_ok / total
-    print(f"Analyzer benchmark — {len(GOLD)} sentences, {total} tokens")
+    print(f"Analyzer benchmark: {len(GOLD)} sentences, {total} tokens")
     print(f"  lemma accuracy: {lemma_acc:.1%} ({lemma_ok}/{total})")
     print(f"  POS   accuracy: {pos_acc:.1%} ({pos_ok}/{total})")
     if mismatches:

@@ -33,7 +33,7 @@ export function storyOf(db: DB, textId: number): number | null {
 export function storyCharacters(db: DB, storyId: number): Character[] {
   const [s] = db.select({ outline: story.outline }).from(story).where(eq(story.id, storyId)).all();
   return (s?.outline.characters ?? []).flatMap((line) => {
-    const head = line.split(/\s[–—-]\s|[:,(]/u)[0];
+    const head = line.split(/\s[\u2013\u2014-]\s|[:,(]/u)[0];
     const name = head
       .trim()
       .split(/\s+/)

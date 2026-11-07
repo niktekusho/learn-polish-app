@@ -1,6 +1,6 @@
-# MVP Backlog — Tracer-Bullet Slice
+# MVP Backlog: Tracer-Bullet Slice
 
-Goal of the MVP: prove the whole architecture once, end to end —
+Goal of the MVP: prove the whole architecture once, end to end:
 **paste text → morphology sidecar → vocab store → reader + gloss → FSRS receptive →
 recognition-MCQ via the Practice queue.**
 
@@ -12,7 +12,7 @@ grabbed independently once those are done.
 
 ---
 
-## DONE - #1 — Repo scaffold: TanStack Start + SQLite + Python sidecar skeleton
+## DONE - #1 Repo scaffold: TanStack Start + SQLite + Python sidecar skeleton
 
 **Blocked by:** none
 **Deliver:** a running dev environment.
@@ -27,7 +27,7 @@ migration creates and reads a row.
 
 ---
 
-## DONE - #2 — Morphology sidecar: analyze Polish text
+## DONE - #2 Morphology sidecar: analyze Polish text
 
 **Blocked by:** #1
 **Deliver:** the Python seam that turns raw text into lemmas.
@@ -42,7 +42,7 @@ with correct POS. See [ADR-0001](./adr/0001-typescript-app-with-python-morpholog
 
 ---
 
-## DONE - #3 — DB schema: texts, tokens, lemmas, knowledge, glosses
+## DONE - #3 DB schema: texts, tokens, lemmas, knowledge, glosses
 
 **Blocked by:** #1
 **Deliver:** the vocab store shape.
@@ -52,7 +52,7 @@ with correct POS. See [ADR-0001](./adr/0001-typescript-app-with-python-morpholog
   **productive** tracks), `gloss` (lemma/sense → Italian, cached).
 - FSRS fields on `knowledge` per track: stability, difficulty, due, last_review, state.
 - `review_log`: append-only history of every grade (lemma, track, rating, state
-  before/after, reviewed_at). Required from day 1 — FSRS parameter optimization needs the
+  before/after, reviewed_at). Required from day 1: FSRS parameter optimization needs the
   full review history and it cannot be reconstructed later.
 - `gloss.provider` (or `source`) column: which provider produced the gloss (stub, ollama,
   api). Without it, stub glosses cached during development are indistinguishable from real
@@ -64,7 +64,7 @@ grading writes a `review_log` row. Implements the model in [CONTEXT.md](../CONTE
 
 ---
 
-## DONE - #4 — Import + analyze pipeline (paste text)
+## DONE - #4 Import + analyze pipeline (paste text)
 
 **Blocked by:** #2, #3
 **Deliver:** paste → stored, analyzed text.
@@ -79,7 +79,7 @@ appear in the store each with a `knowledge` row.
 
 ---
 
-## DONE - #5 — Reader UI: render text, highlight unknown lemmas
+## DONE - #5 Reader UI: render text, highlight unknown lemmas
 
 **Blocked by:** #4
 **Deliver:** the reading surface.
@@ -93,7 +93,7 @@ known words are not highlighted.
 
 ---
 
-## DONE - #6 — Word panel: Italian gloss (LLM, cached) + Wiktionary link
+## DONE - #6 Word panel: Italian gloss (LLM, cached) + Wiktionary link
 
 **Blocked by:** #5, #3
 **Deliver:** meaning on demand.
@@ -108,7 +108,7 @@ known words are not highlighted.
   real provider lands.
 - Panel shows: surface form, lemma, POS, Italian gloss, external link
   `https://en.wiktionary.org/wiki/{lemma}#Polish` (Diki link optional).
-- LLM provider behind a small interface (local Ollama or API — swappable).
+- LLM provider behind a small interface (local Ollama or API: swappable).
 
 **Acceptance:** clicking an unknown word shows an Italian gloss within one call; clicking it
 again makes zero LLM calls (served from cache). Implements
@@ -117,7 +117,7 @@ import + top-5k seeding parked).
 
 ---
 
-## DONE - #7 — Mark known / batch-mark → FSRS receptive
+## DONE - #7 Mark known / batch-mark → FSRS receptive
 
 **Blocked by:** #5, #8
 **Deliver:** knowledge input from reading.
@@ -125,7 +125,7 @@ import + top-5k seeding parked).
 - Word panel: "mark known" and "still learning" actions → update receptive FSRS state.
 - Batch action in reader: "mark all visible unknowns as known" to burn trivial words.
   **Excludes** lemmas the user explicitly marked "still learning" (state Learning /
-  Relearning) — the batch must not overwrite an explicit judgment with Easy.
+  Relearning): the batch must not overwrite an explicit judgment with Easy.
 - Marking updates highlight state live. Whether a word counts as "known" is decided
   server-side (one rule), not by comparing raw FSRS state enums in the UI.
 
@@ -134,14 +134,14 @@ with a future due date; batch-mark clears all visible unknowns at once.
 
 ---
 
-## DONE - #8 — FSRS integration (`ts-fsrs`)
+## DONE - #8 FSRS integration (`ts-fsrs`)
 
 **Blocked by:** #3
 **Deliver:** the scheduling brain.
 
 - Wrap `ts-fsrs`: given a `knowledge` track state + a rating, return the next state (stability,
   difficulty, due).
-- "Due lemmas" query: fetch lemmas whose receptive (or productive) track is due, weakest first —
+- "Due lemmas" query: fetch lemmas whose receptive (or productive) track is due, weakest first,
   **but new-card introduction is gated**. Import makes every lemma due immediately with
   stability 0, so a naive weakest-first order lets one pasted article bury genuine reviews
   indefinitely. Rule: actual reviews (state ≠ New) come first, then at most a capped number
@@ -156,7 +156,7 @@ cap. Implements the FSRS model in
 
 ---
 
-## DONE - #9 — Exercise plugin contract + recognition-MCQ exercise
+## DONE - #9 Exercise plugin contract + recognition-MCQ exercise
 
 **Blocked by:** #3, #6
 **Deliver:** the first exercise behind the extensible contract.
@@ -168,7 +168,7 @@ cap. Implements the FSRS model in
 - `grade` maps correct/incorrect → an FSRS rating, and runs **server-side against a
   server-held item**: the client submits only its choice (by item id), never the item or
   `correctIndex` back. The contract must not require round-tripping grade material through
-  the client — the next exercise will copy whatever shape this one sets.
+  the client: the next exercise will copy whatever shape this one sets.
 - Server functions validate their input (real validators, not identity passthroughs).
 
 **Acceptance:** given a due lemma with a cached gloss, the exercise generates a 4-choice item
@@ -177,18 +177,18 @@ sent to the client contains no correct-answer marker.
 
 ---
 
-## DONE - #10 — Practice queue (SRS-driven session)
+## DONE - #10 Practice queue (SRS-driven session)
 
 **Blocked by:** #8, #9
 **Deliver:** the daily loop, end to end.
 
-- "Practice" screen: scheduler pulls due lemmas (reviews first, capped New cards — #8),
+- "Practice" screen: scheduler pulls due lemmas (reviews first, capped New cards, #8),
   renders each through an applicable exercise (only recognition-MCQ exists yet), collects the
   response, grades via #8.
 - Session is built once and held server-side (id → items): a page reload/refocus resumes it
   instead of re-running the scheduler mid-session; grading an item twice is rejected.
 - **No gloss generation inside session build.** Practice has no sentence context (#6 rule);
-  lemmas without a cached gloss are skipped — glosses come from reading. No LLM calls in a
+  lemmas without a cached gloss are skipped: glosses come from reading. No LLM calls in a
   route loader.
 - Session ends when the due queue is exhausted or a cap is hit; show a brief summary.
 
@@ -201,12 +201,12 @@ finishing shows how many were reviewed. This closes the tracer bullet. Implement
 
 ### Nits from design review (fold into whichever issue touches the file)
 
-- DB path is `process.cwd()`-relative — starting the server from repo root vs `app/`
+- DB path is `process.cwd()`-relative: starting the server from repo root vs `app/`
   silently creates two databases. Make it absolute or env-configured.
 - `gradeLemma`'s read-then-write should run in one transaction; batch-mark should be one
   transaction, not N.
 - CONTEXT.md's "tracked unit = lemma + surface forms encountered" is only derivable by
-  scanning `token` — fine for MVP, but the gap is deliberate; note it, don't model it yet.
+  scanning `token`: fine for MVP, but the gap is deliberate; note it, don't model it yet.
 
 ### Suggested grab order
 

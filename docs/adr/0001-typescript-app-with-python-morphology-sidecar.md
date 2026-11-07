@@ -7,11 +7,11 @@ service (FastAPI, exposing spaCy `pl_core_news` / Morfeusz2) that the TS server 
 over localhost HTTP.
 
 We deliberately reject in-process JS↔Python bridges (`pythonia`, `python-bridge`) as
-fragile, and reject a pure-TS stack because it would sacrifice morphology quality — the
+fragile, and reject a pure-TS stack because it would sacrifice morphology quality: the
 one capability that makes lemma-based tracking, and therefore the whole app, possible.
 The Python footprint is kept minimal: only morphology lives there. Whisper ASR runs in
-the JS runtime (`whisper.cpp` bindings / `transformers.js`), and everything else — vocab
-store, SRS, glossing, LLM calls — is TypeScript.
+the JS runtime (`whisper.cpp` bindings / `transformers.js`), and everything else (vocab
+store, SRS, glossing, LLM calls) is TypeScript.
 
 ## Consequences
 

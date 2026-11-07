@@ -9,7 +9,7 @@ gender, conjugation, translation, speaking) over a shared vocab store, and must 
 ## Decision
 
 **Selection is SRS-driven.** The default daily loop, **Practice**, is a mixed queue: the
-FSRS scheduler pulls **due lemmas** (weakest track first — see the receptive/productive
+FSRS scheduler pulls **due lemmas** (weakest track first: see the receptive/productive
 split in CONTEXT.md; superseded by equal per-track shares across three tracks in
 ADR-0005) and renders each through an applicable exercise. Variety emerges from
 the mix; the learner reviews what is actually decaying, not a menu they picked. A secondary

@@ -1,6 +1,6 @@
 // One rendered token in the reader. Word tokens have a lemma; layout and
 // punctuation tokens have lemmaId === null. `known` / `stillLearning` are the
-// server-decided receptive-knowledge verdicts (see reader/knowledge.ts) — the
+// server-decided receptive-knowledge verdicts (see reader/knowledge.ts): the
 // UI renders on these booleans, never on a raw FSRS state enum.
 export interface ReaderToken {
   id: number;

@@ -37,7 +37,7 @@ test("MWE matches on lemma sequence when surface is inflected", () => {
       "zdawać sobie sprawę",
       r("zdaję sobie sprawę", ["zdawać", "sobie", "sprawa"]),
     ),
-  ).toBe(false); // sprawę lemmatizes to sprawa, sequence differs — text match saves surface-form MWEs only
+  ).toBe(false); // sprawę lemmatizes to sprawa, sequence differs: text match saves surface-form MWEs only
   expect(
     transcriptMatches("na pewno", r("no więc na pewno tak", ["no", "więc", "na", "pewno", "tak"])),
   ).toBe(true);
@@ -64,7 +64,7 @@ test("still rejects genuinely different transcripts", () => {
   }
 });
 
-test("short words get no fuzz budget — minimal pairs stay distinct", () => {
+test("short words get no fuzz budget: minimal pairs stay distinct", () => {
   expect(transcriptMatches("kot", r("kod", ["kod"]))).toBe(false);
   expect(transcriptMatches("pies", r("piec", ["piec"]))).toBe(false);
 });

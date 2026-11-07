@@ -9,7 +9,7 @@ type DB = BetterSQLite3Database<typeof schema>;
 // of tokens against the home dictionary's multi-word headwords. Surface
 // match covers invariable MWEs (na pewno); lemma match gives partial
 // coverage of inflecting ones (zdaję sobie sprawę -> zdawać sobie sprawę).
-// ponytail: word-order variants and discontinuous MWEs don't match — parked.
+// ponytail: word-order variants and discontinuous MWEs don't match: parked.
 
 export interface MweToken {
   surface: string;

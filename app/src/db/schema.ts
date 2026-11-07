@@ -16,7 +16,7 @@ import {
 //   surface form -> token, lemma = tracked unit, knowledge = per-track FSRS,
 //   gloss = Italian meaning cached per lemma/sense.
 // ponytail: CONTEXT's "tracked unit = lemma + surface forms encountered" is
-// derivable by scanning `token`; the gap is deliberate for the MVP — not modeled.
+// derivable by scanning `token`; the gap is deliberate for the MVP: not modeled.
 // ---------------------------------------------------------------------------
 
 /**
@@ -72,7 +72,7 @@ export const lemma = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     lemma: text("lemma").notNull(),
-    // UPOS: NOUN, VERB, ADP, ... — or 'MWE' for multi-word tracked units
+    // UPOS (NOUN, VERB, ADP, ...), or 'MWE' for multi-word tracked units
     // (dictionary headwords detected at import, see mweOccurrence).
     pos: text("pos").notNull(),
     // A wrong Report (CONTEXT.md "Report"): kept out of practice until its Report review.
@@ -353,7 +353,7 @@ export const occurrenceGloss = sqliteTable(
 /**
  * Cached comprehension-check questions (roadmap "Comprehension checks"), one
  * row per question, cache key = textId. Disposable derived data: no manual
- * tier, regenerate = delete + re-generate. Learner responses are NOT stored —
+ * tier, regenerate = delete + re-generate. Learner responses are NOT stored:
  * only the answer key is, as part of the cached question.
  */
 export const comprehensionQuestion = sqliteTable(
@@ -427,7 +427,7 @@ export const dictEntry = sqliteTable(
   },
   (t) => [
     // NOT unique(word,pos): the dump legitimately has multiple entries per
-    // (word,pos) — one per etymology section.
+    // (word,pos): one per etymology section.
     index("dict_entry_word_pos_idx").on(t.word, t.pos),
     index("dict_entry_mwe_idx").on(t.isMwe),
   ],
@@ -473,7 +473,7 @@ export const dictForm = sqliteTable(
  * A contiguous MWE occurrence in a text, spanning token positions. The MWE
  * itself is a `lemma` row with pos='MWE' (first-class tracked unit per
  * CONTEXT.md); occurrences need their own table because one token.lemmaId
- * can't span tokens. Component tokens keep their own word lemmas — *pewno*
+ * can't span tokens. Component tokens keep their own word lemmas: *pewno*
  * inside *na pewno* still counts as its own exposure (accepted v1
  * double-count).
  */

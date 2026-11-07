@@ -5,8 +5,8 @@ import { ERROR_LINE, RETRY } from "#/ui";
 /**
  * Mic capture for the speaking exercises (roadmap Slice 1).
  *
- * Container is whatever the browser records natively — Firefox picks
- * ogg/opus, Chrome webm/opus, Safari mp4 — and the sidecar (PyAV) decodes
+ * Container is whatever the browser records natively (Firefox picks
+ * ogg/opus, Chrome webm/opus, Safari mp4), and the sidecar (PyAV) decodes
  * all of them, so there is no per-browser code beyond this list.
  */
 const MIME_CANDIDATES = ["audio/ogg;codecs=opus", "audio/webm;codecs=opus", "audio/mp4"];
@@ -21,7 +21,7 @@ function pickMimeType(): string | undefined {
  * quiet to transcribe. The real failing clips (2026-07-13) sat at whole-clip
  * RMS −43…−49 dB; normal speech peaks near −20 dB. 0.02 linear ≈ −34 dB is the
  * gap between them.
- * ponytail: calibration knob — retune against a few of YOUR good clips on YOUR
+ * ponytail: calibration knob. Retune against a few of YOUR good clips on YOUR
  * mic if it warns on acceptable audio (or misses genuine near-silence).
  */
 const QUIET_RMS_THRESHOLD = 0.02;
@@ -45,7 +45,7 @@ export function meterLevel(rmsValue: number): number {
 export type RecorderState =
   | "idle"
   | "recording"
-  | "tooQuiet" // captured, but never crossed the loudness gate — not sent
+  | "tooQuiet" // captured, but never crossed the loudness gate: not sent
   | "denied"
   | "unsupported";
 
@@ -91,7 +91,7 @@ export function useRecorder(onRecorded: (blob: Blob) => void) {
         }
         streamRef.current = stream;
         // Tap the stream for analysis. Analyser is left unconnected to
-        // destination on purpose — routing mic to speakers would feed back.
+        // destination on purpose: routing mic to speakers would feed back.
         const ctx = new AudioContext();
         const analyser = ctx.createAnalyser();
         analyser.fftSize = 1024;
@@ -114,7 +114,7 @@ export function useRecorder(onRecorded: (blob: Blob) => void) {
 
   // rAF loop: read the analyser each frame, drive the meter, remember the
   // peak. Runs only between start() and the actual MediaRecorder stop. The
-  // meter is written straight to the DOM — a per-frame setState would re-render
+  // meter is written straight to the DOM: a per-frame setState would re-render
   // the consumer ~60×/s for a value that never feeds anything but this bar.
   const monitor = useCallback(() => {
     const analyser = analyserRef.current;
@@ -150,13 +150,13 @@ export function useRecorder(onRecorded: (blob: Blob) => void) {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
       // Loudness gate: if even the loudest frame stayed below threshold, the
-      // clip is too quiet to transcribe — surface it instead of sending.
+      // clip is too quiet to transcribe: surface it instead of sending.
       if (peakRmsRef.current < QUIET_RMS_THRESHOLD) {
         setState("tooQuiet");
         return;
       }
       setState("idle");
-      // Effect Event called from an imperative media callback (not an Effect) —
+      // Effect Event called from an imperative media callback (not an Effect):
       // works, and there's no linter to quibble; the intent is "read latest
       // onRecorded, non-reactively".
       emitRecorded(new Blob(chunks, { type: rec.mimeType }));

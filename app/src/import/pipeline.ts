@@ -39,7 +39,7 @@ interface TextInput {
  * keeps its row and gets the new content, tokens and MWE occurrences; its
  * passage questions go, to be cut again from the new content.
  *
- * ponytail: only the receptive track is seeded here — it's the only one the
+ * ponytail: only the receptive track is seeded here: it's the only one the
  * MVP reads/exercises. gradeLemma() lazily creates the productive row if a
  * productive exercise ever grades the lemma.
  */

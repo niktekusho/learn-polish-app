@@ -59,10 +59,10 @@ export interface DictLookupResult {
  * Look up a lemma in the home dictionary.
  *
  * Match rule: exact word + UPOS-mapped kaikki pos first; then word alone
- * (spaCy and Wiktionary disagree on POS occasionally — participles tagged
+ * (spaCy and Wiktionary disagree on POS occasionally: participles tagged
  * ADJ, entries only under verb); then a lowercased retry (sentence-initial
  * casing / PROPN mis-lemmatization). An unknown or unmappable UPOS ('', MWE)
- * goes straight to the word-only fallback — drizzle's inArray throws on [].
+ * goes straight to the word-only fallback: drizzle's inArray throws on [].
  */
 export function lookupDictionary(
   db: DB,

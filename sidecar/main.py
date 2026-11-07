@@ -19,7 +19,7 @@ nlp = spacy.load("pl_core_news_sm")
 
 # ASR model size/name (faster-whisper), int8 on CPU (CTranslate2 has no MPS).
 # `medium` default: on the 2026-07-13 real-clip eval it beat `small` on
-# accuracy at the same short-clip latency (~2.5s vs ~3.1s — fixed overhead
+# accuracy at the same short-clip latency (~2.5s vs ~3.1s: fixed overhead
 # dominates), and large-v3-turbo was *worse* on Polish single words.
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "medium")
 

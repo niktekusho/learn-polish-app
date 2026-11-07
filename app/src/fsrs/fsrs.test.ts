@@ -108,7 +108,7 @@ test("dueLemmas returns reviews before New cards and caps New cards", () => {
 
   const due = dueLemmas(db, "receptive", { now, limit: 50, newCardLimit: 10 });
 
-  // Reviews first (weakest first), then New — capped at 10.
+  // Reviews first (weakest first), then New: capped at 10.
   expect(due.slice(0, 2).map((d) => d.lemma)).toEqual(["rev_weak", "rev_strong"]);
   const newCount = due.filter((d) => d.state === 0).length;
   expect(newCount).toBe(10);

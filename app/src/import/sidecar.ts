@@ -30,7 +30,7 @@ export async function analyze(text: string): Promise<AnalyzeResponse> {
 }
 
 /**
- * ASR (ADR-0004): browser-recorded audio in (ogg/webm/mp4 — PyAV sniffs the
+ * ASR (ADR-0004): browser-recorded audio in (ogg/webm/mp4: PyAV sniffs the
  * container, filename is decoration), raw Polish transcript out. First call
  * ever is slow: the sidecar lazy-loads (and once, downloads) the model.
  */

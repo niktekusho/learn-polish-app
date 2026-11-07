@@ -81,7 +81,7 @@ test("prune keeps unglossed MWE lemmas that have occurrences", () => {
     .all()
     .find((l) => l.pos === "MWE")!;
 
-  // MWE has no token rows, no gloss, no reviews — but an occurrence: kept.
+  // MWE has no token rows, no gloss, no reviews, but an occurrence, so it is kept.
   pruneOrphanLemmas(db);
   expect(
     db

@@ -11,7 +11,7 @@ dumps don't exist at usable coverage.
 
 **Home dictionary = Wiktionary via Wiktextract (kaikki.org).** Import the pre-parsed
 Polish JSONL extraction (from the English Wiktionary) into SQLite once: lemma, POS, senses,
-IPA, inflection tables. This is machine-readable, offline, free, and does triple duty —
+IPA, inflection tables. This is machine-readable, offline, free, and does triple duty:
 reference panel, grammar-exercise fuel (declension tables), and pronunciation data (IPA).
 We do **not** parse Wiktionary wikitext ourselves; Wiktextract already did.
 
@@ -23,7 +23,7 @@ Cost tracks the learner's actual vocabulary, not Wiktionary's ~100k+ size. Engli
 are an acceptable fallback (the learner already reads English Wiktionary).
 
 **External links for human deep-dives:** Wiktionary (`.../wiki/{lemma}#Polish`) and Diki.
-Diki is link-only — it has no dump or API, and scraping it is against its ToS.
+Diki is link-only: it has no dump or API, and scraping it is against its ToS.
 
 ## Consequences
 
@@ -61,7 +61,7 @@ a streaming importer run from the maintenance page (background job + progress po
 Source file: `https://kaikki.org/dictionary/Polish/kaikki.org-dictionary-Polish.jsonl`
 (~736 MB, ~173k words), downloaded manually. kaikki marks the per-language files
 deprecated; the raw English-edition wiktextract dump from
-`https://kaikki.org/dictionary/rawdata.html` works too — the importer filters
+`https://kaikki.org/dictionary/rawdata.html` works too: the importer filters
 `lang_code == "pl"` per line. Do NOT use `pl-extract.jsonl` (Polish-edition Wiktionary,
 Polish-language glosses). Pure inflected-form entries are skipped (forms come from head
 entries), as are affix/character POS. Etymology text is stored per entry.
@@ -69,7 +69,7 @@ entries), as are affix/character POS. Etymology text is stored per entry.
 Per-sense glosses diverge slightly from the original two-wave plan:
 
 - The onboarding batch wave stays dead (mandatory-context rule, see roadmap).
-- Shipped instead: a **hybrid lazy wave** — on first click of an in-dictionary lemma,
+- Shipped instead: a **hybrid lazy wave**: on first click of an in-dictionary lemma,
   ONE LLM call translates ALL its Wiktionary senses to Italian AND flags the sense
   fitting the sentence. Every sense gets a `gloss` row (`sense` = English sense text,
   truncated); the flagged sense's Italian is copied to `sense = ''`, which remains the

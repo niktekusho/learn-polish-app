@@ -296,7 +296,8 @@ function isCurrent(db: DB, r: Review): boolean {
 
 function reviewCorrection(db: DB, r: Review): Correction {
   const parts: string[] = [];
-  if (r.glossBefore !== r.glossAfter) parts.push(`"${r.glossBefore ?? "—"}" → "${r.glossAfter}"`);
+  if (r.glossBefore !== r.glossAfter)
+    parts.push(`${r.glossBefore === null ? "nessuna" : `"${r.glossBefore}"`} → "${r.glossAfter}"`);
   if (r.markBefore !== r.markAfter) {
     parts.push(
       r.markAfter ? "segnata come dipendente dal contesto" : "non più dipendente dal contesto",

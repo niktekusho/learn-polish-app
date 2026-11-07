@@ -11,7 +11,7 @@ export interface Modality {
 // The lemma-plus-reference view an exercise operates on. `gloss` is the cached
 // Italian meaning when available (the "dict" side of ADR-0003's contract).
 // `sentence` is a sentence from the user's imported texts containing the
-// lemma — populated by the session builder only when a speaking exercise
+// lemma: populated by the session builder only when a speaking exercise
 // might use it (read-aloud).
 // `passage` is a prepared passage question for the lemma (Passage exercise).
 export interface ExerciseCandidate {
@@ -34,10 +34,10 @@ export interface PassageQuestion {
 
 /**
  * The one contract every exercise implements (ADR-0003). The scheduler (#10)
- * and session UI depend only on this — adding an exercise is adding a plugin.
+ * and session UI depend only on this: adding an exercise is adding a plugin.
  *
  * `Item` is the full server-held item (contains the answer). `ClientItem` is
- * what the browser sees — `toClient` MUST strip every correct-answer marker.
+ * what the browser sees: `toClient` MUST strip every correct-answer marker.
  * Grading happens server-side against the held `Item`; the client only ever
  * sends a `Response` referencing the item by id (#9). No grade material ever
  * round-trips through the client.

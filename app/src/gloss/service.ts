@@ -45,7 +45,7 @@ type Meaning =
  * Sentence context is MANDATORY to generate (#6): a context-free gloss written
  * to the cache would become *the* gloss for that lemma forever, defeating the
  * disambiguation design. So a caller with no sentence (e.g. Practice) reads the
- * cache only — a miss returns { italian: null } and writes nothing. The cache
+ * cache only: a miss returns { italian: null } and writes nothing. The cache
  * row records which provider produced it, so stub output can be purged later.
  *
  * The lemma gloss is ALWAYS the sense='' row, and stays a dictionary sense.
@@ -204,7 +204,7 @@ async function glossFromSentence(
       sentence: input.sentence,
     });
   } catch (err) {
-    // Log server-side (the pnpm dev terminal) — the error otherwise only
+    // Log server-side (the pnpm dev terminal): the error otherwise only
     // surfaces as the panel's generic "failed" state, hiding the real cause
     // (e.g. `claude exited 1: 401 Invalid authentication credentials`).
     console.error(
@@ -315,7 +315,7 @@ function errorMessage(err: unknown): string {
 
 /**
  * Overwrite the default-sense gloss for a lemma with a learner-written value.
- * Recorded as provider 'manual' — the highest-trust tier, which purge and
+ * Recorded as provider 'manual': the highest-trust tier, which purge and
  * regenerate never touch. Trims and rejects empty input.
  */
 export function setManualGloss(db: DB, lemmaId: number, italian: string): string {
@@ -333,7 +333,7 @@ export function setManualGloss(db: DB, lemmaId: number, italian: string): string
 
 /**
  * Discard ALL cached glosses for the lemma (default-sense, per-sense and
- * occurrence) and generate fresh. The explicit user "regenerate" action — so it overwrites
+ * occurrence) and generate fresh. This is the explicit user "regenerate" action, so it overwrites
  * even manual glosses, consistent with the pre-kaikki semantics.
  */
 export async function regenerateGloss(

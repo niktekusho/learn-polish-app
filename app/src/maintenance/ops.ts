@@ -71,7 +71,7 @@ export function getStats(db: DB): MaintenanceStats {
 
 /**
  * Delete every imported text. Tokens cascade; lemmas, glosses, knowledge and
- * review history are untouched — translations and FSRS progress survive.
+ * review history are untouched: translations and FSRS progress survive.
  */
 export function clearSourceTexts(db: DB): number {
   return db.delete(sourceText).run().changes;
@@ -80,8 +80,8 @@ export function clearSourceTexts(db: DB): number {
 /**
  * Delete lemmas that carry nothing: no token references them, no gloss was
  * ever produced, they were never reviewed, and no MWE occurrence points at
- * them (MWE lemmas have no token rows — their components keep their own
- * lemmas — so without this check every unglossed MWE would be pruned).
+ * them (MWE lemmas have no token rows; their components keep their own
+ * lemmas), so without this check every unglossed MWE would be pruned).
  * Suppressed MWEs stay: the row holds the never-detect mark.
  * Their (empty) knowledge rows cascade. Run after clearSourceTexts to sweep
  * the never-practiced backlog.

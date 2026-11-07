@@ -28,10 +28,10 @@ own, or starts as new.
 _Avoid_: bogus lemma, wrong lemma
 
 **Multi-word expression (MWE)**:
-A fixed expression whose meaning is not derivable from its parts — _na pewno_ (di sicuro),
+A fixed expression whose meaning is not derivable from its parts: _na pewno_ (di sicuro),
 _dzień dobry_, _zdawać sobie sprawę_ (rendersi conto). A lexical unit in its own right and
 therefore a **Tracked unit**. May be discontinuous in a sentence (_zdaję sobie z tego
-sprawę_). Compositional phrases (_ciekawe rzeczy_, _czerwone wino_) are NOT MWEs — they
+sprawę_). Compositional phrases (_ciekawe rzeczy_, _czerwone wino_) are NOT MWEs: they
 stay separate lemmas. Detected at text import by matching token runs against the **Home
 dictionary**'s multi-word headwords (contiguous only in v1; discontinuous parked).
 A match is only a candidate: the same words can form a compositional phrase (_To jest
@@ -113,7 +113,7 @@ nothing, since the learner asks for it precisely because they don't know the sou
 Shown in the UI as _Capire_.
 
 **Productive knowledge**:
-Ability to _produce_ a lemma from memory when speaking. Fed only by retrieval — producing
+Ability to _produce_ a lemma from memory when speaking. Fed only by retrieval: producing
 the lemma without seeing it (**Spoken recall**, spoken grammar drills, free turns in a
 **Conversation**). Reading a word off the screen, even aloud, never grades this track. Tracked
 separately because comprehension precedes production. Shown in the UI as _Ricordare_.
@@ -127,11 +127,11 @@ speaking. Never fed by retrieval: a struggle to remember is **Productive**, a st
 pronounce is **Pronunciation**. A lemma joins this track only after its first
 **Receptive** review: understand first, then say, then recall. Shown in the UI as
 _Pronunciare_.
-_Avoid_: speaking score, pronunciation difficulty (as a separate score — it is the
+_Avoid_: speaking score, pronunciation difficulty (as a separate score; it is the
 track's FSRS difficulty)
 
 **Visible attempt**:
-A spoken attempt at a lemma made while the lemma is on screen — any **Read-aloud**
+A spoken attempt at a lemma made while the lemma is on screen: any **Read-aloud**
 attempt, a **Spoken recall** retry after the answer was revealed, or a **Model line**
 read out in a **Conversation**. The only evidence
 that grades **Pronunciation knowledge**; never evidence of retrieval.

@@ -1,5 +1,5 @@
 """Roundtrip test for /transcribe: macOS TTS (Zosia) speaks Polish, whisper
-transcribes it back. First run downloads the whisper model (~460MB) — the same
+transcribes it back. First run downloads the whisper model (~460MB): the same
 download the app needs anyway. Plain script, repo convention (no pytest).
 
     uv run python test_transcribe.py      # prints OK, exits non-zero on failure

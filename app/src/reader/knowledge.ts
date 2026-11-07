@@ -2,7 +2,7 @@ import { State } from "ts-fsrs";
 
 /**
  * The single rules for interpreting a lemma's receptive knowledge state,
- * decided server-side — the reader UI must not compare raw FSRS state enums
+ * decided server-side: the reader UI must not compare raw FSRS state enums
  * itself (backlog #7). #5 highlights on `known`; `stillLearning` picks the
  * still-learning mark.
  */

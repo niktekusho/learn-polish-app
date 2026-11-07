@@ -188,7 +188,7 @@ export function WordPanel({
   const editId = useId();
 
   // In the reader the sentence is always present, so lookupGloss either resolves
-  // with a gloss or rejects (provider/CLI failure) — a rejection is a real error,
+  // with a gloss or rejects (provider/CLI failure): a rejection is a real error,
   // not "no translation". Shared by the mount effect and the Retry button.
   const runLookup = useCallback(() => {
     if (token.lemmaId == null || token.lemma == null) return () => {};
@@ -468,7 +468,9 @@ export function WordPanel({
               </div>
             ) : (
               <>
-                <div className="font-serif text-lg font-semibold">{occurrence ?? gloss ?? "—"}</div>
+                <div className="font-serif text-lg font-semibold">
+                  {occurrence ?? gloss ?? "nessuna traduzione"}
+                </div>
                 {occurrence && gloss && occurrence !== gloss && (
                   <div className="mt-1 font-serif text-ink-2">
                     <span className="font-sans text-xs font-medium text-ink-3">Forma base: </span>
@@ -732,7 +734,7 @@ function DictSection({ dict, surface }: { dict: DictLookupResult; surface: strin
                 const tags = italianTags(s.tags);
                 return (
                   <li key={i}>
-                    {s.italian && <span className="font-semibold">{s.italian} — </span>}
+                    {s.italian && <span className="font-semibold">{s.italian} · </span>}
                     <span className="text-ink-2">{s.gloss}</span>
                     {tags && <span className="ml-1 font-sans text-xs text-ink-3">{tags}</span>}
                   </li>

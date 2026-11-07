@@ -61,7 +61,7 @@ export type ClientPracticeItem = (
  * Per speech item: what happened so far. Spoken recall's first attempt is
  * blind (retrieval); once `revealed`, every attempt is a **Visible attempt**
  * (CONTEXT.md). Read-aloud attempts are always visible. `misses`/`hit` count
- * visible attempts only — they become the Pronunciation rating (ADR-0005).
+ * visible attempts only: they become the Pronunciation rating (ADR-0005).
  * `excluded`: **Alternative answers** already said, named in the prompt.
  */
 interface SpeechAttempts {
@@ -140,7 +140,7 @@ function queueRetry(db: DB, s: StoredSession, stored: StoredItem): ClientPractic
 }
 
 /**
- * Shortest imported sentence containing the lemma — read-aloud fuel. Checks a
+ * Shortest imported sentence containing the lemma: read-aloud fuel. Checks a
  * handful of occurrences; shortest wins (least ASR noise), but one not in
  * `avoid` beats any in it (no reading the same sentence 4× a session).
  * undefined when the lemma has no token occurrence (e.g. MWEs, whose
@@ -171,7 +171,7 @@ function sentenceFor(db: DB, lemmaId: number, avoid = new Set<string>()): string
   return best;
 }
 
-/** Glossed lemmas only — exercise targets + MCQ distractor source. */
+/** Glossed lemmas only: exercise targets + MCQ distractor source. */
 function glossedCandidates(db: DB): ExerciseCandidate[] {
   return (
     db
@@ -202,7 +202,7 @@ function passagesByLemma(db: DB): Map<number, PassageQuestion[]> {
 /**
  * Backfill productive knowledge rows for glossed lemmas that lack one. Import
  * seeds receptive only; the productive track starts here, at speaking-session
- * build (roadmap Slice 1: no maturity gate — any glossed lemma becomes a New
+ * build (roadmap Slice 1 has no maturity gate: any glossed lemma becomes a New
  * productive card; `newCardLimit` throttles the flood).
  */
 function seedProductiveCards(db: DB, now = new Date()) {
@@ -211,7 +211,7 @@ function seedProductiveCards(db: DB, now = new Date()) {
     .from(lemma)
     .innerJoin(gloss, and(eq(gloss.lemmaId, lemma.id), eq(gloss.sense, "")))
     .leftJoin(knowledge, and(eq(knowledge.lemmaId, lemma.id), eq(knowledge.track, "productive")))
-    // PROPN never gets a productive card — spoken recall (the only productive
+    // PROPN never gets a productive card: spoken recall (the only productive
     // exercise) excludes it, so a card would sit due forever, never rendered.
     .where(and(isNull(knowledge.id), ne(lemma.pos, NAME_POS)))
     .all();
@@ -225,7 +225,7 @@ function seedProductiveCards(db: DB, now = new Date()) {
 /**
  * Backfill pronunciation rows (ADR-0005): a lemma joins the track after its
  * first receptive review (understand, then say, then recall), and only if it
- * has a token occurrence — read-aloud, the track's renderer, needs a sentence;
+ * has a token occurrence: read-aloud, the track's renderer, needs a sentence;
  * without one the card would sit due forever.
  */
 function seedPronunciationCards(db: DB, now = new Date()) {
@@ -262,9 +262,9 @@ function renderDues(dues: DueLemma[], render: (d: DueLemma) => StoredItem | null
 /**
  * Build a Practice session (#10): due lemmas rendered through the applicable
  * exercise, held server-side under a fresh id. Mix (CONTEXT.md "Practice"):
- * one queue per active track — productive → spoken recall, receptive → MCQ
+ * one queue per active track: productive → spoken recall, receptive → MCQ
  * or Passage (50/50 when both apply; Passage only for context-bound lemmas),
- * pronunciation → read-aloud — drawn round-robin, so tracks get equal shares,
+ * pronunciation → read-aloud. Queues are drawn round-robin, so tracks get equal shares,
  * an empty queue yields its turn, and items come interleaved. A lemma appears
  * once per session (a read-aloud would give away a later spoken recall).
  * Mic off: receptive only.
@@ -433,9 +433,9 @@ export interface PronunciationHint {
 
 export interface SpeechAnswerResult {
   /**
-   * correct — item done. miss — not heard; answer revealed, retry or
-   * self-grade. heard — spoken recall retry after the reveal was heard; the
-   * pre-reveal attempt still needs its self-grade. alternative — an
+   * correct: item done. miss: not heard; answer revealed, retry or
+   * self-grade. heard: spoken recall retry after the reveal was heard; the
+   * pre-reveal attempt still needs its self-grade. alternative: an
    * Alternative answer was said; the target is asked again, `excluded` named.
    */
   status: "correct" | "miss" | "heard" | "alternative" | "alreadyAnswered";
@@ -511,7 +511,7 @@ function creditAlternative(
  * Grade one spoken attempt. Spoken recall's first attempt is retrieval: a hit
  * grades productive Good and closes the item; an Alternative answer grades
  * that lemma instead and asks again for the target; a miss reveals the answer and
- * writes nothing (whisper misfires on short non-native words — the learner
+ * writes nothing (whisper misfires on short non-native words: the learner
  * self-grades instead). Every later attempt, and every read-aloud attempt, is
  * a visible attempt: misses are counted, a read-aloud hit closes the item with
  * its Pronunciation grade, a recall retry hit waits for the self-grade.
@@ -586,7 +586,7 @@ async function transcriptLemmas(text: string): Promise<string[]> {
 }
 
 /**
- * Reveal a speech item's answer without grading — the give-up / no-mic path.
+ * Reveal a speech item's answer without grading: the give-up / no-mic path.
  * The learner then self-grades, same as after an ASR miss; spoken-recall
  * attempts from here on are visible attempts.
  */

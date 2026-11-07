@@ -344,9 +344,9 @@ function Maintenance() {
         </div>
         {dictStatus && dictStatus.state !== "idle" && (
           <p className="mt-2 text-sm text-gray-600">
-            {dictStatus.state === "downloading" && `Downloading — ${progress}%`}
+            {dictStatus.state === "downloading" && `Downloading: ${progress}%`}
             {dictStatus.state === "importing" &&
-              `Imported ${dictStatus.importedEntries} entries — ${progress}%`}
+              `Imported ${dictStatus.importedEntries} entries: ${progress}%`}
             {dictStatus.state === "done" &&
               (dictStatus.upToDate
                 ? "Up to date: kaikki has no newer dump."

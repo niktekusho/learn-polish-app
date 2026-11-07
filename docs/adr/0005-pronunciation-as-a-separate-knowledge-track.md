@@ -18,7 +18,7 @@ review (understand, then say, then recall). Extends ADR-0003's track model.
 
 - **Fold retries into existing ratings** (retry → Hard on Receptive for Read-aloud,
   on Productive for Spoken recall): least code, but an ASR stumble on a word you
-  understand would mark it as not understood — the track separation in CONTEXT.md
+  understand would mark it as not understood: the track separation in CONTEXT.md
   exists precisely to keep these apart.
 - **A separate home-made difficulty score** outside FSRS: duplicates what FSRS
   difficulty already models, and would need its own scheduling logic.

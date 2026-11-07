@@ -2,7 +2,7 @@ import { Rating } from "#/fsrs/index";
 import { isName } from "#/reader/name";
 import type { Exercise } from "./types";
 
-/** Full item, held server-side. `lemma` IS the answer — never sent to client. */
+/** Full item, held server-side. `lemma` IS the answer: never sent to client. */
 export interface SpokenRecallItem {
   id: string;
   lemmaId: number;
@@ -21,7 +21,7 @@ export interface SpokenResponse {
   transcriptLemmas: string[];
 }
 
-/** Lowercase, letters/digits only — punctuation and casing are ASR noise. */
+/** Lowercase, letters/digits only: punctuation and casing are ASR noise. */
 function normalize(s: string): string {
   return s
     .toLowerCase()
@@ -34,12 +34,12 @@ function normalize(s: string): string {
  * Polish phonetic fold. Whisper hears non-native single words nearly right
  * but spells them wrong ('szykowacz' for *szykować*), so grading compares
  * phonetic keys, not orthography. Three rule groups:
- * - orthographic identities (rz=ż, ó=u, ch=h — same sound, two spellings);
+ * - orthographic identities (rz=ż, ó=u, ch=h: same sound, two spellings);
  * - palatal/retroflex pairs ASR reliably confuses on non-native audio
  *   (ć/cz→c, ś/sz→s, ź/ż→z), plus y→i and denasalized ę/ą;
  * - collapse repeats.
  * Known cost: real minimal pairs fold together (być=bić, morze=może). This
- * grades vocabulary recall, not pronunciation precision — acceptable at
+ * grades vocabulary recall, not pronunciation precision: acceptable at
  * sub-A1, and the self-grade fallback stays the escape hatch.
  */
 export function phoneticKey(s: string): string {
@@ -127,7 +127,7 @@ const glossKey = (g: string) => g.trim().toLowerCase();
 /**
  * Spoken recall (roadmap Slice 1): Italian gloss shown → say the Polish
  * tracked unit. The productive track's first feeder. ASR-miss fallback
- * (reveal + self-grade) lives in the session layer — `grade` here only maps
+ * (reveal + self-grade) lives in the session layer: `grade` here only maps
  * a transcript to a rating.
  */
 export const spokenRecall: Exercise<SpokenRecallItem, SpokenRecallClientItem, SpokenResponse> = {

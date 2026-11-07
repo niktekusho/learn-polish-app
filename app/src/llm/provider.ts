@@ -20,7 +20,7 @@ export interface GlossRequest {
 
 // Shared prompt for the CLI providers (claude-cli, codex-cli). Kept here so the
 // two providers can't drift. Hardened (2026-07): the model must gloss ONLY the
-// lemma in dictionary form, using the sentence for sense disambiguation only —
+// lemma in dictionary form, using the sentence for sense disambiguation only:
 // not translate the whole phrase or adjacent modifiers. Fixes the class of bug
 // where "ciekawych rzeczy" made "rzecz" gloss as "cose interessanti".
 export function buildGlossPrompt(req: GlossRequest): string {
@@ -164,7 +164,7 @@ function checkOccurrence(occurrence: OccurrenceResult, senseCount: number): Occu
   return occurrence;
 }
 
-// Validate the raw CLI output. Throws on junk so nothing gets cached — a bad
+// Validate the raw CLI output. Throws on junk so nothing gets cached: a bad
 // gloss written to the cache becomes permanent (#6).
 export function parseSenseGlossJson(stdout: string, senseCount: number): SenseGlossResult {
   const parsed = parseJsonOutput(stdout, "sense gloss", senseGlossResponse);
@@ -243,7 +243,7 @@ export interface ComprehensionResult {
 }
 
 // Shared prompt for the CLI providers, same hardened tone as the gloss prompts.
-// The model picks the question count (1–10) proportional to text length — no
+// The model picks the question count (1–10) proportional to text length: no
 // server-side length math.
 export function buildComprehensionPrompt(req: ComprehensionRequest): string {
   return (
@@ -272,7 +272,7 @@ const comprehensionResponse = z.object({
     .max(10),
 });
 
-// Validate the raw CLI output. Throws on junk so nothing gets cached — the
+// Validate the raw CLI output. Throws on junk so nothing gets cached: the
 // service writes all questions in one transaction only after this passes.
 export function parseComprehensionJson(stdout: string): ComprehensionResult {
   const parsed = parseJsonOutput(stdout, "comprehension", comprehensionResponse);

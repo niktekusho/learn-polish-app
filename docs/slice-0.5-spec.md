@@ -1,4 +1,4 @@
-# Slice 0.5 Spec — Fresh content + visible progress
+# Slice 0.5 Spec: Fresh content + visible progress
 
 Status: ready for agent. Design session 2026-10-14; decisions recorded in
 [roadmap.md](./roadmap.md) "Slice 0.5". Terms per [CONTEXT.md](../CONTEXT.md).

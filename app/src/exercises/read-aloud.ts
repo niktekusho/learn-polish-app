@@ -5,13 +5,13 @@ import type { Exercise } from "./types";
 
 /**
  * Read-aloud (roadmap Slice 1): a sentence from the learner's own texts is on
- * screen; read it out loud. Grades **pronunciation only** (ADR-0005) — the
+ * screen; read it out loud. Grades **pronunciation only** (ADR-0005): the
  * word is visible, so this is never retrieval, and an ASR stumble says nothing
  * about understanding. `grade` is the hit check; the session maps attempts to
  * the actual rating.
  *
  * Pass = the target lemma is heard in the transcript (target lemma only, one
- * FSRS write — grading every lemma in the sentence would punish words the
+ * FSRS write: grading every lemma in the sentence would punish words the
  * ASR merely garbled).
  */
 export interface ReadAloudItem {
@@ -43,7 +43,7 @@ export const readAloud: Exercise<ReadAloudItem, ReadAloudClientItem, SpokenRespo
     };
   },
 
-  // The sentence necessarily shows the target — nothing to strip beyond the
+  // The sentence necessarily shows the target: nothing to strip beyond the
   // lemma field itself (keeps "which word is graded" server-side).
   toClient: (item) => ({
     id: item.id,

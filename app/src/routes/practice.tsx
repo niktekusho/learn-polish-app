@@ -195,7 +195,7 @@ function Practice() {
   }, [data.sessionId, search.session, search.mic, navigate]);
 
   // key: a new session (e.g. after the mic toggle rebuilds it) must reset all
-  // per-session state — answered map, reveal, speech phase.
+  // per-session state: answered map, reveal, speech phase.
   return <PracticeSession key={data.sessionId} />;
 }
 
@@ -372,7 +372,7 @@ function PracticeSession() {
           heard: res.status === "heard",
         });
       } else {
-        setSpeech(null); // alreadyAnswered — stale click, just move on
+        setSpeech(null); // alreadyAnswered: stale click, just move on
       }
     } catch {
       setSpeech(prev); // sidecar hiccup: let the learner retry the same item
@@ -851,7 +851,7 @@ function PronunciationNote({ hint }: { hint: Hint }) {
 /**
  * "pronuncia difficile · torna tra 9 h". Bands over FSRS difficulty (1..10):
  * one Good lands ≈2.1, one Hard ≈5.1, one Again ≈6.4, repeated Agains ≥8.8.
- * ponytail: calibration knob — retune the 4/7 cut-offs if the bands feel off.
+ * ponytail: calibration knob. Retune the 4/7 cut-offs if the bands feel off.
  */
 function hintText(h: Hint): string {
   const band = h.difficulty < 4 ? "facile" : h.difficulty < 7 ? "media" : "difficile";

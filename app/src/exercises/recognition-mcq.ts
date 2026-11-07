@@ -1,7 +1,7 @@
 import { Rating } from "#/fsrs/index";
 import type { Exercise } from "./types";
 
-/** Full item, held server-side. Carries the answer — never sent to the client. */
+/** Full item, held server-side. Carries the answer: never sent to the client. */
 export interface McqItem {
   id: string;
   lemmaId: number;

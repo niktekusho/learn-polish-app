@@ -21,13 +21,13 @@ import type {
 } from "./provider";
 
 // Deterministic, offline stand-in for a real LLM. Produces a unique, stable
-// string per lemma so the whole pipeline — caching, the word panel, and the
-// MCQ distractors (#9) — works without any network or API key.
+// string per lemma so caching, the word panel and the MCQ distractors (#9)
+// work without any network or API key.
 export class StubProvider implements GlossProvider, StoryProvider {
   readonly name: ProviderName = "stub";
 
   async gloss(req: GlossRequest): Promise<string> {
-    return `«${req.lemma}» — glossa stub (${req.pos})`;
+    return `«${req.lemma}»: glossa stub (${req.pos})`;
   }
 
   async glossSenses(req: SenseGlossRequest): Promise<SenseGlossResult> {
@@ -43,7 +43,7 @@ export class StubProvider implements GlossProvider, StoryProvider {
 
   async glossOccurrence(req: OccurrenceRequest): Promise<OccurrenceResult> {
     if (req.senses.length > 0) return { index: 0 };
-    return { italian: `«${req.surface}» — occorrenza stub`, fixed: false, note: null };
+    return { italian: `«${req.surface}»: occorrenza stub`, fixed: false, note: null };
   }
 
   async checkMwes(items: MweCheckItem[]): Promise<boolean[]> {

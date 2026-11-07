@@ -17,7 +17,7 @@ export type { Grade } from "ts-fsrs";
 export type Track = "receptive" | "productive" | "pronunciation";
 type DB = BetterSQLite3Database<typeof schema>;
 type KnowledgeRow = typeof knowledge.$inferSelect;
-/** The FSRS columns of a knowledge row — enough to build a ts-fsrs Card. */
+/** The FSRS columns of a knowledge row: enough to build a ts-fsrs Card. */
 type CardFields = Pick<
   KnowledgeRow,
   | "stability"
@@ -87,7 +87,7 @@ export function schedule(state: CardFields, rating: Grade, now = new Date()): Ca
 
 /**
  * Grade a lemma's track, persist the new FSRS state, and append a review_log
- * row — all in one transaction (#8). The shared helper #7 (mark known) and #10
+ * row: all in one transaction (#8). The shared helper #7 (mark known) and #10
  * (practice) both call. Creates the knowledge row if missing.
  */
 export function gradeLemma(
