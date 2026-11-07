@@ -115,38 +115,56 @@ Piper voices: [ADR-0004](./adr/0004-sidecar-hosts-asr-and-tts.md) amendment.
 - **Rotation**: story-locked. Episode N → Conversation set right after it → Episode N+1.
   The daily is Practice + whichever is next. A 10-episode story spans ~20 days. No mic
   that day: Practice alone keeps the streak, the Conversation waits.
-- **Start**: one Sonnet call writes the Goal and the character's opening from the last
-  Episode, the **Learner profile**, **Character memory** and the due **Productive** lemmas
-  (the character is nudged to make them the natural answer). Reroll allowed.
+- **Start**: one Sonnet call writes the Goal (2–4 **Goal steps**), the character's opening
+  and the first Hint pair from the last Episode, the **Learner profile**, **Character
+  memory** and the due **Productive** lemmas (the character is nudged to make them the
+  natural answer). It runs in the background when the Episode is read; the screen
+  generates it on open only if that failed. Reroll allowed, and waits for its call.
 - **Character lines**: Piper, one voice per character (auto-assigned from the labeled
   voice catalog; the active story gets voices on its first Conversation). Audio first;
   tap reveals the Polish (word panel works), tap again for Italian. Reveal count goes to
   the recap as heard lines.
 - **Learner turn**: push-to-talk → Whisper → `/analyze` → live character turn. The turn
-  output also carries "Goal met?" and "understood?" flags. No in-scene corrections and
-  no prompt rule against natural repetition.
-- **Help ladder**: Hint on tap (separate call with the transcript, not in the character
-  session) → Model line read aloud.
+  output (JSON schema) also carries the Goal step ids ticked this turn (zero or more,
+  sticky), an "understood?" flag and the next Hint pair. A not-understood turn grades
+  nothing. No in-scene corrections and no prompt rule against natural repetition.
+- **Help ladder**: Hint on tap → Model line read aloud. Both come with the character
+  turn that precedes them; the Hint's words are checked against the Home dictionary.
 - **Grading**: free-turn lemmas → Productive Good; hinted lemmas then said → Productive
   Again; Model line → Pronunciation of the hinted lemmas. Only met lemmas, **Echo**
   excluded, first evidence per lemma per track per day wins. No Receptive grading.
-- **End**: Goal met, ~15 learner turns, or quit → **Debrief** (≤10 corrections, recurring
-  patterns first). Counts for the daily at the Debrief with ≥3 turns, Goal met or not.
-- **Storage**: transcript + Debrief per Conversation; Character memory updated by the
-  Debrief call.
-- **LLM**: warm `claude -p` stream-json session per Conversation, 30s timeout + 1 retry,
-  no API fallback. Model/effort env knobs.
+- **End**: the learner taps Debrief whenever they like (prototype variant C). All Goal
+  steps ticked, or turn 15, highlights the Debrief button; turn 25 is a hard stop where
+  the character says goodbye. → **Debrief** (≤10 corrections, recurring patterns first).
+  Counts for the daily at the Debrief with ≥3 turns, Goal met or not. An unfinished
+  Conversation resumes any later day.
+- **Storage**: transcript + Debrief per Conversation, each turn saved before the reply
+  plays; Character memory updated by the Debrief call. `llm_call` gains the full prompt
+  and response (gzip BLOBs), token usage, API ms, effort, and conversation/turn/attempt,
+  for every LLM call, not just Conversations.
+- **LLM**: a `ConversationSession` per Conversation behind one interface: warm `claude -p`
+  stream-json (brief in `--system-prompt`, turn shape in `--json-schema`), Codex
+  `app-server` (pinned CLI version), and a scripted stub for dev and tests. A fresh
+  process is seeded with the brief and the transcript so far, for start, respawn and
+  resume alike. Spawned on screen open, killed after 10 min idle. 30s timeout per
+  attempt; a timeout, exit or schema failure retries once on a respawned process, then
+  shows "Riprova" with no cap. No API fallback. Model/effort env knobs per provider.
 
-**Benchmark** (picks the character model): Haiku and Sonnet × effort low/medium/high on
+**Benchmark** (picks the character model per provider): Haiku and Sonnet, and the Codex
+default model, × effort low/medium/high on
 replayed canned scenes (including garbled turns and Italian slips). Metrics: turn latency
-p50/p90; level fit (share of the character's lemmas already known, via `/analyze`); flag
-accuracy against the known answers; blind naturalness rating 1–3 by the learner. Winner:
-cheapest cell with p90 ≤ 10s, level fit ≥ 85%, flag accuracy ≥ 90%; rating breaks ties.
+p50/p90 with the full turn schema; level fit (share of the character's lemmas already
+known, via `/analyze`); Goal step and "understood?" accuracy against the known answers; blind naturalness rating 1–3 by the learner. Winner:
+cheapest cell with p90 ≤ 10s, level fit ≥ 85%, step/flag accuracy ≥ 90%; rating breaks
+ties.
 Spike 2026-10-21 (n=1): warm turns 0.8–1.9s Haiku, 1.4–3.5s Sonnet; cold spawns 2.5–5.4s.
 
-Ship order (each shippable): 1) warm session + benchmark harness 2) Piper `/speak` +
-voice catalog 3) Conversation + grading + Help ladder + Debrief 4) Character memory +
-recap line.
+Codex app-server research: [docs/research/codex-cli-streaming.md](./research/codex-cli-streaming.md).
+
+Ship order (each shippable): 1) Claude warm session + stub + call-log columns +
+benchmark harness 2) Codex `app-server` session + its benchmark row (built separately,
+delegated to Codex) 3) Piper `/speak` + voice catalog 4) Conversation + grading + Help
+ladder + Debrief 5) Character memory + recap line.
 
 Parked: Goals built around recurring Debrief patterns · cross-story character memory.
 Reverse-flow note: feature parity would need Italian ASR, Italian voices and a second

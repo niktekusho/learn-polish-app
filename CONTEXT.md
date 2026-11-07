@@ -286,8 +286,15 @@ _Avoid_: dialogue, chat, scene
 
 **Goal**:
 The Italian task card a **Conversation** is played toward: _buy two rolls, ask if
-there is fresh poppy-seed cake, pay_.
+there is fresh poppy-seed cake, pay_. A checklist of **Goal steps**, met when every step
+is ticked. A met Goal never ends the scene: the learner chooses when to go to the
+**Debrief**.
 _Avoid_: mission, quest, objective
+
+**Goal step**:
+One entry of a **Goal**'s checklist: _pay_. A learner turn ticks zero or more steps, and
+a ticked step stays ticked.
+_Avoid_: sub-goal, task, goal (for a single entry)
 
 **Learner profile**:
 A few facts about the learner (name, job, city, partner, hobbies), written once in
@@ -303,7 +310,8 @@ stories belongs in the **Learner profile**.
 What a stuck learner climbs during a **Conversation** turn: try freely, then a **Hint**,
 then a **Model line**. Each rung grades differently: a free turn is retrieval (**Productive**
 Good for the lemmas said), a hinted lemma then said is failed retrieval (**Productive**
-Again), a **Model line** read out is a **Visible attempt**.
+Again), a **Model line** read out is a **Visible attempt**. A turn the character did not understand
+grades nothing: a mishearing and a mistake look the same.
 
 **Hint**:
 The key Polish words for what the learner likely wants to say on a **Conversation** turn.
