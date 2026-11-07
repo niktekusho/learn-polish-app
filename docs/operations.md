@@ -47,8 +47,8 @@ on the phone.
   reuses the prod sidecar, which is safe because the sidecar stores nothing but
   model files and the `/speak` audio cache, both shared by dev and prod and safe to delete.
 - **LLM model and effort:** `CLAUDE_<TIER>_MODEL` and `CLAUDE_<TIER>_EFFORT` (tiers `GLOSS`,
-  `STORY`, `CHECK`; Codex uses `CODEX_` instead) override one task tier, e.g.
-  `CLAUDE_STORY_EFFORT=low`. Defaults: Haiku, Sonnet and Opus at medium effort; Codex runs
+  `STORY`, `CHECK`, `CONVERSATION`; Codex uses `CODEX_` instead) override one task tier, e.g.
+  `CLAUDE_STORY_EFFORT=low`. Defaults: Haiku, Sonnet, Opus and Haiku (`CONVERSATION`) at medium effort; Codex runs
   its configured model. Every call lands in the `llm_call` table with its gzipped prompt and
   reply, tokens and API time.
 - **Screenshot a page:** `scripts/shoot.sh <path> <out.png> [W,H]` against the dev server

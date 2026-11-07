@@ -58,7 +58,8 @@ export type LlmCallName =
   | "correction"
   | "premises"
   | "outline"
-  | "episode";
+  | "episode"
+  | "turn";
 
 /** Token counts and API time a CLI reports; null where it reports none. */
 export interface Usage {
@@ -140,7 +141,12 @@ export function tiersFromEnv(
     model: env[`${cli}_${task.toUpperCase()}_MODEL`] || models[task],
     effort: env[`${cli}_${task.toUpperCase()}_EFFORT`] || "medium",
   });
-  return { gloss: choice("gloss"), story: choice("story"), check: choice("check") };
+  return {
+    gloss: choice("gloss"),
+    story: choice("story"),
+    check: choice("check"),
+    conversation: choice("conversation"),
+  };
 }
 
 export const NO_USAGE: Usage = {

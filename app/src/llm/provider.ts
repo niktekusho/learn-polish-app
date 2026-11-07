@@ -10,7 +10,7 @@ export type ProviderName = "stub" | "claude-cli" | "codex-cli" | "ollama" | "api
  * Which model tier a CLI call needs: stories are longer, level-controlled
  * Polish; a check reviews text a story-tier model wrote.
  */
-export type LlmTask = "gloss" | "story" | "check";
+export type LlmTask = "gloss" | "story" | "check" | "conversation";
 
 export interface GlossRequest {
   lemma: string;

@@ -24,21 +24,18 @@ const MODELS: Record<LlmTask, string> = {
   gloss: "claude-haiku-5-5",
   story: "claude-sonnet-5-5",
   check: "claude-opus-5-5",
+  conversation: "claude-haiku-5-5",
 };
 
 export const claudeTiers = (env: Record<string, string | undefined> = process.env) =>
   tiersFromEnv("CLAUDE", MODELS, env);
 
-// Strips everything a gloss call does not need (tools, MCP, settings/hooks,
+// Strips everything a one-shot or session call does not need (tools, MCP, settings/hooks,
 // skills, Chrome, session files) so each call sends a minimal prompt. --bare is
 // not usable: it drops OAuth, so it would bill an API key instead of the subscription.
-const LEAN_ARGS = [
-  "--output-format",
-  "json",
+export const LEAN_ARGS = [
   "--tools",
   "",
-  "--system-prompt",
-  "Reply with only what the prompt asks.",
   "--setting-sources",
   "",
   "--strict-mcp-config",
@@ -47,13 +44,27 @@ const LEAN_ARGS = [
   "--no-session-persistence",
 ];
 // Empty cwd: no CLAUDE.md or .claude/ discovery.
-const EMPTY_CWD = mkdtempSync(join(tmpdir(), "gloss-"));
+export const EMPTY_CWD = mkdtempSync(join(tmpdir(), "claude-"));
 
 // The prompt is a single argv element, so the pasted sentence can't shell-inject.
 export function runClaude(prompt: string, { model, effort }: ModelChoice): Promise<CliRun> {
-  return spawnCli("claude", ["--model", model, "--effort", effort, ...LEAN_ARGS, "-p", prompt], {
-    cwd: EMPTY_CWD,
-  });
+  return spawnCli(
+    "claude",
+    [
+      "--model",
+      model,
+      "--effort",
+      effort,
+      "--output-format",
+      "json",
+      "--system-prompt",
+      "Reply with only what the prompt asks.",
+      ...LEAN_ARGS,
+      "-p",
+      prompt,
+    ],
+    { cwd: EMPTY_CWD },
+  );
 }
 
 const claudeResult = z.object({

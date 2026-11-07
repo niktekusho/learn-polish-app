@@ -1,4 +1,7 @@
 import { ClaudeCliProvider } from "./claude-cli";
+import { ClaudeSession } from "./claude-session";
+import type { ConversationSession } from "./conversation-session";
+import { ScriptedSession } from "./scripted-session";
 import type { LlmCall } from "./cli";
 import { CodexCliProvider } from "./codex-cli";
 import type { GlossProvider, ProviderName, StoryProvider } from "./provider";
@@ -36,3 +39,11 @@ function provider(): GlossProvider & StoryProvider {
 
 export const getGlossProvider = (): GlossProvider => provider();
 export const getStoryProvider = (): StoryProvider => provider();
+
+// One session per Conversation, so this builds a new one each call. GLOSS_PROVIDER=claude-cli
+// runs the warm Claude process; any other value (Codex has no warm session yet) plays the script.
+export function createConversationSession(): ConversationSession {
+  return process.env.GLOSS_PROVIDER === "claude-cli"
+    ? new ClaudeSession(undefined, logTo("claude-cli"))
+    : new ScriptedSession();
+}

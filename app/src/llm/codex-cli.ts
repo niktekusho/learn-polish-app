@@ -21,6 +21,7 @@ const MODELS: Record<LlmTask, string> = {
   gloss: DEFAULT_MODEL,
   story: DEFAULT_MODEL,
   check: DEFAULT_MODEL,
+  conversation: DEFAULT_MODEL,
 };
 
 export const codexTiers = (env: Record<string, string | undefined> = process.env) =>
