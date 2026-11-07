@@ -5,9 +5,11 @@ import { EMPTY_CWD, LEAN_ARGS, claudeTiers, readClaudeReply } from "./claude-cli
 import { NO_USAGE, type LlmCall, type ModelChoice, type Usage } from "./cli";
 import {
   buildSeedMessage,
+  buildTurnMessage,
   parseTurnResult,
   turnResultSchema,
   type ConversationSession,
+  type SendOptions,
   type SessionSeed,
   type TranscriptLine,
   type TurnResult,
@@ -112,9 +114,9 @@ export class ClaudeSession implements ConversationSession {
     this.armIdle();
   }
 
-  send(learnerTurn: string): Promise<TurnResult> {
+  send(learnerTurn: string, { lastTurn = false }: SendOptions = {}): Promise<TurnResult> {
     if (!this.seed) return Promise.reject(new Error("session not started"));
-    return this.turn(learnerTurn);
+    return this.turn(learnerTurn, lastTurn);
   }
 
   close(): void {
@@ -131,7 +133,7 @@ export class ClaudeSession implements ConversationSession {
     this.idleTimer.unref?.();
   }
 
-  private async turn(learnerTurn: string | null): Promise<TurnResult> {
+  private async turn(learnerTurn: string | null, lastTurn = false): Promise<TurnResult> {
     const seed = this.seed!;
     if (this.busy) throw new Error("a turn is already in progress");
     this.busy = true;
@@ -140,8 +142,8 @@ export class ClaudeSession implements ConversationSession {
     const asked: TranscriptLine[] = learnerTurn ? [{ speaker: "learner", text: learnerTurn }] : [];
     // A seeded process holds the transcript already, so it gets the bare turn.
     const message = this.seeded
-      ? (learnerTurn ?? "")
-      : buildSeedMessage([...this.transcript, ...asked]);
+      ? buildTurnMessage(learnerTurn ?? "", lastTurn)
+      : buildSeedMessage([...this.transcript, ...asked], lastTurn);
     const turn = [...this.transcript, ...asked].filter((l) => l.speaker === "learner").length;
     const attempt = this.failures + 1;
     let response: string | null = null;

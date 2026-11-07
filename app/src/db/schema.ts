@@ -222,6 +222,13 @@ export const learnerProfile = sqliteTable(
   (t) => [check("learner_profile_single_row", sql`${t.id} = 1`)],
 );
 
+/** One entry of a Debrief (CONTEXT.md): the learner's words, corrected, with one Italian line. */
+export interface DebriefCorrection {
+  said: string; // the learner's words, as transcribed
+  corrected: string;
+  italian: string;
+}
+
 // The Help ladder's rungs, lowest first: a Model line reveal implies the Hint.
 export const HELP_LEVELS = ["hint", "modelLine"] as const;
 export type HelpLevel = (typeof HELP_LEVELS)[number];
@@ -260,6 +267,8 @@ export const conversation = sqliteTable("conversation", {
     .notNull()
     .default("open"),
   turnCount: integer("turn_count").notNull().default(0), // learner turns
+  // The Debrief's corrections, recurring patterns first; null until the Conversation is debriefed.
+  corrections: text("corrections", { mode: "json" }).$type<DebriefCorrection[]>(),
   createdAt: integer("created_at", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),

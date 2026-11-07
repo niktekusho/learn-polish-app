@@ -1,4 +1,6 @@
+import type { DebriefCorrection } from "#/db/schema";
 import type {
+  DebriefRequest,
   ChoiceQuestion,
   ComprehensionRequest,
   ComprehensionResult,
@@ -118,6 +120,13 @@ export class StubProvider implements GlossProvider, StoryProvider, SceneProvider
       },
       voices: req.voices && req.characters.map((_, i) => req.voices![i % req.voices!.length].id),
     };
+  }
+
+  // Corrects the learner's first line, if any, so dev shows a Debrief with one entry.
+  async debrief(req: DebriefRequest): Promise<DebriefCorrection[]> {
+    const first = req.transcript.find((l) => l.speaker === "learner");
+    if (!first) return [];
+    return [{ said: first.text, corrected: first.text, italian: "Correzione stub." }];
   }
 
   async passageQuestion(req: PassageQuestionRequest): Promise<ChoiceQuestion> {

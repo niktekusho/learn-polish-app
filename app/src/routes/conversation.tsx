@@ -1,15 +1,25 @@
 import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Check, CircleAlert, Eye, Lightbulb, RefreshCw, Volume2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronRight,
+  CircleAlert,
+  Eye,
+  Lightbulb,
+  RefreshCw,
+  Volume2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { playVoice } from "#/audio/speak";
 import { PushToTalk } from "#/audio/recorder";
-import type { ConversationView, HelpOffer } from "#/conversation/service";
+import type { ConversationView, Ending, HelpOffer } from "#/conversation/service";
 import type { HelpLevel } from "#/db/schema";
 import { NamePanel, WordPanel } from "#/reader/WordPanel";
 import { isName, nameForm } from "#/reader/name";
 import type { PanelToken } from "#/reader/types";
+import { plural } from "#/plural";
 import {
   BTN_PRIMARY,
   BTN_QUIET,
@@ -103,6 +113,14 @@ const replyFn = createServerFn({ method: "POST" })
     return appConversationService().reply(data.id);
   });
 
+// Ends the scene at any turn: the Debrief call runs here, behind a wait.
+const debriefFn = createServerFn({ method: "POST" })
+  .validator(idInput)
+  .handler(async ({ data }) => {
+    const { appConversationService } = await import("#/conversation/server");
+    return appConversationService().debrief(data.id);
+  });
+
 export const Route = createFileRoute("/conversation")({
   component: ConversationPage,
   loader: () => getConversationFn(),
@@ -187,6 +205,7 @@ function ConversationPage() {
   }
   // A reroll replaces the setting, Goal and opening: a new key starts the screen afresh.
   const c = current.conversation;
+  if (c.status === "debriefed") return <DebriefView conversation={c} />;
   const key = JSON.stringify([c.id, c.scene, c.steps.map((s) => s.text), c.opening.line]);
   return <ConversationScreen key={key} initial={c} />;
 }
@@ -201,7 +220,14 @@ type Line =
       revealed: boolean;
     } & HelpOffer);
 type CharacterLineData = Extract<Line, { who: "character" }>;
-type Phase = "idle" | "transcribing" | "waiting" | "failed" | "unheard" | "rerolling";
+type Phase =
+  | "idle"
+  | "transcribing"
+  | "waiting"
+  | "failed"
+  | "unheard"
+  | "rerolling"
+  | "debriefing";
 
 function linesOf(c: ConversationView): Line[] {
   const { line, ...opening } = c.opening;
@@ -221,6 +247,8 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
   const c = initial;
   const [lines, setLines] = useState(() => linesOf(c));
   const [steps, setSteps] = useState(c.steps);
+  const [ending, setEnding] = useState<Ending>(c);
+  const [debriefFailed, setDebriefFailed] = useState(false);
   const [phase, setPhase] = useState<Phase>(() =>
     c.turns.at(-1)?.line === null ? "failed" : "idle",
   );
@@ -255,6 +283,7 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
         },
       ]);
       setSteps(r.steps);
+      setEnding(r);
       setPhase("idle");
       play(r.line);
     } catch {
@@ -294,7 +323,21 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
     }
   }
 
+  async function debrief() {
+    const before = phase;
+    setPhase("debriefing");
+    setDebriefFailed(false);
+    try {
+      await debriefFn({ data: { id: c.id } });
+      await router.invalidate();
+    } catch {
+      setDebriefFailed(true);
+      setPhase(before);
+    }
+  }
+
   if (phase === "rerolling") return <Wait>Preparo un'altra scena…</Wait>;
+  if (phase === "debriefing") return <Wait>Preparo le correzioni…</Wait>;
   const last = lines.at(-1)!;
 
   return (
@@ -302,6 +345,17 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
       <header className="shrink-0 border-b border-rule bg-card pr-4 pb-3">
         <TopBar>
           <span className={LABEL}>{c.character}</span>
+          <button
+            type="button"
+            onClick={debrief}
+            disabled={phase === "transcribing"}
+            className={`ml-auto inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm font-semibold transition-colors duration-300 disabled:opacity-45 ${
+              ending.highlightDebrief ? "bg-accent text-white shadow-button" : "text-accent-ink"
+            }`}
+          >
+            Com'è andata
+            <ChevronRight size={16} />
+          </button>
         </TopBar>
         <div className="grid gap-2 pl-4">
           <p className="font-serif text-base leading-snug text-ink-2">{c.scene}</p>
@@ -311,26 +365,7 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
               {c.roleFacts}
             </p>
           )}
-          <div>
-            <h2 className={`${LABEL_TYPE} text-ink-3`}>Obiettivo</h2>
-            <ul className="mt-1 grid gap-1">
-              {steps.map((s) => (
-                <li key={s.id} className="flex items-start gap-2 font-serif text-base leading-snug">
-                  <span
-                    className={`mt-0.5 inline-grid size-5 shrink-0 place-items-center rounded-full transition-colors duration-300 ${
-                      s.ticked ? "bg-good text-white" : "border-[1.5px] border-rule"
-                    }`}
-                  >
-                    {s.ticked && <Check size={13} strokeWidth={3} />}
-                  </span>
-                  <span className={s.ticked ? "text-ink-3" : "text-ink"}>
-                    {s.text}
-                    <span className="sr-only">{s.ticked ? " (fatto)" : ""}</span>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <GoalSteps steps={steps} />
         </div>
       </header>
 
@@ -364,9 +399,20 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
       </main>
 
       <div className="grid shrink-0 justify-items-center gap-3 border-t border-rule bg-paper/85 px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom))]">
-        {last.who === "character" && (phase === "idle" || phase === "unheard") && (
-          <HelpLadder key={last.turn} conversationId={c.id} line={last} />
+        {debriefFailed && (
+          <p role="alert" className={`${ERROR_LINE} justify-center`}>
+            <CircleAlert size={18} />
+            Correzioni non pronte.
+            <button type="button" onClick={debrief} className={RETRY}>
+              Riprova
+            </button>
+          </p>
         )}
+        {!ending.sceneClosed &&
+          last.who === "character" &&
+          (phase === "idle" || phase === "unheard") && (
+            <HelpLadder key={last.turn} conversationId={c.id} line={last} />
+          )}
         {phase === "transcribing" && (
           <p role="status" className="text-sm text-ink-2">
             Trascrivo…
@@ -386,6 +432,11 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
               Riprova
             </button>
           </p>
+        ) : ending.sceneClosed ? (
+          <button type="button" onClick={debrief} className={BTN_PRIMARY}>
+            Com'è andata
+            <ChevronRight size={18} />
+          </button>
         ) : (
           <PushToTalk
             onRecorded={sendAudio}
@@ -553,6 +604,74 @@ function HelpLadder({ conversationId, line }: { conversationId: number; line: Ch
           {help === null ? "Aiuto" : "Frase da leggere"}
         </button>
       )}
+    </div>
+  );
+}
+
+function GoalSteps({ steps }: { steps: ConversationView["steps"] }) {
+  return (
+    <div>
+      <h2 className={`${LABEL_TYPE} text-ink-3`}>Obiettivo</h2>
+      <ul className="mt-1 grid gap-1">
+        {steps.map((s) => (
+          <li key={s.id} className="flex items-start gap-2 font-serif text-base leading-snug">
+            <span
+              className={`mt-0.5 inline-grid size-5 shrink-0 place-items-center rounded-full transition-colors duration-300 ${
+                s.ticked ? "bg-good text-white" : "border-[1.5px] border-rule"
+              }`}
+            >
+              {s.ticked && <Check size={13} strokeWidth={3} />}
+            </span>
+            <span className={s.ticked ? "text-ink-3" : "text-ink"}>
+              {s.text}
+              <span className="sr-only">{s.ticked ? " (fatto)" : ""}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The Debrief: the Goal as it ended and the corrections, recurring patterns first. */
+function DebriefView({ conversation: c }: { conversation: ConversationView }) {
+  const corrections = c.corrections ?? [];
+  const turns = c.turns.length;
+  return (
+    <div className={PAGE}>
+      <TopBar />
+      <main className="mx-auto grid min-h-0 w-full max-w-[34rem] flex-1 content-start gap-5 overflow-auto px-4 pt-4 pb-8">
+        <div className="grid gap-1">
+          <span className={LABEL}>
+            {c.character} · {turns} {plural(turns, "turno", "turni")}
+          </span>
+          <h1 className="font-serif text-2xl leading-[1.2] font-bold">Com'è andata</h1>
+        </div>
+        <GoalSteps steps={c.steps} />
+        <section className="grid gap-3">
+          <h2 className={`${LABEL_TYPE} text-ink-3`}>Correzioni</h2>
+          {corrections.length === 0 ? (
+            <p className="font-serif text-base text-ink-2">Nessuna correzione.</p>
+          ) : (
+            <ol className="grid gap-3">
+              {corrections.map((correction, i) => (
+                <li key={i} className="rounded border border-rule bg-card p-4">
+                  <p lang="pl" className="font-serif text-md">
+                    <s className="text-bad-ink">{correction.said}</s> →{" "}
+                    <b>{correction.corrected}</b>
+                  </p>
+                  <p lang="it" className="mt-1 text-sm text-ink-2">
+                    {correction.italian}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </section>
+        <Link to="/story" className={`${BTN_QUIET} justify-self-start`}>
+          Torna alla storia
+        </Link>
+      </main>
     </div>
   );
 }

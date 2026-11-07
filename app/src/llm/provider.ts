@@ -2,6 +2,8 @@
 // Italian gloss depends only on this interface; the concrete provider (stub
 // now, Ollama or an API later) is chosen in getGlossProvider() (llm/index.ts).
 
+import type { DebriefCorrection } from "#/db/schema";
+import type { TranscriptLine } from "./conversation-session";
 import { z } from "zod";
 
 export type ProviderName = "stub" | "claude-cli" | "codex-cli" | "ollama" | "api" | "manual"; // learner-written gloss; not produced by a GlossProvider
@@ -742,6 +744,59 @@ export function parseSceneJson(stdout: string, req: SceneRequest): SceneResult {
   return scene;
 }
 
+// --- Debrief (CONTEXT.md "Debrief") ---------------------------------------
+// ONE call when the scene ends. A correction quotes the learner's own words, checked here
+// against what they said, so the Debrief never corrects a sentence nobody spoke.
+
+export const MAX_CORRECTIONS = 10;
+
+export interface DebriefRequest {
+  transcript: TranscriptLine[]; // the opening, then each learner turn and its reply
+}
+
+export function buildDebriefPrompt(req: DebriefRequest): string {
+  const lines = req.transcript.map(
+    (l) => `${l.speaker === "character" ? "Personaggio" : "Studente"}: ${l.text}`,
+  );
+  return (
+    "Sei un insegnante di polacco. Uno studente italiano principiante (sotto A1) ha fatto " +
+    "questa conversazione parlata; le sue battute vengono dal riconoscimento vocale. " +
+    `Correggi i suoi errori di polacco: al massimo ${MAX_CORRECTIONS} correzioni, prima gli ` +
+    "errori che ripete, poi gli altri in ordine di importanza. Ignora punteggiatura, " +
+    "maiuscole e parole che sembrano solo errori di trascrizione. Per ogni correzione: " +
+    "said, le parole sbagliate copiate esattamente da una battuta dello studente; " +
+    "corrected, la forma corretta; italian, una sola riga in italiano che spiega la regola. " +
+    "Nessun errore: corrections vuoto. Correggi solo lo studente, mai il personaggio. " +
+    "Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
+    '{"corrections":[{"said":"...","corrected":"...","italian":"..."}]}\n\n' +
+    `Conversazione:\n${lines.join("\n")}`
+  );
+}
+
+const correction = z.object({
+  said: z.string().trim().min(1),
+  corrected: z.string().trim().min(1),
+  italian: z.string().trim().min(1),
+});
+
+// Case, punctuation and spacing differ between a transcript and a quote of it.
+const normalized = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[\p{P}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+export function parseDebriefJson(stdout: string, learnerLines: string[]): DebriefCorrection[] {
+  const { corrections } = parseJsonOutput(
+    stdout,
+    "debrief",
+    z.object({ corrections: z.array(correction) }),
+  );
+  const spoken = learnerLines.map((l) => ` ${normalized(l)} `);
+  return corrections.filter((c) => spoken.some((l) => l.includes(` ${normalized(c.said)} `)));
+}
+
 /** Optional capabilities: providers without them fail any generated Polish text. */
 export interface Proofreader {
   proofread?(text: string): Promise<ProofreadFlag[]>;
@@ -777,4 +832,5 @@ export interface StoryProvider extends Proofreader {
 
 export interface SceneProvider {
   scene(req: SceneRequest): Promise<SceneResult>;
+  debrief(req: DebriefRequest, conversationId: number): Promise<DebriefCorrection[]>;
 }

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ClaudeSession, type SessionProcess } from "./claude-session";
-import type { SessionSeed } from "./conversation-session";
+import { LAST_TURN_NOTE, type SessionSeed } from "./conversation-session";
 import type { LlmCall } from "./cli";
 
 const seed: SessionSeed = {
@@ -288,4 +288,28 @@ test("each turn is logged with the learner turn it answers and its attempt", asy
     [1, 2],
     [2, 1],
   ]);
+});
+
+test("the last turn tells the character to close the scene, on a warm or a reseeded process", async () => {
+  const s = session();
+  const started = s.start(seed);
+  procs[0].emit(resultEvent());
+  await started;
+
+  const ordinary = s.send("Poproszę bułkę.");
+  procs[0].emit(resultEvent());
+  await ordinary;
+  expect(procs[0].userText(1)).not.toContain(LAST_TURN_NOTE);
+
+  const lost = s.send("Do widzenia.", { lastTurn: true });
+  expect(procs[0].userText(2)).toContain("Do widzenia.");
+  expect(procs[0].userText(2)).toContain(LAST_TURN_NOTE);
+  procs[0].crash();
+  await expect(lost).rejects.toThrow(/exited/);
+
+  const retry = s.send("Do widzenia.", { lastTurn: true });
+  procs[1].emit(resultEvent());
+  await retry;
+  expect(procs[1].userText(0)).toContain("Learner: Do widzenia.");
+  expect(procs[1].userText(0)).toContain(LAST_TURN_NOTE);
 });

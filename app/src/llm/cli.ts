@@ -1,7 +1,9 @@
+import type { DebriefCorrection } from "#/db/schema";
 import { spawn } from "node:child_process";
 import {
   buildComprehensionPrompt,
   buildCorrectionPrompt,
+  buildDebriefPrompt,
   buildEpisodePrompt,
   buildGlossPrompt,
   buildMweCheckPrompt,
@@ -16,6 +18,7 @@ import {
   type ChoiceQuestion,
   type ComprehensionRequest,
   type ComprehensionResult,
+  type DebriefRequest,
   type EpisodeRequest,
   type GlossProvider,
   type GlossRequest,
@@ -25,6 +28,7 @@ import {
   type OccurrenceResult,
   parseComprehensionJson,
   parseCorrectedText,
+  parseDebriefJson,
   parseEpisodeText,
   parseGloss,
   parseMweCheckJson,
@@ -65,7 +69,8 @@ export type LlmCallName =
   | "outline"
   | "episode"
   | "scene"
-  | "turn";
+  | "turn"
+  | "debrief";
 
 /** Token counts and API time a CLI reports; null where it reports none. */
 export interface Usage {
@@ -187,13 +192,23 @@ export abstract class CliProvider implements GlossProvider, StoryProvider, Scene
     task: LlmTask,
     prompt: string,
     parse: (out: string) => T,
+    conversationId?: number,
   ) {
     const start = Date.now();
     const choice = this.tiers[task];
     let response: string | null = null;
     let usage = NO_USAGE;
     const log = (error: string | null) =>
-      this.log({ call, ...choice, prompt, response, ...usage, ms: Date.now() - start, error });
+      this.log({
+        call,
+        ...choice,
+        prompt,
+        response,
+        ...usage,
+        ms: Date.now() - start,
+        error,
+        conversationId,
+      });
     try {
       const ran = await this.exec(prompt, choice);
       response = ran.stdout || null;
@@ -279,5 +294,16 @@ export abstract class CliProvider implements GlossProvider, StoryProvider, Scene
 
   scene(req: SceneRequest): Promise<SceneResult> {
     return this.run("scene", "story", buildScenePrompt(req), (out) => parseSceneJson(out, req));
+  }
+
+  debrief(req: DebriefRequest, conversationId: number): Promise<DebriefCorrection[]> {
+    const said = req.transcript.flatMap((l) => (l.speaker === "learner" ? [l.text] : []));
+    return this.run(
+      "debrief",
+      "story",
+      buildDebriefPrompt(req),
+      (out) => parseDebriefJson(out, said),
+      conversationId,
+    );
   }
 }

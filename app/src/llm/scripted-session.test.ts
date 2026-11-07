@@ -30,3 +30,12 @@ test("a warmed stub skips the lines already in the transcript", async () => {
   s.warm({ ...seed, transcript: [{ speaker: "character", text: "Dzień dobry!" }] });
   expect((await s.send("Poproszę dwie bułki.")).stepsTicked).toEqual(["order"]);
 });
+
+test("the stub says goodbye on the last turn", async () => {
+  const s: ConversationSession = new ScriptedSession();
+  await s.start(seed);
+  const ordinary = await s.send("Poproszę bułkę.");
+  const last = await s.send("Dziękuję.", { lastTurn: true });
+  expect(last.line).not.toBe(ordinary.line);
+  expect(last.line).toMatch(/do widzenia/i);
+});

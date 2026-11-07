@@ -4,7 +4,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import type { ConversationSession, SessionSeed, TurnResult } from "#/llm/conversation-session";
-import type { SceneRequest, SceneResult } from "#/llm/provider";
+import type { DebriefRequest, SceneRequest, SceneResult } from "#/llm/provider";
 import { ScriptedSession } from "#/llm/scripted-session";
 import { saveLearnerProfile } from "#/profile/service";
 import { upsertLemma } from "#/import/pipeline";
@@ -52,15 +52,27 @@ function sceneReply(n: number, req: SceneRequest): SceneResult {
   };
 }
 
-/** Answers each scene call in turn; an Error in `fails` fails that call instead. */
+/**
+ * Answers each scene call in turn; an Error in `fails` fails that call instead. A Debrief
+ * corrects each learner line, so its corrections follow the transcript it was sent.
+ */
 function fakeProvider(fails: (Error | null)[] = []) {
   return {
     requests: [] as SceneRequest[],
+    debriefs: [] as { req: DebriefRequest; conversationId: number }[],
     async scene(req: SceneRequest) {
       this.requests.push(req);
       const fail = fails.shift();
       if (fail) throw fail;
       return sceneReply(this.requests.length, req);
+    },
+    async debrief(req: DebriefRequest, conversationId: number) {
+      this.debriefs.push({ req, conversationId });
+      const fail = fails.shift();
+      if (fail) throw fail;
+      return req.transcript
+        .filter((l) => l.speaker === "learner")
+        .map((l, i) => ({ said: l.text, corrected: `${l.text}!`, italian: `Regola ${i + 1}.` }));
     },
   };
 }
@@ -120,6 +132,7 @@ function seedStory(db: DB, episodes = 1): number[] {
 class QueuedSession implements ConversationSession {
   warmed: SessionSeed[] = [];
   sent: string[] = [];
+  lastTurns: boolean[] = []; // per send, whether the character was told to close the scene
   constructor(private readonly replies: (Partial<TurnResult> | Error)[]) {}
   async start(): Promise<TurnResult> {
     throw new Error("the service never starts a session");
@@ -127,8 +140,9 @@ class QueuedSession implements ConversationSession {
   warm(seed: SessionSeed) {
     this.warmed.push(seed);
   }
-  async send(learnerTurn: string): Promise<TurnResult> {
+  async send(learnerTurn: string, options?: { lastTurn?: boolean }): Promise<TurnResult> {
     this.sent.push(learnerTurn);
+    this.lastTurns.push(options?.lastTurn ?? false);
     const next = this.replies.shift() ?? {};
     if (next instanceof Error) throw next;
     return {
@@ -645,4 +659,143 @@ test("when the learner's words cannot be analyzed, the reply still arrives and g
   expect(await speak(svc, id, "chleb")).toMatchObject({ turn: 1, line: "Nie." });
   expect(queued.sent).toEqual(["chleb"]);
   expect(graded(db, "productive").reviews).toEqual([]);
+});
+
+/** Adds and answers learner turns until the Conversation has `n` of them. */
+async function speakTurns(svc: ReturnType<typeof setup>["svc"], id: number, n: number) {
+  let last;
+  for (let i = 0; i < n; i++) {
+    svc.addTurn(id, `Zdanie ${i + 1}.`);
+    last = await svc.reply(id);
+  }
+  return last!;
+}
+
+test("the Debrief button is highlighted once every Goal step is ticked, without ending the scene", async () => {
+  const { svc, id } = await opened([{ stepsTicked: ["s1", "s2"] }, { stepsTicked: ["s3"] }]);
+  expect(await speakTurns(svc, id, 1)).toMatchObject({
+    highlightDebrief: false,
+    sceneClosed: false,
+  });
+  expect(await speakTurns(svc, id, 1)).toMatchObject({
+    highlightDebrief: true,
+    sceneClosed: false,
+  });
+  svc.addTurn(id, "Coś jeszcze.");
+  expect(await svc.current()).toMatchObject({
+    conversation: { status: "open", highlightDebrief: true },
+  });
+});
+
+test("the Debrief button is highlighted at turn 15 with the Goal unmet", async () => {
+  const { svc, id } = await opened([]);
+  expect(await speakTurns(svc, id, 14)).toMatchObject({ highlightDebrief: false });
+  expect(await speakTurns(svc, id, 1)).toMatchObject({
+    highlightDebrief: true,
+    sceneClosed: false,
+  });
+});
+
+test("turn 25 tells the character to close the scene, and no further turn can be sent", async () => {
+  const { svc, id, queued } = await opened([]);
+  expect(await speakTurns(svc, id, 24)).toMatchObject({ sceneClosed: false });
+  expect(await speakTurns(svc, id, 1)).toMatchObject({ turn: 25, sceneClosed: true });
+  expect(queued.lastTurns.indexOf(true)).toBe(24);
+  expect(queued.lastTurns.filter(Boolean)).toHaveLength(1);
+  expect(() => svc.addTurn(id, "Jeszcze jedno.")).toThrow(/closed/);
+  expect(await svc.current()).toMatchObject({ conversation: { sceneClosed: true } });
+});
+
+test("tapping Debrief mid-scene sends the transcript, stores the corrections and closes the scene", async () => {
+  const { db, provider, svc, id } = await opened([{ line: "Dzień dobry." }, { line: "Proszę." }]);
+  await speakTurns(svc, id, 2);
+  svc.addTurn(id, "Halo?"); // still waiting for its reply: the learner's words still count
+
+  const debriefed = await svc.debrief(id);
+  expect(provider.debriefs).toHaveLength(1);
+  expect(provider.debriefs[0].conversationId).toBe(id);
+  expect(provider.debriefs[0].req.transcript).toEqual([
+    { speaker: "character", text: "Otwarcie 1." },
+    { speaker: "learner", text: "Zdanie 1." },
+    { speaker: "character", text: "Dzień dobry." },
+    { speaker: "learner", text: "Zdanie 2." },
+    { speaker: "character", text: "Proszę." },
+    { speaker: "learner", text: "Halo?" },
+  ]);
+  const corrections = [
+    { said: "Zdanie 1.", corrected: "Zdanie 1.!", italian: "Regola 1." },
+    { said: "Zdanie 2.", corrected: "Zdanie 2.!", italian: "Regola 2." },
+    { said: "Halo?", corrected: "Halo?!", italian: "Regola 3." },
+  ];
+  expect(debriefed).toMatchObject({ status: "debriefed", corrections });
+  expect(db.select().from(schema.conversation).get()).toMatchObject({
+    status: "debriefed",
+    corrections,
+  });
+  expect(() => svc.addTurn(id, "Jeszcze.")).toThrow(/closed/);
+});
+
+test("a debriefed Conversation is not offered again as open: it shows its Debrief", async () => {
+  const { provider, svc, id } = await opened([]);
+  await speakTurns(svc, id, 1);
+  await svc.debrief(id);
+
+  expect(await svc.current()).toMatchObject({
+    conversation: { id, status: "debriefed", corrections: [{ said: "Zdanie 1." }] },
+  });
+  expect(await svc.debrief(id)).toMatchObject({ status: "debriefed" });
+  expect(provider.debriefs).toHaveLength(1);
+  await expect(svc.reroll(id)).rejects.toThrow();
+});
+
+test("a Debrief before the learner has spoken asks nothing and has no corrections", async () => {
+  const { provider, svc, id } = await opened([]);
+  expect(await svc.debrief(id)).toMatchObject({ status: "debriefed", corrections: [] });
+  expect(provider.debriefs).toHaveLength(0);
+});
+
+test("a failed Debrief call leaves the scene open, and tapping again retries it", async () => {
+  const queued = new QueuedSession([]);
+  const { svc, provider } = setup({ session: () => queued, fails: [null, new Error("timeout")] });
+  const { conversation } = (await svc.current()) as { conversation: { id: number } };
+  await speakTurns(svc, conversation.id, 1);
+
+  await expect(svc.debrief(conversation.id)).rejects.toThrow("timeout");
+  expect(await svc.current()).toMatchObject({ conversation: { status: "open" } });
+  expect(await svc.debrief(conversation.id)).toMatchObject({ status: "debriefed" });
+  expect(provider.debriefs).toHaveLength(2);
+});
+
+test("at most 10 corrections are stored, in the order the Debrief gave them", async () => {
+  const { db, svc, id } = await opened([]);
+  await speakTurns(svc, id, 12);
+  const debriefed = await svc.debrief(id);
+  const said = Array.from({ length: 10 }, (_, i) => `Zdanie ${i + 1}.`);
+  expect(debriefed.corrections?.map((c) => c.said)).toEqual(said);
+  expect(db.select().from(schema.conversation).get()!.corrections).toHaveLength(10);
+});
+
+test("a reply that arrives after the Debrief is not stored or graded", async () => {
+  let answer: (r: TurnResult) => void = () => {};
+  const slow = new QueuedSession([]);
+  slow.send = () => new Promise((resolve) => (answer = resolve));
+  const { db, svc, provider } = setup({ session: () => slow });
+  const { conversation } = (await svc.current()) as { conversation: { id: number } };
+  met(db, "chleb");
+  svc.addTurn(conversation.id, "chleb");
+  const pending = svc.reply(conversation.id);
+
+  await svc.debrief(conversation.id);
+  answer({
+    line: "Tak.",
+    italian: "Sì.",
+    understood: true,
+    stepsTicked: ["s1"],
+    hint: [],
+    modelLine: "",
+  });
+  await expect(pending).rejects.toThrow(/debriefed/);
+  expect(provider.debriefs[0].req.transcript.at(-1)).toEqual({ speaker: "learner", text: "chleb" });
+  expect(db.select().from(schema.conversationTurn).get()).toMatchObject({ line: null });
+  expect(graded(db, "productive").knowledge).toEqual([]);
 });

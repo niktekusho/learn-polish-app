@@ -1,4 +1,9 @@
-import type { ConversationSession, SessionSeed, TurnResult } from "./conversation-session";
+import type {
+  ConversationSession,
+  SendOptions,
+  SessionSeed,
+  TurnResult,
+} from "./conversation-session";
 
 /** Canned turns, so dev and tests run offline. `stepIndex` picks the step id each turn ticks. */
 const SCRIPT: { turn: Omit<TurnResult, "stepsTicked">; stepIndex: number | null }[] = [
@@ -34,6 +39,15 @@ const SCRIPT: { turn: Omit<TurnResult, "stepsTicked">; stepIndex: number | null 
   },
 ];
 
+const GOODBYE: TurnResult = {
+  line: "Dziękuję, do widzenia!",
+  italian: "Grazie, arrivederci!",
+  understood: true,
+  stepsTicked: [],
+  hint: [],
+  modelLine: "Do widzenia!",
+};
+
 export class ScriptedSession implements ConversationSession {
   private stepIds: string[] | null = null;
   private next = 0;
@@ -50,9 +64,9 @@ export class ScriptedSession implements ConversationSession {
     this.next = seed.transcript.filter((l) => l.speaker === "character").length;
   }
 
-  async send(): Promise<TurnResult> {
+  async send(_learnerTurn: string, { lastTurn = false }: SendOptions = {}): Promise<TurnResult> {
     if (!this.stepIds) throw new Error("session not started");
-    return this.play();
+    return lastTurn ? GOODBYE : this.play();
   }
 
   close(): void {}

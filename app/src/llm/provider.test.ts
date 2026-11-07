@@ -9,6 +9,7 @@ import {
   buildSenseGlossPrompt,
   parseComprehensionJson,
   parseCorrectedText,
+  parseDebriefJson,
   parseEpisodeText,
   parseMweCheckJson,
   parseOccurrenceJson,
@@ -336,5 +337,30 @@ describe("parseSceneJson", () => {
     for (const steps of [["a"], ["a", "b", "c", "d", "e"]]) {
       expect(() => parseSceneJson(JSON.stringify({ ...reply, steps }), req)).toThrow();
     }
+  });
+});
+
+describe("parseDebriefJson", () => {
+  const said = ["Poproszę dwa bułki.", "Dwa bułki i jeden kawa, proszę!"];
+  const correction = (n: number) => ({
+    said: "dwa bułki",
+    corrected: "dwie bułki",
+    italian: `Con i nomi femminili il due è «dwie» (${n}).`,
+  });
+  const reply = (corrections: unknown[]) => JSON.stringify({ corrections });
+
+  test("keeps the corrections in the model's order, recurring patterns first", () => {
+    const kawa = { said: "Jeden kawa,", corrected: "jedną kawę", italian: "Accusativo." };
+    expect(parseDebriefJson(reply([correction(1), kawa]), said)).toEqual([correction(1), kawa]);
+  });
+
+  test("drops a correction of words the learner never said", () => {
+    const invented = { said: "trzy bułki", corrected: "trzy bułki", italian: "x" };
+    expect(parseDebriefJson(reply([invented, correction(1)]), said)).toEqual([correction(1)]);
+  });
+
+  test("rejects a reply without a corrections list", () => {
+    expect(() => parseDebriefJson("Ottimo lavoro!", said)).toThrow(/debrief/);
+    expect(() => parseDebriefJson(JSON.stringify({ items: [] }), said)).toThrow();
   });
 });

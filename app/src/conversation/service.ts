@@ -5,6 +5,7 @@ import {
   characterVoice,
   conversation,
   conversationTurn,
+  type DebriefCorrection,
   HELP_LEVELS,
   type HelpLevel,
   knowledge,
@@ -19,7 +20,7 @@ import { tokenLemma, upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse, Voice } from "#/import/sidecar";
 import { buildCharacterBrief } from "#/llm/conversation-brief";
 import type { ConversationSession, SessionSeed, TranscriptLine } from "#/llm/conversation-session";
-import type { SceneProvider, SceneRequest } from "#/llm/provider";
+import { MAX_CORRECTIONS, type SceneProvider, type SceneRequest } from "#/llm/provider";
 import { getLearnerProfile, type LearnerProfile } from "#/profile/service";
 import { knowledgeFlags } from "#/reader/knowledge";
 import type { PanelToken } from "#/reader/types";
@@ -30,6 +31,9 @@ type ConversationRow = typeof conversation.$inferSelect;
 
 // Due Productive lemmas the scene is nudged toward: a few, so the Goal stays natural.
 const DUE_LEMMAS = 5;
+// A scene this long gets the Debrief button highlighted; at LAST_TURN the character closes it.
+const NUDGE_TURN = 15;
+const LAST_TURN = 25;
 
 export interface ConversationDeps {
   provider: SceneProvider;
@@ -39,8 +43,16 @@ export interface ConversationDeps {
   now?: () => Date;
 }
 
-export interface ConversationView {
+/** How far the scene is from its end, as the Debrief button and the mic show it. */
+export interface Ending {
+  highlightDebrief: boolean; // every Goal step ticked, or turn 15 reached
+  sceneClosed: boolean; // the hard stop: no further learner turn
+}
+
+export interface ConversationView extends Ending {
   id: number;
+  status: ConversationRow["status"];
+  corrections: DebriefCorrection[] | null; // the Debrief, once debriefed
   character: string;
   voice: string;
   scene: string;
@@ -181,10 +193,20 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     return row?.id ?? null;
   }
 
+  function ending(c: ConversationRow): Ending {
+    return {
+      highlightDebrief: c.turnCount >= NUDGE_TURN || c.steps.every((s) => s.tickedTurn !== null),
+      sceneClosed: c.turnCount >= LAST_TURN,
+    };
+  }
+
   function view(c: ConversationRow): ConversationView {
     const turns = turnsOf(c.id);
     return {
       id: c.id,
+      status: c.status,
+      corrections: c.corrections,
+      ...ending(c),
       character: c.character,
       voice: voicesOf(c.storyId).get(c.character) ?? "",
       scene: c.scene,
@@ -227,6 +249,7 @@ export function conversationService(db: DB, deps: ConversationDeps) {
   /** A new Goal, role facts, opening and first Hint pair, before the learner's first turn. */
   async function reroll(id: number): Promise<ConversationView> {
     const c = get(id);
+    if (c.status !== "open") throw new Error("the Conversation is debriefed");
     if (c.turnCount > 0) throw new Error("the learner has spoken: the scene is set");
     const { row } = await askScene(c.episodeId, profile());
     db.update(conversation).set(row).where(eq(conversation.id, id)).run();
@@ -238,7 +261,9 @@ export function conversationService(db: DB, deps: ConversationDeps) {
 
   /** Store the learner's transcript as the next turn, before any reply is asked. */
   function addTurn(id: number, learnerText: string): number {
-    const turn = get(id).turnCount + 1;
+    const c = get(id);
+    if (c.status !== "open" || ending(c).sceneClosed) throw new Error("the scene is closed");
+    const turn = c.turnCount + 1;
     if (turnsOf(id).at(-1)?.line === null) {
       throw new Error("the last turn is still waiting for its reply");
     }
@@ -254,16 +279,20 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     return turn;
   }
 
-  /** The session's seed: the brief, and the opening and every answered turn. */
-  function seedOf(c: ConversationRow): SessionSeed {
+  /** The opening and every learner turn with its reply; only the last turn can lack one. */
+  function transcriptOf(c: ConversationRow): TranscriptLine[] {
     const transcript: TranscriptLine[] = [{ speaker: "character", text: c.opening.line }];
     for (const t of turnsOf(c.id)) {
-      if (t.line === null) continue;
-      transcript.push(
-        { speaker: "learner", text: t.learnerText },
-        { speaker: "character", text: t.line },
-      );
+      transcript.push({ speaker: "learner", text: t.learnerText });
+      if (t.line !== null) transcript.push({ speaker: "character", text: t.line });
     }
+    return transcript;
+  }
+
+  /** The session's seed: the brief, and the transcript without a turn still waiting for its reply. */
+  function seedOf(c: ConversationRow): SessionSeed {
+    const transcript = transcriptOf(c);
+    if (transcript.at(-1)?.speaker === "learner") transcript.pop();
     return {
       brief: buildCharacterBrief({
         character: c.characterLine,
@@ -316,6 +345,7 @@ export function conversationService(db: DB, deps: ConversationDeps) {
    */
   async function reply(id: number) {
     const c = get(id);
+    if (c.status !== "open") throw new Error("the Conversation is debriefed");
     const t = turnsOf(id).at(-1);
     if (!t || t.line !== null) throw new Error("no turn is waiting for a reply");
     db.update(conversationTurn)
@@ -328,8 +358,10 @@ export function conversationService(db: DB, deps: ConversationDeps) {
       console.error(`conversation ${id} turn ${t.turn} not graded:`, e);
       return null;
     });
-    const result = await sessionOf(c).send(t.learnerText);
+    const result = await sessionOf(c).send(t.learnerText, { lastTurn: t.turn === LAST_TURN });
     const analyzed = await evidence;
+    // A Debrief tapped while the reply was on its way ended the scene at this turn.
+    if (get(id).status !== "open") throw new Error("the Conversation is debriefed");
     if (analyzed && result.understood) gradeTurn(db, analyzed, now());
     const hint = dictionaryWords(db, result.hint);
     const ticked = new Set(result.stepsTicked);
@@ -357,7 +389,31 @@ export function conversationService(db: DB, deps: ConversationDeps) {
       hint,
       modelLine: result.modelLine,
       steps: view(get(id)).steps,
+      ...ending(get(id)),
     };
+  }
+
+  /**
+   * End the scene with the Debrief, at any turn. Without a learner turn there is nothing to
+   * correct, so no call is made. A failed call leaves the scene open to try again.
+   */
+  async function debrief(id: number): Promise<ConversationView> {
+    const c = get(id);
+    if (c.status === "debriefed") return view(c);
+    const corrections =
+      c.turnCount === 0
+        ? []
+        : (await deps.provider.debrief({ transcript: transcriptOf(c) }, id)).slice(
+            0,
+            MAX_CORRECTIONS,
+          );
+    db.update(conversation)
+      .set({ status: "debriefed", corrections, updatedAt: now() })
+      .where(eq(conversation.id, id))
+      .run();
+    sessions.get(id)?.close();
+    sessions.delete(id);
+    return view(get(id));
   }
 
   /** Mark the character line of `turn` revealed; turn 0 is the opening. Grades nothing. */
@@ -453,6 +509,7 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     open,
     addTurn,
     reply,
+    debrief,
     reveal,
     revealHelp,
     heardLines,

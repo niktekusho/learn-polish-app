@@ -331,7 +331,7 @@ The end of a **Conversation**: up to 10 corrections of the learner's utterances,
 patterns first, each with the corrected form and one Italian line. The only place
 mistakes are pointed out: in the scene, the character reacts like a patient native,
 understanding or asking again, and may repeat what it heard as people do, but never
-flags an error.
+flags an error. Shown in the UI as _Com'è andata_, its list as _Correzioni_.
 _Avoid_: review (that is an FSRS review), feedback, report
 
 **Heard line**:
