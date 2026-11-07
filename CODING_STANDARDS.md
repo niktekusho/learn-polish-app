@@ -22,5 +22,8 @@ Read during review. Tooling already enforces formatting (`vp fmt`), lint (`vp li
 - **Row order.** When a result depends on which row comes first or last, the query has an
   explicit `orderBy`. Without it the order is whatever index SQLite picks, and a test with
   a few rows rarely shows the difference.
+- **Fakes that can go red.** A test that claims a value is replaced, rerolled or refreshed
+  uses a fake that returns a different value on each call, and asserts the new value. A fake
+  with a constant reply passes whether or not the code replaced anything.
 - **Per-track data.** Presentation per Knowledge track (name, colors, glow) lives on `TRACK`
   in `app/src/ui.tsx`, one map for every screen.
