@@ -1,11 +1,14 @@
 import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Check, CircleAlert, RefreshCw, Volume2 } from "lucide-react";
+import { ArrowLeft, Check, CircleAlert, Eye, RefreshCw, Volume2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { playVoice } from "#/audio/speak";
 import { PushToTalk } from "#/audio/recorder";
 import type { ConversationView } from "#/conversation/service";
+import { NamePanel, WordPanel } from "#/reader/WordPanel";
+import { isName, nameForm } from "#/reader/name";
+import type { PanelToken } from "#/reader/types";
 import {
   BTN_PRIMARY,
   BTN_QUIET,
@@ -15,6 +18,7 @@ import {
   LABEL_TYPE,
   RETRY,
   TRACK,
+  WORD,
 } from "#/ui";
 
 // The Conversation after the last Episode read. A scene the background run failed to
@@ -55,6 +59,24 @@ const addTurnFn = createServerFn({ method: "POST" })
     if (!text) return { text: null };
     appConversationService().addTurn(data.id, text);
     return { text };
+  });
+
+const lineInput = (d: unknown) =>
+  z.object({ id: z.number().int(), turn: z.number().int().min(0) }).parse(d);
+
+// Stored per line: a line never revealed is a Heard line. Grades nothing.
+const revealFn = createServerFn({ method: "POST" })
+  .validator(lineInput)
+  .handler(async ({ data }) => {
+    const { appConversationService } = await import("#/conversation/server");
+    appConversationService().reveal(data.id, data.turn);
+  });
+
+const wordsFn = createServerFn({ method: "POST" })
+  .validator(lineInput)
+  .handler(async ({ data }) => {
+    const { appConversationService } = await import("#/conversation/server");
+    return appConversationService().words(data.id, data.turn);
   });
 
 const replyFn = createServerFn({ method: "POST" })
@@ -152,15 +174,21 @@ function ConversationPage() {
   return <ConversationScreen key={key} initial={c} />;
 }
 
-type Line = { who: "character" | "learner"; text: string; italian?: string };
+type Line =
+  | { who: "learner"; text: string }
+  | { who: "character"; text: string; italian: string; turn: number; revealed: boolean };
 type Phase = "idle" | "transcribing" | "waiting" | "failed" | "unheard" | "rerolling";
 
 function linesOf(c: ConversationView): Line[] {
-  const lines: Line[] = [{ who: "character", text: c.opening.line, italian: c.opening.italian }];
-  for (const t of c.turns) {
+  const { line, italian, revealed } = c.opening;
+  const lines: Line[] = [{ who: "character", text: line, italian, turn: 0, revealed }];
+  c.turns.forEach((t, i) => {
     lines.push({ who: "learner", text: t.learnerText });
-    if (t.line !== null) lines.push({ who: "character", text: t.line, italian: t.italian ?? "" });
-  }
+    if (t.line !== null) {
+      const italian = t.italian ?? "";
+      lines.push({ who: "character", text: t.line, italian, turn: i + 1, revealed: t.revealed });
+    }
+  });
   return lines;
 }
 
@@ -173,6 +201,7 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
     c.turns.at(-1)?.line === null ? "failed" : "idle",
   );
   const [thinking, setThinking] = useState(false);
+  const [selected, setSelected] = useState<{ token: PanelToken; sentence: string } | null>(null);
   const thinkingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const play = (text: string) => c.voice && playVoice(text, c.voice).catch(() => {});
 
@@ -187,7 +216,10 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
     thinkingTimer.current = setTimeout(() => setThinking(true), THINKING_MS);
     try {
       const r = await replyFn({ data: { id: c.id } });
-      setLines((ls) => [...ls, { who: "character", text: r.line, italian: r.italian }]);
+      setLines((ls) => [
+        ...ls,
+        { who: "character", text: r.line, italian: r.italian, turn: r.turn, revealed: false },
+      ]);
       setSteps(r.steps);
       setPhase("idle");
       play(r.line);
@@ -231,7 +263,7 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
   if (phase === "rerolling") return <Wait>Preparo un'altra scena…</Wait>;
 
   return (
-    <div className={PAGE}>
+    <div className={`${PAGE} relative`}>
       <header className="shrink-0 border-b border-rule bg-card pr-4 pb-3">
         <TopBar>
           <span className={LABEL}>{c.character}</span>
@@ -271,25 +303,13 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
         <div className="mx-auto flex w-full max-w-[40rem] flex-col gap-3" aria-live="polite">
           {lines.map((l, i) =>
             l.who === "character" ? (
-              <div
+              <CharacterLine
                 key={i}
-                className="flex max-w-[85%] items-start gap-1 self-start rounded-2xl rounded-bl-sm border border-rule bg-card py-1 pr-4 pl-1"
-              >
-                <button
-                  type="button"
-                  onClick={() => play(l.text)}
-                  aria-label="Ascolta"
-                  className={ICON_BUTTON}
-                >
-                  <Volume2 size={18} className="text-accent" />
-                </button>
-                <span lang="pl" className="grid gap-1 py-2">
-                  <span className="font-serif text-md">{l.text}</span>
-                  <span lang="it" className="text-sm text-ink-3 italic">
-                    {l.italian}
-                  </span>
-                </span>
-              </div>
+                conversationId={c.id}
+                line={l}
+                onPlay={() => play(l.text)}
+                onWord={(token, sentence) => setSelected({ token, sentence })}
+              />
             ) : (
               <p
                 key={i}
@@ -342,6 +362,115 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
           </button>
         )}
       </div>
+
+      {selected && (
+        <aside className="contents sm:absolute sm:inset-y-0 sm:right-0 sm:z-10 sm:flex sm:w-[min(42%,380px)] sm:flex-col sm:border-l sm:border-rule sm:bg-panel">
+          {isName(selected.token.pos) ? (
+            <NamePanel token={selected.token} onClose={() => setSelected(null)} />
+          ) : (
+            <WordPanel
+              key={`${selected.token.lemmaId}-${selected.sentence}`}
+              token={selected.token}
+              sentence={selected.sentence}
+              onClose={() => setSelected(null)}
+            />
+          )}
+        </aside>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A character line plays with its text hidden, to train the ear. The first tap reveals the
+ * Polish, whose words open the word panel; the second tap reveals the Italian.
+ */
+function CharacterLine({
+  conversationId,
+  line,
+  onPlay,
+  onWord,
+}: {
+  conversationId: number;
+  line: Extract<Line, { who: "character" }>;
+  onPlay: () => void;
+  onWord: (token: PanelToken, sentence: string) => void;
+}) {
+  const [shown, setShown] = useState<"none" | "polish" | "italian">(
+    line.revealed ? "polish" : "none",
+  );
+  const [words, setWords] = useState<PanelToken[] | null>(null);
+  const data = { id: conversationId, turn: line.turn };
+
+  useEffect(() => {
+    if (shown === "none" || words) return;
+    // Without its words the line still reads as plain text.
+    wordsFn({ data })
+      .then(setWords)
+      .catch(() => {});
+  }, [shown]);
+
+  function revealPolish() {
+    setShown("polish");
+    revealFn({ data }).catch((err) => console.error("[conversation] reveal not stored:", err));
+  }
+
+  const sentenceOf = (t: PanelToken) =>
+    words!
+      .filter((w) => w.sentenceIndex === t.sentenceIndex)
+      .map((w) => w.surface)
+      .join("")
+      .trim();
+
+  return (
+    <div className="flex max-w-[85%] items-start gap-1 self-start rounded-2xl rounded-bl-sm border border-rule bg-card py-1 pr-4 pl-1">
+      <button type="button" onClick={onPlay} aria-label="Ascolta" className={ICON_BUTTON}>
+        <Volume2 size={18} className="text-accent" />
+      </button>
+      {shown === "none" ? (
+        <button
+          type="button"
+          onClick={revealPolish}
+          className="inline-flex min-h-11 items-center gap-2 text-sm text-ink-3 italic"
+        >
+          <Eye size={16} />
+          Tocca per leggere
+        </button>
+      ) : (
+        <span className="grid gap-1 py-2">
+          <span lang="pl" className="font-serif text-md">
+            {words
+              ? words.map((t, i) =>
+                  t.lemmaId === null ||
+                  (isName(t.pos) && !nameForm(t.surface, t.lemma ?? "", t.tags)) ? (
+                    <span key={i}>{t.surface}</span>
+                  ) : (
+                    <span
+                      key={i}
+                      onClick={() => onWord(t, sentenceOf(t))}
+                      className={`${WORD}${isName(t.pos) ? " text-word-name" : ""}`}
+                    >
+                      {t.surface}
+                    </span>
+                  ),
+                )
+              : line.text}
+          </span>
+          {shown === "italian" ? (
+            <span lang="it" className="text-sm text-ink-3 italic">
+              {line.italian}
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShown("italian")}
+              className="min-h-11 justify-self-start text-sm text-ink-3 italic underline decoration-dotted underline-offset-4"
+            >
+              Mostra l'italiano
+            </button>
+          )}
+        </span>
+      )}
     </div>
   );
 }

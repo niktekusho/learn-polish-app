@@ -17,6 +17,9 @@ export interface ReaderToken {
   flagged: boolean; // a Report waits for its review (CONTEXT.md "Report")
 }
 
+// A token the word panel can open: a Conversation line's words are no stored tokens.
+export type PanelToken = Omit<ReaderToken, "id"> & { id: number | null };
+
 // The server's verdict after grading a lemma, used to update highlights live.
 export interface KnowledgeFlags {
   known: boolean;

@@ -1,13 +1,24 @@
-import { and, asc, desc, eq, isNotNull, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
-import { characterVoice, conversation, conversationTurn, sourceText, story } from "#/db/schema";
+import {
+  characterVoice,
+  conversation,
+  conversationTurn,
+  knowledge,
+  lemma,
+  sourceText,
+  story,
+} from "#/db/schema";
 import { dueLemmas } from "#/fsrs/index";
-import type { Voice } from "#/import/sidecar";
+import { tokenLemma, upsertLemma } from "#/import/pipeline";
+import type { AnalyzeResponse, Voice } from "#/import/sidecar";
 import { buildCharacterBrief } from "#/llm/conversation-brief";
 import type { ConversationSession, SessionSeed, TranscriptLine } from "#/llm/conversation-session";
 import type { SceneProvider, SceneRequest } from "#/llm/provider";
 import { getLearnerProfile, type LearnerProfile } from "#/profile/service";
+import { knowledgeFlags } from "#/reader/knowledge";
+import type { PanelToken } from "#/reader/types";
 import { storyCharacters } from "#/story/character-names";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -19,6 +30,7 @@ const DUE_LEMMAS = 5;
 export interface ConversationDeps {
   provider: SceneProvider;
   voices: () => Promise<Voice[]>; // the sidecar's Piper catalog
+  analyze: (text: string) => Promise<AnalyzeResponse>;
   createSession: (conversationId: number) => ConversationSession;
   now?: () => Date;
 }
@@ -30,8 +42,8 @@ export interface ConversationView {
   scene: string;
   roleFacts: string | null;
   steps: { id: string; text: string; ticked: boolean }[];
-  opening: { line: string; italian: string };
-  turns: { learnerText: string; line: string | null; italian: string | null }[];
+  opening: { line: string; italian: string; revealed: boolean };
+  turns: { learnerText: string; line: string | null; italian: string | null; revealed: boolean }[];
 }
 
 export type CurrentConversation =
@@ -109,6 +121,7 @@ export function conversationService(db: DB, deps: ConversationDeps) {
         steps: scene.steps.map((text, i) => ({ id: `s${i + 1}`, text, tickedTurn: null })),
         roleFacts: scene.roleFacts,
         opening: scene.opening,
+        openingRevealed: false,
         dueLemmas: req.dueLemmas,
         updatedAt: now(),
       },
@@ -160,11 +173,12 @@ export function conversationService(db: DB, deps: ConversationDeps) {
       scene: c.scene,
       roleFacts: c.roleFacts,
       steps: c.steps.map((s) => ({ id: s.id, text: s.text, ticked: s.tickedTurn !== null })),
-      opening: { line: c.opening.line, italian: c.opening.italian },
+      opening: { line: c.opening.line, italian: c.opening.italian, revealed: c.openingRevealed },
       turns: turns.map((t) => ({
         learnerText: t.learnerText,
         line: t.line,
         italian: t.italian,
+        revealed: t.lineRevealed,
       })),
     };
   }
@@ -284,5 +298,72 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     return { turn: t.turn, line: result.line, italian: result.italian, steps: view(get(id)).steps };
   }
 
-  return { prepareScene, current, reroll, open, addTurn, reply };
+  /** Mark the character line of `turn` revealed; turn 0 is the opening. Grades nothing. */
+  function reveal(id: number, turn: number): void {
+    if (turn === 0) {
+      db.update(conversation).set({ openingRevealed: true }).where(eq(conversation.id, id)).run();
+      return;
+    }
+    db.update(conversationTurn)
+      .set({ lineRevealed: true })
+      .where(
+        and(
+          eq(conversationTurn.conversationId, id),
+          eq(conversationTurn.turn, turn),
+          isNotNull(conversationTurn.line),
+        ),
+      )
+      .run();
+  }
+
+  /** Character lines the learner followed by ear, without revealing them (CONTEXT.md "Heard line"). */
+  function heardLines(id: number): number {
+    const c = get(id);
+    const lines = turnsOf(id).filter((t) => t.line !== null && !t.lineRevealed).length;
+    return lines + (c.openingRevealed ? 0 : 1);
+  }
+
+  /**
+   * The words of the character line of `turn` (0 is the opening), for the word panel. The line is
+   * not stored as a text, so its tokens have no id; its lemmas get no knowledge row until graded.
+   */
+  async function words(id: number, turn: number): Promise<PanelToken[]> {
+    const line = turn === 0 ? get(id).opening.line : turnsOf(id).find((t) => t.turn === turn)?.line;
+    if (!line) throw new Error(`turn ${turn} has no character line`);
+    const analysis = await deps.analyze(line);
+    const tokens = analysis.sentences.flatMap((s, sentenceIndex) =>
+      s.tokens.map((tok) => {
+        const saved = tokenLemma(db, tok, undefined);
+        return {
+          surface: tok.surface,
+          isSpace: tok.is_space,
+          sentenceIndex,
+          tags: tok.tags,
+          lemma: saved?.lemma ?? null,
+          pos: saved?.pos ?? null,
+          lemmaId: saved ? upsertLemma(db, saved.lemma, saved.pos) : null,
+        };
+      }),
+    );
+    const ids = tokens.flatMap((t) => (t.lemmaId === null ? [] : [t.lemmaId]));
+    const rows = db
+      .select({ id: lemma.id, flaggedAt: lemma.flaggedAt, state: knowledge.state })
+      .from(lemma)
+      .leftJoin(knowledge, and(eq(knowledge.lemmaId, lemma.id), eq(knowledge.track, "receptive")))
+      .where(inArray(lemma.id, ids))
+      .all();
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    return tokens.map((t, position) => {
+      const row = t.lemmaId === null ? undefined : byId.get(t.lemmaId);
+      return {
+        ...t,
+        id: null,
+        position,
+        flagged: row?.flaggedAt != null,
+        ...knowledgeFlags(row?.state),
+      };
+    });
+  }
+
+  return { prepareScene, current, reroll, open, addTurn, reply, reveal, heardLines, words };
 }

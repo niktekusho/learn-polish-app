@@ -1,5 +1,5 @@
 import { db } from "#/db/index";
-import { voices } from "#/import/sidecar";
+import { analyze, voices } from "#/import/sidecar";
 import { createConversationSession, getSceneProvider } from "#/llm/index";
 import { conversationService } from "./service";
 
@@ -8,6 +8,7 @@ export function appConversationService() {
   return conversationService(db, {
     provider: getSceneProvider(),
     voices,
+    analyze,
     createSession: createConversationSession,
   });
 }

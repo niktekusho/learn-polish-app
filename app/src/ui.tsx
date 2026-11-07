@@ -62,3 +62,7 @@ export function Tick() {
     </span>
   );
 }
+
+// Words pad vertically to fill the line box: a short word is otherwise a few pixels wide.
+export const WORD =
+  "-mx-[.08em] cursor-pointer rounded-word box-decoration-clone px-[.08em] py-[.3em]";

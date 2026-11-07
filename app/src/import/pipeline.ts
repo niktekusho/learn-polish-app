@@ -129,7 +129,7 @@ function insertText(db: DB, input: TextInput): number {
 }
 
 /** The lemma and POS a token is saved under, or null when it is no word. */
-function tokenLemma(
+export function tokenLemma(
   db: DB,
   tok: AnalyzeResponse["sentences"][number]["tokens"][number],
   assigned: AssignedLemma | undefined,

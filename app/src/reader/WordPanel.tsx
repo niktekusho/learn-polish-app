@@ -8,7 +8,7 @@ import type { GlossResult } from "#/gloss/service";
 import { type CaseKey, caseOfForm, italianTags, posLabel } from "./labels";
 import { ReportButton } from "#/report/ReportButton";
 import { nameForm } from "./name";
-import type { KnowledgeFlags, ReaderToken } from "./types";
+import type { KnowledgeFlags, PanelToken } from "./types";
 import {
   BTN_PRIMARY,
   BTN_QUIET,
@@ -30,7 +30,7 @@ const lookupGloss = createServerFn({ method: "POST" })
         lemma: z.string(),
         pos: z.string(),
         sentence: z.string().min(1),
-        token: z.object({ id: z.number().int(), surface: z.string() }),
+        token: z.object({ id: z.number().int(), surface: z.string() }).optional(),
       })
       .parse(d),
   )
@@ -50,7 +50,7 @@ const regenerateGlossFn = createServerFn({ method: "POST" })
         lemma: z.string(),
         pos: z.string(),
         sentence: z.string().min(1),
-        token: z.object({ id: z.number().int(), surface: z.string() }),
+        token: z.object({ id: z.number().int(), surface: z.string() }).optional(),
       })
       .parse(d),
   )
@@ -146,6 +146,10 @@ const reportLemmaFn = createServerFn({ method: "POST" })
 const RATING_KNOWN = 4; // Easy: long interval, marks the word learned
 const RATING_LEARNING = 1; // Again: short interval, keep it in rotation
 
+// A token with no stored row gets the lemma gloss only: occurrence glosses are cached per token.
+const occurrenceOf = (t: PanelToken) =>
+  t.id === null ? undefined : { id: t.id, surface: t.surface };
+
 export function WordPanel({
   token,
   sentence,
@@ -157,7 +161,7 @@ export function WordPanel({
   onReported,
   onClose,
 }: {
-  token: ReaderToken;
+  token: PanelToken;
   sentence: string;
   // Set when the clicked token sits inside a detected MWE occurrence.
   mwe?: { lemmaId: number; headword: string } | null;
@@ -165,7 +169,7 @@ export function WordPanel({
   onSuppressed?: () => void;
   // The clicked token moved to a new Formula unit.
   onPromoted?: (formula: { lemmaId: number; lemma: string; pos: string }) => void;
-  onGraded: (lemmaId: number, flags: KnowledgeFlags) => void;
+  onGraded?: (lemmaId: number, flags: KnowledgeFlags) => void;
   onReported?: () => void;
   onClose: () => void;
 }) {
@@ -203,7 +207,7 @@ export function WordPanel({
         lemma: token.lemma,
         pos: token.pos ?? "",
         sentence,
-        token: { id: token.id, surface: token.surface },
+        token: occurrenceOf(token),
       },
     })
       .then((r) => {
@@ -257,7 +261,7 @@ export function WordPanel({
           lemma: token.lemma,
           pos: token.pos ?? "",
           sentence,
-          token: { id: token.id, surface: token.surface },
+          token: occurrenceOf(token),
         },
       });
       showGloss(r);
@@ -290,7 +294,7 @@ export function WordPanel({
     setMarking(true);
     try {
       const flags = await markLemma({ data: { lemmaId: token.lemmaId, rating } });
-      onGraded(token.lemmaId, flags);
+      onGraded?.(token.lemmaId, flags);
       // On a phone the panel covers the text: closing is the only visible confirmation.
       onClose();
     } finally {
@@ -304,7 +308,7 @@ export function WordPanel({
     setReportError(null);
     try {
       // An MWE's token is its first word: its surface is no Name candidate.
-      const tokenId = token.pos === "MWE" ? undefined : token.id;
+      const tokenId = token.pos === "MWE" ? undefined : (token.id ?? undefined);
       await reportLemmaFn({ data: { lemmaId: token.lemmaId, tokenId, note } });
       setReportedId(token.lemmaId);
       onReported?.();
@@ -579,7 +583,7 @@ const CHIP =
 const SUPPRESS = "mt-2 block min-h-11 text-sm text-ink-3 underline disabled:opacity-50";
 
 /** Slim panel for an inflected Name: base form and case only (CONTEXT.md "Name"). */
-export function NamePanel({ token, onClose }: { token: ReaderToken; onClose: () => void }) {
+export function NamePanel({ token, onClose }: { token: PanelToken; onClose: () => void }) {
   const name = nameForm(token.surface, token.lemma ?? "", token.tags);
   if (!name) return null;
   return (

@@ -7,6 +7,9 @@ import type { ConversationSession, SessionSeed, TurnResult } from "#/llm/convers
 import type { SceneRequest, SceneResult } from "#/llm/provider";
 import { ScriptedSession } from "#/llm/scripted-session";
 import { saveLearnerProfile } from "#/profile/service";
+import { upsertLemma } from "#/import/pipeline";
+import type { AnalyzeResponse } from "#/import/sidecar";
+import { gradeLemma } from "#/fsrs/index";
 import { conversationService } from "./service";
 
 const NOW = new Date("2026-11-07T10:00:00");
@@ -59,6 +62,17 @@ function fakeProvider(fails: (Error | null)[] = []) {
       return sceneReply(this.requests.length, req);
     },
   };
+}
+
+/** Splits on spaces; each word is its own lowercased lemma. */
+async function fakeAnalyze(text: string): Promise<AnalyzeResponse> {
+  const tokens = text
+    .split(" ")
+    .flatMap((w, i) => [
+      ...(i ? [{ surface: " ", lemma: " ", pos: "SPACE", tags: [], is_space: true }] : []),
+      { surface: w, lemma: w.toLowerCase(), pos: "NOUN", tags: [], is_space: false },
+    ]);
+  return { sentences: [{ tokens }] };
 }
 
 /** A story with two characters and `episodes` read Episodes. Returns their text ids. */
@@ -131,6 +145,7 @@ function setup({
   const svc = conversationService(db, {
     provider,
     voices: async () => CATALOG,
+    analyze: fakeAnalyze,
     createSession: () => {
       const s = session();
       sessions.push(s);
@@ -262,7 +277,7 @@ test("a learner turn is stored before the session is asked for a reply", async (
   expect(queued.sent).toEqual([]);
   expect(
     ((await svc.current()) as { conversation: { turns: unknown[] } }).conversation.turns,
-  ).toEqual([{ learnerText: "Dzień dobry.", line: null, italian: null }]);
+  ).toEqual([{ learnerText: "Dzień dobry.", line: null, italian: null, revealed: false }]);
 
   expect(await svc.reply(id)).toMatchObject({ turn: 1, line: "Tak.", italian: "Sì." });
   expect(queued.sent).toEqual(["Dzień dobry."]);
@@ -357,4 +372,56 @@ test("after a reroll the next session is briefed with the new Goal", async () =>
   await ctx.svc.reroll(conversation.id);
   ctx.svc.open(conversation.id);
   expect(seeds.map((s) => s.brief.includes("Passo A2"))).toEqual([false, true]);
+});
+
+test("character lines start hidden; revealing one is stored and the rest count as Heard lines", async () => {
+  const { svc, id } = await opened([{ line: "Tak." }, { line: "Nie." }]);
+  for (const text of ["a", "b"]) {
+    svc.addTurn(id, text);
+    await svc.reply(id);
+  }
+  svc.addTurn(id, "c"); // still waiting: no character line yet
+  expect(svc.heardLines(id)).toBe(3);
+
+  svc.reveal(id, 0);
+  svc.reveal(id, 2);
+  const { conversation } = (await svc.current()) as {
+    conversation: { opening: { revealed: boolean }; turns: { revealed: boolean }[] };
+  };
+  expect(conversation.opening.revealed).toBe(true);
+  expect(conversation.turns.map((t) => t.revealed)).toEqual([false, true, false]);
+  expect(svc.heardLines(id)).toBe(1);
+
+  svc.reveal(id, 3); // no line yet: its reply arrives hidden
+  await svc.reply(id);
+  expect(svc.heardLines(id)).toBe(2);
+});
+
+test("a revealed line's words carry their lemmas, and neither reveal nor lookup grades anything", async () => {
+  const { db, svc, id } = await opened([{ line: "Masz chleb" }]);
+  gradeLemma(db, upsertLemma(db, "chleb", "NOUN"), "receptive", 4, NOW);
+  svc.addTurn(id, "Dzień dobry.");
+  await svc.reply(id);
+  const knowledgeBefore = db.select().from(schema.knowledge).all();
+  const reviewsBefore = db.select().from(schema.reviewLog).all();
+
+  svc.reveal(id, 1);
+  const words = await svc.words(id, 1);
+  expect(words).toMatchObject([
+    { surface: "Masz", lemma: "masz", pos: "NOUN", isSpace: false, known: false },
+    { surface: " ", lemmaId: null, isSpace: true },
+    { surface: "chleb", lemma: "chleb", known: true },
+  ]);
+  expect(words[0].lemmaId).toEqual(expect.any(Number));
+  expect((await svc.words(id, 0)).map((w) => w.surface)).toEqual(["Otwarcie", " ", "1."]);
+
+  expect(db.select().from(schema.knowledge).all()).toEqual(knowledgeBefore);
+  expect(db.select().from(schema.reviewLog).all()).toEqual(reviewsBefore);
+});
+
+test("a rerolled opening starts hidden again", async () => {
+  const { svc, id } = await opened([]);
+  svc.reveal(id, 0);
+  expect((await svc.reroll(id)).opening.revealed).toBe(false);
+  expect(svc.heardLines(id)).toBe(1);
 });

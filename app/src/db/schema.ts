@@ -247,6 +247,8 @@ export const conversation = sqliteTable("conversation", {
   opening: text("opening", { mode: "json" })
     .$type<{ line: string; italian: string; hint: string[]; modelLine: string }>()
     .notNull(),
+  // An unrevealed character line is a Heard line (CONTEXT.md).
+  openingRevealed: integer("opening_revealed", { mode: "boolean" }).notNull().default(false),
   // Due Productive lemmas captured when the scene was prepared.
   dueLemmas: text("due_lemmas", { mode: "json" }).$type<string[]>().notNull(),
   status: text("status", { enum: ["open", "debriefed"] })
@@ -277,6 +279,7 @@ export const conversationTurn = sqliteTable(
     stepsTicked: text("steps_ticked", { mode: "json" }).$type<string[]>(),
     hint: text("hint", { mode: "json" }).$type<string[]>(),
     modelLine: text("model_line"),
+    lineRevealed: integer("line_revealed", { mode: "boolean" }).notNull().default(false),
     attempts: integer("attempts").notNull().default(0), // replies asked of the session
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()

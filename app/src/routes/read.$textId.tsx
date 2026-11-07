@@ -7,7 +7,7 @@ import { ComprehensionCheck } from "#/reader/ComprehensionCheck";
 import { NamePanel, WordPanel } from "#/reader/WordPanel";
 import { isName, nameForm } from "#/reader/name";
 import type { KnowledgeFlags, ReaderToken } from "#/reader/types";
-import { BTN_PRIMARY, BTN_QUIET, ICON_BUTTON, LABEL, Tick } from "#/ui";
+import { BTN_PRIMARY, BTN_QUIET, ICON_BUTTON, LABEL, Tick, WORD } from "#/ui";
 
 // Load a text and its tokens in reading order. `known` / `stillLearning` are
 // computed server-side; the client never sees the raw FSRS state.
@@ -333,9 +333,6 @@ function Reader() {
     </div>
   );
 }
-
-// Words pad vertically to fill the line box: a short word is otherwise a few pixels wide.
-const WORD = "-mx-[.08em] cursor-pointer rounded-word box-decoration-clone px-[.08em] py-[.3em]";
 
 const SIZE_KEY = "reader-size";
 type Size = "16" | "18";
