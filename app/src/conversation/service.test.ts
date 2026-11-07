@@ -9,7 +9,7 @@ import { ScriptedSession } from "#/llm/scripted-session";
 import { saveLearnerProfile } from "#/profile/service";
 import { upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import { gradeLemma } from "#/fsrs/index";
+import { gradeLemma, type Track } from "#/fsrs/index";
 import { insertEntryBatch } from "#/dictionary/loader";
 import { conversationService } from "./service";
 
@@ -149,6 +149,7 @@ function setup({
   fails = [] as (Error | null)[],
   episodes = 1,
   session = () => new ScriptedSession() as ConversationSession,
+  analyze = fakeAnalyze,
 } = {}) {
   const db = freshDb();
   if (profile) saveLearnerProfile(db, PROFILE);
@@ -166,7 +167,7 @@ function setup({
   const svc = conversationService(db, {
     provider,
     voices: async () => CATALOG,
-    analyze: fakeAnalyze,
+    analyze,
     createSession: () => {
       const s = session();
       sessions.push(s);
@@ -284,9 +285,9 @@ test("a scene cannot be rerolled once the learner has spoken", async () => {
   await expect(svc.reroll(conversation.id)).rejects.toThrow(/spoken/);
 });
 
-async function opened(replies: (Partial<TurnResult> | Error)[]) {
+async function opened(replies: (Partial<TurnResult> | Error)[], analyze = fakeAnalyze) {
   const queued = new QueuedSession(replies);
-  const ctx = setup({ session: () => queued });
+  const ctx = setup({ session: () => queued, analyze });
   const current = await ctx.svc.current();
   const id = (current as { conversation: { id: number } }).conversation.id;
   return { ...ctx, id, queued };
@@ -501,4 +502,147 @@ test("nothing about Help ladder reveals reaches the session", async () => {
   const seed = JSON.stringify(queued.warmed[0]);
   expect(seed).toContain("Otwarcie 1.");
   expect(seed).not.toMatch(/Poproszę chleb 1\.|Poproszę chleba\./);
+});
+
+/** A lemma the learner has met: a Receptive review from an earlier day. */
+function met(db: DB, word: string) {
+  const id = upsertLemma(db, word, "NOUN");
+  gradeLemma(db, id, "receptive", 3, new Date("2026-11-01T10:00:00"));
+  return id;
+}
+
+/** Knowledge rows and today's review log rows on a track, as [lemma, rating], sorted. */
+function graded(db: DB, track: Track) {
+  const names = new Map(
+    db
+      .select()
+      .from(schema.lemma)
+      .all()
+      .map((l) => [l.id, l.lemma]),
+  );
+  return {
+    knowledge: db
+      .select()
+      .from(schema.knowledge)
+      .all()
+      .filter((k) => k.track === track)
+      .map((k) => names.get(k.lemmaId))
+      .sort(),
+    reviews: db
+      .select()
+      .from(schema.reviewLog)
+      .orderBy(schema.reviewLog.id)
+      .all()
+      .filter((r) => r.track === track && r.reviewedAt >= new Date("2026-11-07T00:00:00"))
+      .map((r) => [names.get(r.lemmaId), r.rating])
+      .sort(),
+  };
+}
+
+async function speak(svc: ReturnType<typeof setup>["svc"], id: number, text: string) {
+  svc.addTurn(id, text);
+  return svc.reply(id);
+}
+
+test("the met lemmas of a free, understood turn grade Productive Good, unmet lemmas get no Knowledge state, and nothing grades Receptive", async () => {
+  const { db, svc, id } = await opened([]);
+  met(db, "chleb");
+  met(db, "mleko");
+  await speak(svc, id, "Poproszę chleb i mleko");
+
+  expect(graded(db, "productive")).toEqual({
+    knowledge: ["chleb", "mleko"],
+    reviews: [
+      ["chleb", 3],
+      ["mleko", 3],
+    ],
+  });
+  expect(db.select().from(schema.knowledge).all()).toHaveLength(4);
+  expect(graded(db, "receptive").reviews).toEqual([]);
+});
+
+test("a turn the character did not understand grades nothing", async () => {
+  const { db, svc, id } = await opened([{ understood: false }]);
+  met(db, "chleb");
+  const before = db.select().from(schema.knowledge).all();
+  await speak(svc, id, "chleb");
+
+  expect(db.select().from(schema.knowledge).all()).toEqual(before);
+  expect(graded(db, "productive").reviews).toEqual([]);
+});
+
+test("an Echo of the character's last two lines is not graded", async () => {
+  const { db, svc, id } = await opened([{ line: "Masz chleb" }, { line: "Masz mleko" }, {}]);
+  for (const w of ["chleb", "mleko", "ser", "otwarcie"]) met(db, w);
+  await speak(svc, id, "a");
+  await speak(svc, id, "b");
+  // The opening ("Otwarcie 1.") is three lines back: "otwarcie" is free.
+  await speak(svc, id, "chleb mleko ser otwarcie");
+
+  expect(graded(db, "productive").reviews).toEqual([
+    ["otwarcie", 3],
+    ["ser", 3],
+  ]);
+});
+
+test("a lemma from a revealed Hint that the learner then says grades Productive Again", async () => {
+  const { db, svc, id } = await opened([{ hint: ["bułki"] }, {}]);
+  for (const w of ["chleb", "mleko", "bułka"]) met(db, w);
+  svc.revealHelp(id, 0, "hint"); // the opening's Hint: "chleb"
+  await speak(svc, id, "chleb mleko");
+  svc.revealHelp(id, 1, "hint");
+  await speak(svc, id, "bułka"); // the lemma of the hinted "bułki"
+
+  expect(graded(db, "productive").reviews).toEqual([
+    ["bułka", 1],
+    ["chleb", 1],
+    ["mleko", 3],
+  ]);
+});
+
+test("a Model line read aloud grades Pronunciation of the hinted lemmas, and nothing Productive", async () => {
+  const { db, svc, id } = await opened([{ hint: ["bułki"] }, {}]);
+  met(db, "chleb");
+  met(db, "mleko");
+  // Imported but never reviewed: not yet on the Pronunciation track.
+  db.insert(schema.knowledge)
+    .values({ lemmaId: upsertLemma(db, "bułka", "NOUN"), track: "receptive", due: NOW })
+    .run();
+  svc.revealHelp(id, 0, "modelLine"); // the opening's Hint: "chleb"
+  await speak(svc, id, "Poproszę chleb mleko");
+  svc.revealHelp(id, 1, "modelLine");
+  await speak(svc, id, "bułka");
+
+  expect(graded(db, "pronunciation")).toEqual({ knowledge: ["chleb"], reviews: [["chleb", 3]] });
+  expect(graded(db, "productive")).toEqual({ knowledge: [], reviews: [] });
+});
+
+test("a lemma graded today on a track, by Practice or an earlier turn, is not graded again on it", async () => {
+  const { db, svc, id } = await opened([{}, { hint: ["chleba"] }, {}]);
+  const chleb = met(db, "chleb");
+  met(db, "mleko");
+  gradeLemma(db, chleb, "productive", 4, new Date("2026-11-07T08:00:00")); // this morning's Practice
+  await speak(svc, id, "chleb mleko");
+  await speak(svc, id, "mleko");
+  svc.revealHelp(id, 2, "modelLine");
+  await speak(svc, id, "chleb"); // another track: still graded
+
+  expect(graded(db, "productive").reviews).toEqual([
+    ["chleb", 4],
+    ["mleko", 3],
+  ]);
+  expect(graded(db, "pronunciation").reviews).toEqual([["chleb", 3]]);
+});
+
+test("when the learner's words cannot be analyzed, the reply still arrives and grades nothing", async () => {
+  let down = false;
+  const analyze = (text: string) =>
+    down ? Promise.reject(new Error("sidecar down")) : fakeAnalyze(text);
+  const { db, svc, id, queued } = await opened([{ line: "Nie." }], analyze);
+  met(db, "chleb");
+  down = true;
+
+  expect(await speak(svc, id, "chleb")).toMatchObject({ turn: 1, line: "Nie." });
+  expect(queued.sent).toEqual(["chleb"]);
+  expect(graded(db, "productive").reviews).toEqual([]);
 });

@@ -14,6 +14,7 @@ import {
 } from "#/db/schema";
 import { dictionaryWords } from "#/dictionary/service";
 import { dueLemmas } from "#/fsrs/index";
+import { gradeTurn, metLemmas, type TurnEvidence } from "./grading";
 import { tokenLemma, upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse, Voice } from "#/import/sidecar";
 import { buildCharacterBrief } from "#/llm/conversation-brief";
@@ -293,7 +294,26 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     sessionOf(get(id));
   }
 
-  /** Ask the session to answer the learner's last turn. A failed reply can be asked again. */
+  /** What grading needs about the learner's last turn, which is still waiting for its reply. */
+  async function evidenceOf(c: ConversationRow, learnerText: string): Promise<TurnEvidence> {
+    const answered = turnsOf(c.id).filter((r) => r.line !== null);
+    const lines = [c.opening.line, ...answered.map((r) => r.line as string)];
+    // The Help ladder on this turn is the one offered with the line before it.
+    const before = answered.at(-1);
+    const help = before ? before.help : c.openingHelp;
+    const hint = before ? (before.hint ?? []) : c.opening.hint;
+    const [said, echoes, hinted] = await Promise.all([
+      metLemmas(db, deps.analyze, learnerText),
+      metLemmas(db, deps.analyze, lines.slice(-2).join(" ")),
+      help ? metLemmas(db, deps.analyze, hint.join(" ")) : new Set<number>(),
+    ]);
+    return { said, echoes, hinted, help };
+  }
+
+  /**
+   * Ask the session to answer the learner's last turn, and grade the turn if the character
+   * understood it. A failed reply grades nothing and can be asked again.
+   */
   async function reply(id: number) {
     const c = get(id);
     const t = turnsOf(id).at(-1);
@@ -302,7 +322,15 @@ export function conversationService(db: DB, deps: ConversationDeps) {
       .set({ attempts: t.attempts + 1 })
       .where(eq(conversationTurn.id, t.id))
       .run();
+    // Analysis runs alongside the session, so grading adds no wait. A failed analysis grades
+    // nothing: failing the reply would make the retry send the turn to the character again.
+    const evidence = evidenceOf(c, t.learnerText).catch((e: unknown) => {
+      console.error(`conversation ${id} turn ${t.turn} not graded:`, e);
+      return null;
+    });
     const result = await sessionOf(c).send(t.learnerText);
+    const analyzed = await evidence;
+    if (analyzed && result.understood) gradeTurn(db, analyzed, now());
     const hint = dictionaryWords(db, result.hint);
     const ticked = new Set(result.stepsTicked);
     const steps = get(id).steps.map((s) =>
