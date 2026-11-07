@@ -315,13 +315,16 @@ What a stuck learner climbs during a **Conversation** turn: try freely, then a *
 then a **Model line**. Each rung grades differently: a free turn is retrieval (**Productive**
 Good for the lemmas said), a hinted lemma then said is failed retrieval (**Productive**
 Again), a **Model line** read out is a **Visible attempt**. A turn the character did not understand
-grades nothing: a mishearing and a mistake look the same.
+grades nothing: a mishearing and a mistake look the same. Shown in the UI as _Aiuto_.
 
 **Hint**:
 The key Polish words for what the learner likely wants to say on a **Conversation** turn.
+Only words the **Home dictionary** has as a headword or form are shown. Shown in the UI as
+_Parole utili_.
 
 **Model line**:
-A full Polish sentence the learner reads aloud when a **Hint** was not enough.
+A full Polish sentence the learner reads aloud when a **Hint** was not enough. Shown in the
+UI as _Frase da leggere_.
 
 **Debrief**:
 The end of a **Conversation**: up to 10 corrections of the learner's utterances, recurring

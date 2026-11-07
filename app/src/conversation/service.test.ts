@@ -10,6 +10,7 @@ import { saveLearnerProfile } from "#/profile/service";
 import { upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import { gradeLemma } from "#/fsrs/index";
+import { insertEntryBatch } from "#/dictionary/loader";
 import { conversationService } from "./service";
 
 const NOW = new Date("2026-11-07T10:00:00");
@@ -44,7 +45,7 @@ function sceneReply(n: number, req: SceneRequest): SceneResult {
     opening: {
       line: `Otwarcie ${n}.`,
       italian: `Apertura ${n}.`,
-      hint: [`chleb${n}`],
+      hint: [n % 2 ? "chleb" : "bułka", `xyz${n}`],
       modelLine: `Poproszę chleb ${n}.`,
     },
     voices: req.voices && req.characters.map((_, i) => req.voices![i % req.voices!.length].id),
@@ -61,6 +62,18 @@ function fakeProvider(fails: (Error | null)[] = []) {
       if (fail) throw fail;
       return sceneReply(this.requests.length, req);
     },
+  };
+}
+
+function entry(word: string, pos: string, forms: string[] = []) {
+  return {
+    word,
+    pos,
+    ipa: null,
+    etymology: null,
+    isMwe: word.includes(" "),
+    senses: [{ gloss: word, rawGloss: null, tags: [] }],
+    forms: forms.map((form) => ({ form, tags: [] })),
   };
 }
 
@@ -139,6 +152,14 @@ function setup({
 } = {}) {
   const db = freshDb();
   if (profile) saveLearnerProfile(db, PROFILE);
+  insertEntryBatch(db, [
+    entry("chleb", "noun", ["chleb", "chleba"]),
+    entry("bułka", "noun", ["bułki"]),
+    entry("Kraków", "name", ["Krakowa"]),
+    entry("poprosić", "verb", ["poproszę"]),
+    entry("proszę", "particle"),
+    entry("to wszystko", "phrase"),
+  ]);
   const episodeIds = seedStory(db, episodes);
   const provider = fakeProvider(fails);
   const sessions: ConversationSession[] = [];
@@ -252,7 +273,7 @@ test("reroll replaces the Goal, role facts, opening and first Hint pair", async 
   });
   const rows = db.select().from(schema.conversation).all();
   expect(rows).toHaveLength(1);
-  expect(rows[0].opening).toMatchObject({ hint: ["chleb2"], modelLine: "Poproszę chleb 2." });
+  expect(rows[0].opening).toMatchObject({ hint: ["bułka"], modelLine: "Poproszę chleb 2." });
 });
 
 test("a scene cannot be rerolled once the learner has spoken", async () => {
@@ -277,7 +298,7 @@ test("a learner turn is stored before the session is asked for a reply", async (
   expect(queued.sent).toEqual([]);
   expect(
     ((await svc.current()) as { conversation: { turns: unknown[] } }).conversation.turns,
-  ).toEqual([{ learnerText: "Dzień dobry.", line: null, italian: null, revealed: false }]);
+  ).toMatchObject([{ learnerText: "Dzień dobry.", line: null, italian: null, revealed: false }]);
 
   expect(await svc.reply(id)).toMatchObject({ turn: 1, line: "Tak.", italian: "Sì." });
   expect(queued.sent).toEqual(["Dzień dobry."]);
@@ -424,4 +445,60 @@ test("a rerolled opening starts hidden again", async () => {
   svc.reveal(id, 0);
   expect((await svc.reroll(id)).opening.revealed).toBe(false);
   expect(svc.heardLines(id)).toBe(1);
+});
+
+test("a Hint word absent from the Home dictionary's forms is not shown", async () => {
+  const { svc, id } = await opened([
+    {
+      hint: ["Poproszę", "chleba,", "xyzzy", "to wszystko", "proszę bardzo", "Kraków", "?"],
+      modelLine: "M.",
+    },
+  ]);
+  expect((await svc.current()) as unknown).toMatchObject({
+    conversation: { opening: { hint: ["chleb"], modelLine: "Poproszę chleb 1." } },
+  });
+  svc.addTurn(id, "Dzień dobry.");
+  expect(await svc.reply(id)).toMatchObject({
+    hint: ["Poproszę", "chleba,", "to wszystko", "Kraków"],
+    modelLine: "M.",
+  });
+  expect((await svc.current()) as unknown).toMatchObject({
+    conversation: {
+      turns: [{ hint: ["Poproszę", "chleba,", "to wszystko", "Kraków"], modelLine: "M." }],
+    },
+  });
+});
+
+test("Hint and Model line reveals are stored on the turn that offers them, with no LLM call, and a later Hint tap keeps the Model line", async () => {
+  const { provider, svc, id, queued } = await opened([{}, {}]);
+  svc.revealHelp(id, 0, "modelLine");
+  svc.revealHelp(id, 0, "hint");
+  for (const text of ["a", "b"]) {
+    svc.addTurn(id, text);
+    await svc.reply(id);
+  }
+  svc.revealHelp(id, 1, "hint");
+
+  expect((await svc.current()) as unknown).toMatchObject({
+    conversation: { opening: { help: "modelLine" }, turns: [{ help: "hint" }, { help: null }] },
+  });
+  expect(provider.requests).toHaveLength(1);
+  expect(queued.sent).toEqual(["a", "b"]);
+});
+
+test("nothing about Help ladder reveals reaches the session", async () => {
+  const { svc, id, queued } = await opened([{ hint: ["chleba"], modelLine: "Poproszę chleba." }]);
+  svc.revealHelp(id, 0, "modelLine");
+  svc.open(id);
+  svc.addTurn(id, "Poproszę chleb 1.");
+  await svc.reply(id);
+  svc.revealHelp(id, 1, "modelLine");
+  svc.addTurn(id, "Poproszę chleba.");
+  await svc.reply(id);
+
+  expect(queued.sent).toEqual(["Poproszę chleb 1.", "Poproszę chleba."]);
+  expect(queued.warmed).toHaveLength(1);
+  const seed = JSON.stringify(queued.warmed[0]);
+  expect(seed).toContain("Otwarcie 1.");
+  expect(seed).not.toMatch(/Poproszę chleb 1\.|Poproszę chleba\./);
 });

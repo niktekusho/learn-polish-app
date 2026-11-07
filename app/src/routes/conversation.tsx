@@ -1,11 +1,12 @@
 import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
-import { ArrowLeft, Check, CircleAlert, Eye, RefreshCw, Volume2 } from "lucide-react";
+import { ArrowLeft, Check, CircleAlert, Eye, Lightbulb, RefreshCw, Volume2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
 import { playVoice } from "#/audio/speak";
 import { PushToTalk } from "#/audio/recorder";
-import type { ConversationView } from "#/conversation/service";
+import type { ConversationView, HelpOffer } from "#/conversation/service";
+import type { HelpLevel } from "#/db/schema";
 import { NamePanel, WordPanel } from "#/reader/WordPanel";
 import { isName, nameForm } from "#/reader/name";
 import type { PanelToken } from "#/reader/types";
@@ -70,6 +71,22 @@ const revealFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { appConversationService } = await import("#/conversation/server");
     appConversationService().reveal(data.id, data.turn);
+  });
+
+// The Hint pair arrives with the line, so climbing the ladder only stores the reveal.
+const revealHelpFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) =>
+    z
+      .object({
+        id: z.number().int(),
+        turn: z.number().int().min(0),
+        level: z.enum(["hint", "modelLine"] satisfies HelpLevel[]),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { appConversationService } = await import("#/conversation/server");
+    appConversationService().revealHelp(data.id, data.turn, data.level);
   });
 
 const wordsFn = createServerFn({ method: "POST" })
@@ -176,17 +193,24 @@ function ConversationPage() {
 
 type Line =
   | { who: "learner"; text: string }
-  | { who: "character"; text: string; italian: string; turn: number; revealed: boolean };
+  | ({
+      who: "character";
+      text: string;
+      italian: string;
+      turn: number;
+      revealed: boolean;
+    } & HelpOffer);
+type CharacterLineData = Extract<Line, { who: "character" }>;
 type Phase = "idle" | "transcribing" | "waiting" | "failed" | "unheard" | "rerolling";
 
 function linesOf(c: ConversationView): Line[] {
-  const { line, italian, revealed } = c.opening;
-  const lines: Line[] = [{ who: "character", text: line, italian, turn: 0, revealed }];
+  const { line, ...opening } = c.opening;
+  const lines: Line[] = [{ who: "character", text: line, turn: 0, ...opening }];
   c.turns.forEach((t, i) => {
     lines.push({ who: "learner", text: t.learnerText });
     if (t.line !== null) {
-      const italian = t.italian ?? "";
-      lines.push({ who: "character", text: t.line, italian, turn: i + 1, revealed: t.revealed });
+      const { learnerText: _, line, italian, ...rest } = t;
+      lines.push({ who: "character", text: line, italian: italian ?? "", turn: i + 1, ...rest });
     }
   });
   return lines;
@@ -216,9 +240,19 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
     thinkingTimer.current = setTimeout(() => setThinking(true), THINKING_MS);
     try {
       const r = await replyFn({ data: { id: c.id } });
+      const { line, italian, turn, hint, modelLine } = r;
       setLines((ls) => [
         ...ls,
-        { who: "character", text: r.line, italian: r.italian, turn: r.turn, revealed: false },
+        {
+          who: "character",
+          text: line,
+          italian,
+          turn,
+          revealed: false,
+          hint,
+          modelLine,
+          help: null,
+        },
       ]);
       setSteps(r.steps);
       setPhase("idle");
@@ -261,6 +295,7 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
   }
 
   if (phase === "rerolling") return <Wait>Preparo un'altra scena…</Wait>;
+  const last = lines.at(-1)!;
 
   return (
     <div className={`${PAGE} relative`}>
@@ -329,6 +364,9 @@ function ConversationScreen({ initial }: { initial: ConversationView }) {
       </main>
 
       <div className="grid shrink-0 justify-items-center gap-3 border-t border-rule bg-paper/85 px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom))]">
+        {last.who === "character" && (phase === "idle" || phase === "unheard") && (
+          <HelpLadder key={last.turn} conversationId={c.id} line={last} />
+        )}
         {phase === "transcribing" && (
           <p role="status" className="text-sm text-ink-2">
             Trascrivo…
@@ -392,7 +430,7 @@ function CharacterLine({
   onWord,
 }: {
   conversationId: number;
-  line: Extract<Line, { who: "character" }>;
+  line: CharacterLineData;
   onPlay: () => void;
   onWord: (token: PanelToken, sentence: string) => void;
 }) {
@@ -470,6 +508,50 @@ function CharacterLine({
             </button>
           )}
         </span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The Help ladder for the learner's next turn: the first tap shows the Hint words, the second
+ * the Model line. A line whose Hint words all failed the dictionary check goes to the Model line.
+ */
+function HelpLadder({ conversationId, line }: { conversationId: number; line: CharacterLineData }) {
+  const [help, setHelp] = useState(line.help);
+
+  function climb() {
+    const level = help === null && line.hint.length > 0 ? "hint" : "modelLine";
+    setHelp(level);
+    revealHelpFn({ data: { id: conversationId, turn: line.turn, level } }).catch((err) =>
+      console.error("[conversation] help reveal not stored:", err),
+    );
+  }
+
+  return (
+    <div className="grid w-full max-w-[34rem] justify-items-center gap-2">
+      {help !== null && line.hint.length > 0 && (
+        <ul lang="pl" aria-label="Parole utili" className="flex flex-wrap justify-center gap-2">
+          {line.hint.map((w) => (
+            <li
+              key={w}
+              className="rounded-full bg-accent-soft px-3 py-1 font-serif text-base text-accent-ink"
+            >
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
+      {help === "modelLine" && (
+        <p lang="pl" className="text-center font-serif text-md">
+          {line.modelLine}
+        </p>
+      )}
+      {help !== "modelLine" && (
+        <button type="button" onClick={climb} className={BTN_QUIET}>
+          <Lightbulb size={18} />
+          {help === null ? "Aiuto" : "Frase da leggere"}
+        </button>
       )}
     </div>
   );

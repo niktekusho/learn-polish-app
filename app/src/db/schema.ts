@@ -222,6 +222,10 @@ export const learnerProfile = sqliteTable(
   (t) => [check("learner_profile_single_row", sql`${t.id} = 1`)],
 );
 
+// The Help ladder's rungs, lowest first: a Model line reveal implies the Hint.
+export const HELP_LEVELS = ["hint", "modelLine"] as const;
+export type HelpLevel = (typeof HELP_LEVELS)[number];
+
 /**
  * A Conversation (CONTEXT.md): a role-play set right after an Episode, played toward a Goal.
  * Written by the scene preparation call; one per Episode.
@@ -249,6 +253,7 @@ export const conversation = sqliteTable("conversation", {
     .notNull(),
   // An unrevealed character line is a Heard line (CONTEXT.md).
   openingRevealed: integer("opening_revealed", { mode: "boolean" }).notNull().default(false),
+  openingHelp: text("opening_help", { enum: HELP_LEVELS }),
   // Due Productive lemmas captured when the scene was prepared.
   dueLemmas: text("due_lemmas", { mode: "json" }).$type<string[]>().notNull(),
   status: text("status", { enum: ["open", "debriefed"] })
@@ -280,6 +285,8 @@ export const conversationTurn = sqliteTable(
     hint: text("hint", { mode: "json" }).$type<string[]>(),
     modelLine: text("model_line"),
     lineRevealed: integer("line_revealed", { mode: "boolean" }).notNull().default(false),
+    // How far up the Help ladder the learner climbed after this line; null: no help.
+    help: text("help", { enum: HELP_LEVELS }),
     attempts: integer("attempts").notNull().default(0), // replies asked of the session
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()

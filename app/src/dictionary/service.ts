@@ -131,3 +131,34 @@ function hydrate(
     forms: forms.filter((f) => f.entryId === r.id).map((f) => ({ form: f.form, tags: f.tags })),
   }));
 }
+
+/**
+ * The `words` the Home dictionary has as a headword or an inflected form, ignoring case and
+ * punctuation. A phrase passes as a headword or when each of its words passes.
+ */
+export function dictionaryWords(db: DB, words: string[]): string[] {
+  const clean = (w: string) => w.replace(/[^\p{L}\s-]/gu, "").trim();
+  const parts = (w: string) => [clean(w), ...clean(w).split(/\s+/)];
+  // Stored headwords keep their case (Kraków), so both spellings are looked up.
+  const candidates = [...new Set(words.flatMap(parts).flatMap((w) => [w, w.toLowerCase()]))];
+  if (candidates.length === 0) return [];
+  const known = new Set([
+    ...db
+      .select({ w: dictEntry.word })
+      .from(dictEntry)
+      .where(inArray(dictEntry.word, candidates))
+      .all()
+      .map((r) => r.w.toLowerCase()),
+    ...db
+      .select({ w: dictForm.form })
+      .from(dictForm)
+      .where(inArray(dictForm.form, candidates))
+      .all()
+      .map((r) => r.w.toLowerCase()),
+  ]);
+  const has = (w: string) => known.has(w.toLowerCase());
+  return words.filter((w) => {
+    const [whole, ...each] = parts(w);
+    return whole !== "" && (has(whole) || each.every(has));
+  });
+}

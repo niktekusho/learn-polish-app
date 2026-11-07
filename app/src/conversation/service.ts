@@ -5,11 +5,14 @@ import {
   characterVoice,
   conversation,
   conversationTurn,
+  HELP_LEVELS,
+  type HelpLevel,
   knowledge,
   lemma,
   sourceText,
   story,
 } from "#/db/schema";
+import { dictionaryWords } from "#/dictionary/service";
 import { dueLemmas } from "#/fsrs/index";
 import { tokenLemma, upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse, Voice } from "#/import/sidecar";
@@ -42,8 +45,20 @@ export interface ConversationView {
   scene: string;
   roleFacts: string | null;
   steps: { id: string; text: string; ticked: boolean }[];
-  opening: { line: string; italian: string; revealed: boolean };
-  turns: { learnerText: string; line: string | null; italian: string | null; revealed: boolean }[];
+  opening: { line: string; italian: string; revealed: boolean } & HelpOffer;
+  turns: ({
+    learnerText: string;
+    line: string | null;
+    italian: string | null;
+    revealed: boolean;
+  } & HelpOffer)[];
+}
+
+/** The Help ladder offered after a character line: Hint words, then a Model line. */
+export interface HelpOffer {
+  hint: string[];
+  modelLine: string;
+  help: HelpLevel | null; // the highest rung revealed
 }
 
 export type CurrentConversation =
@@ -120,8 +135,9 @@ export function conversationService(db: DB, deps: ConversationDeps) {
         scene: scene.scene,
         steps: scene.steps.map((text, i) => ({ id: `s${i + 1}`, text, tickedTurn: null })),
         roleFacts: scene.roleFacts,
-        opening: scene.opening,
+        opening: { ...scene.opening, hint: dictionaryWords(db, scene.opening.hint) },
         openingRevealed: false,
+        openingHelp: null,
         dueLemmas: req.dueLemmas,
         updatedAt: now(),
       },
@@ -173,12 +189,22 @@ export function conversationService(db: DB, deps: ConversationDeps) {
       scene: c.scene,
       roleFacts: c.roleFacts,
       steps: c.steps.map((s) => ({ id: s.id, text: s.text, ticked: s.tickedTurn !== null })),
-      opening: { line: c.opening.line, italian: c.opening.italian, revealed: c.openingRevealed },
+      opening: {
+        line: c.opening.line,
+        italian: c.opening.italian,
+        revealed: c.openingRevealed,
+        hint: c.opening.hint,
+        modelLine: c.opening.modelLine,
+        help: c.openingHelp,
+      },
       turns: turns.map((t) => ({
         learnerText: t.learnerText,
         line: t.line,
         italian: t.italian,
         revealed: t.lineRevealed,
+        hint: t.hint ?? [],
+        modelLine: t.modelLine ?? "",
+        help: t.help,
       })),
     };
   }
@@ -277,6 +303,7 @@ export function conversationService(db: DB, deps: ConversationDeps) {
       .where(eq(conversationTurn.id, t.id))
       .run();
     const result = await sessionOf(c).send(t.learnerText);
+    const hint = dictionaryWords(db, result.hint);
     const ticked = new Set(result.stepsTicked);
     const steps = get(id).steps.map((s) =>
       s.tickedTurn === null && ticked.has(s.id) ? { ...s, tickedTurn: t.turn } : s,
@@ -288,14 +315,21 @@ export function conversationService(db: DB, deps: ConversationDeps) {
           italian: result.italian,
           understood: result.understood,
           stepsTicked: result.stepsTicked,
-          hint: result.hint,
+          hint,
           modelLine: result.modelLine,
         })
         .where(eq(conversationTurn.id, t.id))
         .run();
       tx.update(conversation).set({ steps, updatedAt: now() }).where(eq(conversation.id, id)).run();
     });
-    return { turn: t.turn, line: result.line, italian: result.italian, steps: view(get(id)).steps };
+    return {
+      turn: t.turn,
+      line: result.line,
+      italian: result.italian,
+      hint,
+      modelLine: result.modelLine,
+      steps: view(get(id)).steps,
+    };
   }
 
   /** Mark the character line of `turn` revealed; turn 0 is the opening. Grades nothing. */
@@ -314,6 +348,25 @@ export function conversationService(db: DB, deps: ConversationDeps) {
         ),
       )
       .run();
+  }
+
+  /**
+   * Store how far up the Help ladder the learner climbed after the character line of `turn`
+   * (0 is the opening). The pair arrives with that line, so no call is made. The session is
+   * never told: the character must not know whether a Hint was used.
+   */
+  function revealHelp(id: number, turn: number, level: HelpLevel): void {
+    const higher = (current: HelpLevel | null) =>
+      current === null || HELP_LEVELS.indexOf(level) > HELP_LEVELS.indexOf(current);
+    if (turn === 0) {
+      if (!higher(get(id).openingHelp)) return;
+      db.update(conversation).set({ openingHelp: level }).where(eq(conversation.id, id)).run();
+      return;
+    }
+    const t = turnsOf(id).find((r) => r.turn === turn);
+    if (!t || t.line === null) throw new Error(`turn ${turn} has no character line`);
+    if (!higher(t.help)) return;
+    db.update(conversationTurn).set({ help: level }).where(eq(conversationTurn.id, t.id)).run();
   }
 
   /** Character lines the learner followed by ear, without revealing them (CONTEXT.md "Heard line"). */
@@ -365,5 +418,16 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     });
   }
 
-  return { prepareScene, current, reroll, open, addTurn, reply, reveal, heardLines, words };
+  return {
+    prepareScene,
+    current,
+    reroll,
+    open,
+    addTurn,
+    reply,
+    reveal,
+    revealHelp,
+    heardLines,
+    words,
+  };
 }
