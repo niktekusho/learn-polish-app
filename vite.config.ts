@@ -7,6 +7,7 @@ export default defineConfig({
       "vp lint",
       "sh scripts/check-plural.sh",
       "sh scripts/check-spacing.sh",
+      "sh scripts/check-type-scale.sh",
       // tsc reads the whole project from tsconfig: a file list would make it skip tsconfig.
       () => "pnpm --filter app typecheck",
       (files) => `pnpm --filter app exec vitest related --run ${files.join(" ")}`,

@@ -409,7 +409,7 @@ export function WordPanel({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <dt className={LABEL}>Forma base</dt>
-            <dd lang="pl" className="mt-1 font-serif text-[18px] font-semibold">
+            <dd lang="pl" className="mt-1 font-serif text-prose leading-[inherit] font-semibold">
               {token.lemma}
             </dd>
           </div>
@@ -450,7 +450,7 @@ export function WordPanel({
                     if (e.key === "Enter") saveGloss();
                     if (e.key === "Escape") setEditing(false);
                   }}
-                  className="min-h-11 rounded border-[1.5px] border-accent bg-panel px-3 py-2 font-serif text-[18px] font-semibold"
+                  className="min-h-11 rounded border-[1.5px] border-accent bg-panel px-3 py-2 font-serif text-prose leading-[inherit] font-semibold"
                 />
                 <div className="flex gap-2">
                   <button

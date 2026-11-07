@@ -122,7 +122,7 @@ function Word({ word, i }: { word: RecapWord; i: number }) {
         {word.lemma}
       </b>
       {word.italian && (
-        <em lang="it" className="font-serif text-[15px] leading-[1.3] text-ink-2">
+        <em lang="it" className="font-serif text-base leading-[1.3] text-ink-2">
           {word.italian}
         </em>
       )}

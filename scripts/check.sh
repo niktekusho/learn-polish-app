@@ -12,5 +12,6 @@ printf '%s\n' "$all" | xargs sh scripts/check-dashes.sh
 vp lint
 printf '%s\n' "$src" | xargs sh scripts/check-plural.sh
 printf '%s\n' "$src" | xargs sh scripts/check-spacing.sh
+printf '%s\n' "$src" | xargs sh scripts/check-type-scale.sh
 pnpm --filter app typecheck
 pnpm --filter app test

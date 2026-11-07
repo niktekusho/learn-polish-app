@@ -46,6 +46,11 @@ on the phone.
   sidecar on `:8000`. To run only the app, `SIDECAR_URL=http://localhost:10001 pnpm dev:app`
   reuses the prod sidecar, which is safe because the sidecar stores nothing but
   model files and the `/speak` audio cache, both shared by dev and prod and safe to delete.
+- **Try a change with no LLM:** `pnpm dev:stub` runs the app with the stub provider and the
+  scripted Conversation session, against the prod sidecar on `:10001` (`SIDECAR_URL`
+  overrides). To keep its writes off the dev DB, copy it first and pass the copy:
+  `sqlite3 app/data/app.db ".backup /tmp/scratch.db"`, then
+  `DATABASE_PATH=/tmp/scratch.db pnpm dev:stub`.
 - **LLM model and effort:** `CLAUDE_<TIER>_MODEL` and `CLAUDE_<TIER>_EFFORT` (tiers `GLOSS`,
   `STORY`, `CHECK`, `CONVERSATION`; Codex uses `CODEX_` instead) override one task tier, e.g.
   `CLAUDE_STORY_EFFORT=low`. Defaults: Haiku, Sonnet, Opus and Haiku (`CONVERSATION`) at medium effort; Codex runs

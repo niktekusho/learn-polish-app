@@ -7,6 +7,7 @@
   },
   "scripts": {
     "dev": "GLOSS_PROVIDER=claude-cli VITE_ALLOWED_HOSTS=mb14.local,macbook-pro.tail1ced86.ts.net vite dev --port 3000 --host 0.0.0.0",
+    "dev:stub": "SIDECAR_URL=${SIDECAR_URL:-http://localhost:10001} VITE_ALLOWED_HOSTS=mb14.local,macbook-pro.tail1ced86.ts.net vite dev --port 3000 --host 0.0.0.0",
     "generate-routes": "tsr generate",
     "purge-stub": "node scripts/purge-stub.mjs",
     "bench:conversation": "tsx scripts/bench-conversation.ts",
