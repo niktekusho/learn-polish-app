@@ -74,7 +74,8 @@ const CONVERSATIONS: CannedConversation[] = [
   {
     name: "sąsiad",
     character: "Pan Jan, il vicino anziano",
-    scene: "Sulle scale del condominio. Il gatto del vicino, Burek, è sparito da ieri.",
+    scene:
+      "Sulle scale del condominio. Burek, il gatto di Ala, la vicina di sopra, è sparito da ieri.",
     steps: [
       { id: "greet", text: "Saluta Pan Jan" },
       { id: "say-job", text: "Digli che lavoro fai" },
