@@ -1,0 +1,345 @@
+import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
+import { createServerFn } from "@tanstack/react-start";
+import { ArrowLeft, Check, CircleAlert, RefreshCw, Volume2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { z } from "zod";
+import { playVoice } from "#/audio/speak";
+import { PushToTalk } from "#/audio/recorder";
+import type { ConversationView } from "#/conversation/service";
+import {
+  BTN_PRIMARY,
+  BTN_QUIET,
+  ERROR_LINE,
+  ICON_BUTTON,
+  LABEL,
+  LABEL_TYPE,
+  RETRY,
+  TRACK,
+} from "#/ui";
+
+// The Conversation after the last Episode read. A scene the background run failed to
+// prepare is prepared here, behind the pending screen.
+const getConversationFn = createServerFn().handler(async () => {
+  const { appConversationService } = await import("#/conversation/server");
+  return appConversationService().current();
+});
+
+const idInput = (d: unknown) => z.object({ id: z.number().int() }).parse(d);
+
+const openFn = createServerFn({ method: "POST" })
+  .validator(idInput)
+  .handler(async ({ data }) => {
+    const { appConversationService } = await import("#/conversation/server");
+    appConversationService().open(data.id);
+  });
+
+const rerollFn = createServerFn({ method: "POST" })
+  .validator(idInput)
+  .handler(async ({ data }) => {
+    const { appConversationService } = await import("#/conversation/server");
+    return appConversationService().reroll(data.id);
+  });
+
+// The learner's audio is transcribed and stored as a turn before any reply is asked.
+const addTurnFn = createServerFn({ method: "POST" })
+  .validator((d: unknown) => {
+    if (!(d instanceof FormData)) throw new Error("expected FormData");
+    const audio = d.get("audio");
+    if (!(audio instanceof Blob)) throw new Error("missing audio");
+    return { id: z.coerce.number().int().parse(d.get("id")), audio };
+  })
+  .handler(async ({ data }) => {
+    const { transcribe } = await import("#/import/sidecar");
+    const { appConversationService } = await import("#/conversation/server");
+    const text = (await transcribe(data.audio)).trim();
+    if (!text) return { text: null };
+    appConversationService().addTurn(data.id, text);
+    return { text };
+  });
+
+const replyFn = createServerFn({ method: "POST" })
+  .validator(idInput)
+  .handler(async ({ data }) => {
+    const { appConversationService } = await import("#/conversation/server");
+    return appConversationService().reply(data.id);
+  });
+
+export const Route = createFileRoute("/conversation")({
+  component: ConversationPage,
+  loader: () => getConversationFn(),
+  pendingComponent: () => <Wait>Preparo la scena…</Wait>,
+});
+
+const PAGE = "flex h-dvh flex-col bg-paper font-sans text-base text-ink";
+// A reply slower than this shows the character thinking.
+const THINKING_MS = 3000;
+
+function TopBar({ children }: { children?: React.ReactNode }) {
+  return (
+    <header className="flex shrink-0 items-center gap-1 px-1 py-1.5">
+      <Link to="/" aria-label="Home" className={ICON_BUTTON}>
+        <ArrowLeft size={20} />
+      </Link>
+      {children}
+    </header>
+  );
+}
+
+function Wait({ children }: { children: React.ReactNode }) {
+  return (
+    <div className={`${PAGE} items-center justify-center gap-4 p-6 text-center`}>
+      <div className="flex gap-2" aria-hidden>
+        {[0, 150, 300].map((d) => (
+          <i
+            key={d}
+            className="size-2.5 animate-pulse rounded-full bg-accent motion-reduce:animate-none"
+            style={{ animationDelay: `${d}ms` }}
+          />
+        ))}
+      </div>
+      <p role="status" className="max-w-[26ch] font-serif text-prose leading-normal text-ink-2">
+        {children}
+      </p>
+    </div>
+  );
+}
+
+function Notice({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className={PAGE}>
+      <TopBar />
+      <main className="mx-auto grid w-full max-w-[34rem] content-start gap-3 px-4 pt-6">
+        <h1 className="font-serif text-2xl leading-[1.2] font-bold">{title}</h1>
+        {children}
+      </main>
+    </div>
+  );
+}
+
+function ConversationPage() {
+  const current = Route.useLoaderData();
+  if (current.needsProfile) {
+    return (
+      <Notice title="Prima, il tuo profilo">
+        <p className="font-serif text-[16px] leading-normal text-ink-2">
+          Nella conversazione interpreti te stesso: scrivi qualcosa su di te.
+        </p>
+        <Link
+          to="/profile"
+          search={{ next: "conversation" }}
+          className={`${BTN_PRIMARY} justify-self-start`}
+        >
+          Scrivi il tuo profilo
+        </Link>
+      </Notice>
+    );
+  }
+  if (!current.conversation) {
+    return (
+      <Notice title="Nessuna conversazione">
+        <p className="font-serif text-[16px] leading-normal text-ink-2">
+          La conversazione segue l'ultimo episodio letto.
+        </p>
+        <Link to="/story" className={`${BTN_QUIET} justify-self-start`}>
+          Vai alla storia
+        </Link>
+      </Notice>
+    );
+  }
+  // A reroll replaces the scene: a new key starts its screen afresh.
+  const c = current.conversation;
+  return <ConversationScreen key={`${c.id}:${c.opening.line}`} initial={c} />;
+}
+
+type Line = { who: "character" | "learner"; text: string; italian?: string };
+type Phase = "idle" | "transcribing" | "waiting" | "failed" | "unheard" | "rerolling";
+
+function linesOf(c: ConversationView): Line[] {
+  const lines: Line[] = [{ who: "character", text: c.opening.line, italian: c.opening.italian }];
+  for (const t of c.turns) {
+    lines.push({ who: "learner", text: t.learnerText });
+    if (t.line !== null) lines.push({ who: "character", text: t.line, italian: t.italian ?? "" });
+  }
+  return lines;
+}
+
+function ConversationScreen({ initial }: { initial: ConversationView }) {
+  const router = useRouter();
+  const c = initial;
+  const [lines, setLines] = useState(() => linesOf(c));
+  const [steps, setSteps] = useState(c.steps);
+  const [phase, setPhase] = useState<Phase>(() =>
+    c.turns.at(-1)?.line === null ? "failed" : "idle",
+  );
+  const [thinking, setThinking] = useState(false);
+  const thinkingTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const play = (text: string) => c.voice && playVoice(text, c.voice).catch(() => {});
+
+  useEffect(() => {
+    void openFn({ data: { id: c.id } });
+    if (c.turns.length === 0) play(c.opening.line);
+    return () => clearTimeout(thinkingTimer.current);
+  }, []);
+
+  async function ask() {
+    setPhase("waiting");
+    thinkingTimer.current = setTimeout(() => setThinking(true), THINKING_MS);
+    try {
+      const r = await replyFn({ data: { id: c.id } });
+      setLines((ls) => [...ls, { who: "character", text: r.line, italian: r.italian }]);
+      setSteps(r.steps);
+      setPhase("idle");
+      play(r.line);
+    } catch {
+      setPhase("failed");
+    } finally {
+      clearTimeout(thinkingTimer.current);
+      setThinking(false);
+    }
+  }
+
+  async function sendAudio(blob: Blob) {
+    setPhase("transcribing");
+    const form = new FormData();
+    form.append("id", String(c.id));
+    form.append("audio", blob);
+    try {
+      const { text } = await addTurnFn({ data: form });
+      if (!text) {
+        setPhase("unheard");
+        return;
+      }
+      setLines((ls) => [...ls, { who: "learner", text }]);
+      await ask();
+    } catch {
+      setPhase("unheard");
+    }
+  }
+
+  async function reroll() {
+    setPhase("rerolling");
+    try {
+      await rerollFn({ data: { id: c.id } });
+      await router.invalidate();
+    } catch {
+      setPhase("idle");
+    }
+  }
+
+  if (phase === "rerolling") return <Wait>Preparo un'altra scena…</Wait>;
+
+  return (
+    <div className={PAGE}>
+      <header className="shrink-0 border-b border-rule bg-card pr-4 pb-3">
+        <TopBar>
+          <span className={LABEL}>{c.character}</span>
+        </TopBar>
+        <div className="grid gap-2 pl-4">
+          <p className="font-serif text-base leading-snug text-ink-2">{c.scene}</p>
+          {c.roleFacts && (
+            <p className="font-serif text-base leading-snug text-ink-2">
+              <span className={`${LABEL_TYPE} mr-2 text-ink-3`}>Il tuo ruolo</span>
+              {c.roleFacts}
+            </p>
+          )}
+          <div>
+            <h2 className={`${LABEL_TYPE} text-ink-3`}>Obiettivo</h2>
+            <ul className="mt-1 grid gap-1">
+              {steps.map((s) => (
+                <li key={s.id} className="flex items-start gap-2 font-serif text-base leading-snug">
+                  <span
+                    className={`mt-0.5 inline-grid size-5 shrink-0 place-items-center rounded-full transition-colors duration-300 ${
+                      s.ticked ? "bg-good text-white" : "border-[1.5px] border-rule"
+                    }`}
+                  >
+                    {s.ticked && <Check size={13} strokeWidth={3} />}
+                  </span>
+                  <span className={s.ticked ? "text-ink-3" : "text-ink"}>
+                    {s.text}
+                    <span className="sr-only">{s.ticked ? " (fatto)" : ""}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex min-h-0 flex-1 flex-col-reverse overflow-auto px-4 py-4">
+        <div className="mx-auto flex w-full max-w-[40rem] flex-col gap-3" aria-live="polite">
+          {lines.map((l, i) =>
+            l.who === "character" ? (
+              <div
+                key={i}
+                className="flex max-w-[85%] items-start gap-1 self-start rounded-2xl rounded-bl-sm border border-rule bg-card py-1 pr-4 pl-1"
+              >
+                <button
+                  type="button"
+                  onClick={() => play(l.text)}
+                  aria-label="Ascolta"
+                  className={ICON_BUTTON}
+                >
+                  <Volume2 size={18} className="text-accent" />
+                </button>
+                <span lang="pl" className="grid gap-1 py-2">
+                  <span className="font-serif text-md">{l.text}</span>
+                  <span lang="it" className="text-sm text-ink-3 italic">
+                    {l.italian}
+                  </span>
+                </span>
+              </div>
+            ) : (
+              <p
+                key={i}
+                lang="pl"
+                className="max-w-[85%] self-end rounded-2xl rounded-br-sm bg-accent-soft px-4 py-3 font-serif text-md text-accent-ink"
+              >
+                {l.text}
+              </p>
+            ),
+          )}
+          {phase === "waiting" && thinking && (
+            <p role="status" className="self-start px-2 text-sm text-ink-3 italic">
+              {c.character} sta pensando…
+            </p>
+          )}
+        </div>
+      </main>
+
+      <div className="grid shrink-0 justify-items-center gap-3 border-t border-rule bg-paper/85 px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom))]">
+        {phase === "transcribing" && (
+          <p role="status" className="text-sm text-ink-2">
+            Trascrivo…
+          </p>
+        )}
+        {phase === "unheard" && (
+          <p role="alert" className={`${ERROR_LINE} justify-center`}>
+            <CircleAlert size={18} />
+            Non ho sentito. Tieni premuto e riprova.
+          </p>
+        )}
+        {phase === "failed" ? (
+          <p role="alert" className={`${ERROR_LINE} justify-center`}>
+            <CircleAlert size={18} />
+            Non risponde.
+            <button type="button" onClick={ask} className={RETRY}>
+              Riprova
+            </button>
+          </p>
+        ) : (
+          <PushToTalk
+            onRecorded={sendAudio}
+            color={TRACK.productive.color}
+            disabled={phase === "transcribing" || phase === "waiting"}
+          />
+        )}
+        {lines.length === 1 && phase === "idle" && (
+          <button type="button" onClick={reroll} className={BTN_QUIET}>
+            <RefreshCw size={18} />
+            Un'altra scena
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}

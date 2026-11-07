@@ -13,6 +13,9 @@ import type {
   ProviderName,
   ReportReviewItem,
   ReportVerdict,
+  SceneProvider,
+  SceneRequest,
+  SceneResult,
   SenseGlossRequest,
   SenseGlossResult,
   StoryOutline,
@@ -23,7 +26,7 @@ import type {
 // Deterministic, offline stand-in for a real LLM. Produces a unique, stable
 // string per lemma so caching, the word panel and the MCQ distractors (#9)
 // work without any network or API key.
-export class StubProvider implements GlossProvider, StoryProvider {
+export class StubProvider implements GlossProvider, StoryProvider, SceneProvider {
   readonly name: ProviderName = "stub";
 
   async gloss(req: GlossRequest): Promise<string> {
@@ -98,6 +101,23 @@ export class StubProvider implements GlossProvider, StoryProvider {
 
   async episode(req: EpisodeRequest): Promise<string> {
     return `Ala ma kota. To jest odcinek ${req.episodeNumber}. Kot jest mały.`;
+  }
+
+  // Matches the ScriptedSession's bakery script, so dev plays one coherent scene.
+  async scene(req: SceneRequest): Promise<SceneResult> {
+    return {
+      character: 0,
+      scene: "Mattina, in panetteria (scena stub).",
+      steps: ["Compra due panini", "Dì che è tutto", "Paga"],
+      roleFacts: null,
+      opening: {
+        line: "Dzień dobry! W czym mogę pomóc?",
+        italian: "Buongiorno! Come posso aiutarla?",
+        hint: ["poproszę", "bułka"],
+        modelLine: "Poproszę dwie bułki.",
+      },
+      voices: req.voices && req.characters.map((_, i) => req.voices![i % req.voices!.length].id),
+    };
   }
 
   async passageQuestion(req: PassageQuestionRequest): Promise<ChoiceQuestion> {

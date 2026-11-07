@@ -320,3 +320,19 @@ test("an episode still flagged after correction stores nothing", async () => {
   await expect(svc.startStory(PREMISE)).rejects.toThrow(/"stub".*«torta»/);
   expect(db.select().from(schema.sourceText).all()).toEqual([]);
 });
+
+test("the first read of an episode, and only the first, starts preparing its Conversation", async () => {
+  const db = freshDb();
+  seedKnown(db);
+  const read: number[] = [];
+  const svc = storyService(db, {
+    provider: fakeProvider(3),
+    analyze: fakeAnalyze,
+    mweHeadwords: new Map(),
+    onEpisodeRead: (textId) => read.push(textId),
+  });
+  const ep1 = (await svc.startStory(PREMISE))!;
+  await svc.markEpisodeRead(ep1.textId);
+  await svc.markEpisodeRead(ep1.textId);
+  expect(read).toEqual([ep1.textId]);
+});

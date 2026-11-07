@@ -10,6 +10,7 @@ import {
   buildPremisesPrompt,
   buildProofreadPrompt,
   buildReportReviewPrompt,
+  buildScenePrompt,
   buildSenseGlossPrompt,
   buildStoryOutlinePrompt,
   type ChoiceQuestion,
@@ -32,6 +33,7 @@ import {
   parsePremisesJson,
   parseProofreadJson,
   parseReportReviewJson,
+  parseSceneJson,
   parseSenseGlossJson,
   parseStoryOutlineJson,
   type PassageQuestionRequest,
@@ -39,6 +41,9 @@ import {
   type ProviderName,
   type ReportReviewItem,
   type ReportVerdict,
+  type SceneProvider,
+  type SceneRequest,
+  type SceneResult,
   type SenseGlossRequest,
   type SenseGlossResult,
   type StoryOutline,
@@ -59,6 +64,7 @@ export type LlmCallName =
   | "premises"
   | "outline"
   | "episode"
+  | "scene"
   | "turn";
 
 /** Token counts and API time a CLI reports; null where it reports none. */
@@ -83,6 +89,9 @@ export interface LlmCall extends Usage {
   response: string | null; // the reply, or the raw CLI output when there is none
   ms: number;
   error: string | null; // null when the output parsed
+  conversationId?: number; // Conversation turns only, like the two below
+  turn?: number; // the learner turn answered, 0 for an opening
+  attempt?: number; // 1 for the first try of a turn
 }
 
 export interface ModelChoice {
@@ -161,7 +170,7 @@ export const NO_USAGE: Usage = {
  * output. Subclasses supply the shell-out, injectable so tests skip the process,
  * and how to read a reply from it. Every call, parsed or not, goes to `log`.
  */
-export abstract class CliProvider implements GlossProvider, StoryProvider {
+export abstract class CliProvider implements GlossProvider, StoryProvider, SceneProvider {
   abstract readonly name: ProviderName;
 
   constructor(
@@ -266,5 +275,9 @@ export abstract class CliProvider implements GlossProvider, StoryProvider {
 
   episode(req: EpisodeRequest): Promise<string> {
     return this.run("episode", "story", buildEpisodePrompt(req), parseEpisodeText);
+  }
+
+  scene(req: SceneRequest): Promise<SceneResult> {
+    return this.run("scene", "story", buildScenePrompt(req), (out) => parseSceneJson(out, req));
   }
 }

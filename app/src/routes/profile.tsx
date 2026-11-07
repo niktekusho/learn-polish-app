@@ -1,4 +1,4 @@
-import { Link, createFileRoute, useRouter } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { ArrowLeft, Check } from "lucide-react";
 import { useState } from "react";
@@ -29,6 +29,8 @@ const saveProfileFn = createServerFn({ method: "POST" })
   });
 
 export const Route = createFileRoute("/profile")({
+  // Set when the Conversation asked for the profile first: saving returns there.
+  validateSearch: z.object({ next: z.literal("conversation").optional() }),
   component: ProfilePage,
   loader: () => getProfileFn(),
 });
@@ -47,6 +49,8 @@ const INPUT =
 function ProfilePage() {
   const profile = Route.useLoaderData();
   const router = useRouter();
+  const navigate = useNavigate();
+  const { next } = Route.useSearch();
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -56,6 +60,10 @@ function ProfilePage() {
     setState("saving");
     try {
       await saveProfileFn({ data });
+      if (next) {
+        await navigate({ to: "/conversation" });
+        return;
+      }
       await router.invalidate();
       setState("saved");
     } catch {

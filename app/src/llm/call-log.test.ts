@@ -129,3 +129,52 @@ test("a failed Claude CLI call keeps the prompt, the raw output and the error", 
   expect(unzip(row.response)).toBe("half a reply");
   expect(row.error).toBe("claude exited 1: half a reply");
 });
+
+test("a Conversation turn is stored with its conversation, turn and attempt; other calls leave them null", () => {
+  const db = migratedDb();
+  const [s] = db
+    .insert(schema.story)
+    .values({
+      title: "t",
+      genre: "g",
+      hook: "h",
+      outline: { plot: "p", characters: [], beats: ["b"] },
+      plannedEpisodes: 1,
+      status: "active",
+    })
+    .returning()
+    .all();
+  const [e] = db
+    .insert(schema.sourceText)
+    .values({ content: "c", storyId: s.id })
+    .returning()
+    .all();
+  const [c] = db
+    .insert(schema.conversation)
+    .values({
+      storyId: s.id,
+      episodeId: e.id,
+      character: "Ala",
+      characterLine: "Ala",
+      scene: "s",
+      steps: [],
+      opening: { line: "l", italian: "i", hint: [], modelLine: "m" },
+      dueLemmas: [],
+    })
+    .returning()
+    .all();
+  recordCall(db, "claude-cli", {
+    ...call,
+    call: "turn",
+    conversationId: c.id,
+    turn: 2,
+    attempt: 1,
+  });
+  recordCall(db, "claude-cli", call);
+
+  const rows = db.select().from(schema.llmCall).all();
+  expect(rows).toMatchObject([
+    { call: "turn", conversationId: c.id, turn: 2, attempt: 1 },
+    { call: "episode", conversationId: null, turn: null, attempt: null },
+  ]);
+});

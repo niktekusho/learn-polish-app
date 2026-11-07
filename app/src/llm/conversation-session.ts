@@ -24,9 +24,12 @@ export interface TurnResult {
 /**
  * One warm LLM process per Conversation. `start` answers the transcript so far: the
  * opening line when it is empty, the reply to the learner's last line otherwise.
+ * `warm` only spawns the process, so its startup overlaps the opening's audio: the first
+ * `send` then seeds it with the transcript.
  */
 export interface ConversationSession {
   start(seed: SessionSeed): Promise<TurnResult>;
+  warm(seed: SessionSeed): void;
   send(learnerTurn: string): Promise<TurnResult>;
   close(): void;
 }

@@ -4,10 +4,10 @@ import type { ConversationSession } from "./conversation-session";
 import { ScriptedSession } from "./scripted-session";
 import type { LlmCall } from "./cli";
 import { CodexCliProvider } from "./codex-cli";
-import type { GlossProvider, ProviderName, StoryProvider } from "./provider";
+import type { GlossProvider, ProviderName, SceneProvider, StoryProvider } from "./provider";
 import { StubProvider } from "./stub";
 
-let cached: (GlossProvider & StoryProvider) | null = null;
+let cached: (GlossProvider & StoryProvider & SceneProvider) | null = null;
 
 // The DB module opens the app DB on import: it loads only when a CLI provider logs a call.
 function logTo(provider: ProviderName) {
@@ -21,7 +21,7 @@ function logTo(provider: ProviderName) {
 // GLOSS_PROVIDER selects the concrete provider; default stub keeps tests and
 // offline dev untouched. Set GLOSS_PROVIDER=claude-cli or codex-cli to use a
 // real CLI.
-function provider(): GlossProvider & StoryProvider {
+function provider(): GlossProvider & StoryProvider & SceneProvider {
   if (!cached) {
     switch (process.env.GLOSS_PROVIDER) {
       case "claude-cli":
@@ -39,11 +39,12 @@ function provider(): GlossProvider & StoryProvider {
 
 export const getGlossProvider = (): GlossProvider => provider();
 export const getStoryProvider = (): StoryProvider => provider();
+export const getSceneProvider = (): SceneProvider => provider();
 
 // One session per Conversation, so this builds a new one each call. GLOSS_PROVIDER=claude-cli
 // runs the warm Claude process; any other value (Codex has no warm session yet) plays the script.
-export function createConversationSession(): ConversationSession {
-  return process.env.GLOSS_PROVIDER === "claude-cli"
-    ? new ClaudeSession(undefined, logTo("claude-cli"))
-    : new ScriptedSession();
+export function createConversationSession(conversationId: number): ConversationSession {
+  if (process.env.GLOSS_PROVIDER !== "claude-cli") return new ScriptedSession();
+  const log = logTo("claude-cli");
+  return new ClaudeSession(undefined, (call) => log({ ...call, conversationId }));
 }

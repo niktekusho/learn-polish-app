@@ -44,6 +44,12 @@ export class ScriptedSession implements ConversationSession {
     return this.play();
   }
 
+  /** The opening and the replies already in the transcript are skipped in the script. */
+  warm(seed: SessionSeed): void {
+    this.stepIds = seed.stepIds;
+    this.next = seed.transcript.filter((l) => l.speaker === "character").length;
+  }
+
   async send(): Promise<TurnResult> {
     if (!this.stepIds) throw new Error("session not started");
     return this.play();

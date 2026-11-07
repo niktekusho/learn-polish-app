@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
   buildComprehensionPrompt,
   buildCorrectionPrompt,
@@ -16,8 +16,10 @@ import {
   parsePremisesJson,
   parseProofreadJson,
   parseReportReviewJson,
+  parseSceneJson,
   parseSenseGlossJson,
   parseStoryOutlineJson,
+  type SceneRequest,
 } from "./provider";
 
 const good = JSON.stringify({
@@ -284,4 +286,55 @@ test("episode prompt carries the previous episode, or says there is none", () =>
 test("premises prompt asks to avoid the genres of past stories", () => {
   expect(buildPremisesPrompt(["fantasy", "giallo"])).toContain("fantasy, giallo");
   expect(buildPremisesPrompt([])).not.toContain("Evita");
+});
+
+describe("parseSceneJson", () => {
+  const req: SceneRequest = {
+    episode: "Ala ma kota.",
+    characters: ["Ala – una ragazza", "Pan Jan – il vicino"],
+    profile: { name: "Marco", job: "", city: "", partner: "", hobbies: "" },
+    dueLemmas: [],
+    voices: [
+      { id: "gosia", label: "Voce femminile" },
+      { id: "bass", label: "Voce maschile" },
+    ],
+  };
+  const reply = {
+    character: 1,
+    scene: "Sulle scale.",
+    steps: ["Saluta", "Chiedi del gatto"],
+    roleFacts: null,
+    opening: {
+      line: "Dzień dobry!",
+      italian: "Buongiorno!",
+      hint: ["dzień"],
+      modelLine: "Dzień dobry.",
+    },
+    voices: ["gosia", "bass"],
+  };
+
+  test("accepts a scene whose character and voices are known keys", () => {
+    expect(parseSceneJson(JSON.stringify(reply), req)).toEqual(reply);
+  });
+
+  test("rejects a character outside the outline", () => {
+    expect(() => parseSceneJson(JSON.stringify({ ...reply, character: 2 }), req)).toThrow(/range/);
+  });
+
+  test("rejects a voice outside the catalog, or one missing", () => {
+    for (const voices of [["gosia", "nobody"], ["gosia"]]) {
+      expect(() => parseSceneJson(JSON.stringify({ ...reply, voices }), req)).toThrow(/catalog/);
+    }
+  });
+
+  test("ignores voices when none were asked", () => {
+    const scene = parseSceneJson(JSON.stringify(reply), { ...req, voices: null });
+    expect(scene.voices).toBeNull();
+  });
+
+  test("rejects a Goal of one step or of five", () => {
+    for (const steps of [["a"], ["a", "b", "c", "d", "e"]]) {
+      expect(() => parseSceneJson(JSON.stringify({ ...reply, steps }), req)).toThrow();
+    }
+  });
 });

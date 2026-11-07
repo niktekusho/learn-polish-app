@@ -85,8 +85,10 @@ export class ClaudeSession implements ConversationSession {
   private seed: SessionSeed | null = null;
   private transcript: TranscriptLine[] = [];
   private proc: SessionProcess | null = null;
+  private seeded = false; // the process has been sent the transcript
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private busy = false;
+  private failures = 0; // failed attempts at the turn being asked
 
   constructor(
     private readonly spawnSession: SpawnSession = spawnClaudeSession,
@@ -98,7 +100,16 @@ export class ClaudeSession implements ConversationSession {
     this.close();
     this.seed = seed;
     this.transcript = [...seed.transcript];
+    this.failures = 0;
     return this.turn(null);
+  }
+
+  warm(seed: SessionSeed): void {
+    if (this.proc) return;
+    this.seed = seed;
+    this.transcript = [...seed.transcript];
+    this.proc = this.spawnSession(sessionArgs(seed, this.choice));
+    this.armIdle();
   }
 
   send(learnerTurn: string): Promise<TurnResult> {
@@ -111,6 +122,13 @@ export class ClaudeSession implements ConversationSession {
     this.idleTimer = null;
     this.proc?.kill();
     this.proc = null;
+    this.seeded = false;
+  }
+
+  private armIdle() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => this.close(), IDLE_TIMEOUT_MS);
+    this.idleTimer.unref?.();
   }
 
   private async turn(learnerTurn: string | null): Promise<TurnResult> {
@@ -120,10 +138,12 @@ export class ClaudeSession implements ConversationSession {
     if (this.idleTimer) clearTimeout(this.idleTimer);
     const start = Date.now();
     const asked: TranscriptLine[] = learnerTurn ? [{ speaker: "learner", text: learnerTurn }] : [];
-    // A warm process holds the transcript already, so it gets the bare turn.
-    const message = this.proc
+    // A seeded process holds the transcript already, so it gets the bare turn.
+    const message = this.seeded
       ? (learnerTurn ?? "")
       : buildSeedMessage([...this.transcript, ...asked]);
+    const turn = [...this.transcript, ...asked].filter((l) => l.speaker === "learner").length;
+    const attempt = this.failures + 1;
     let response: string | null = null;
     let usage: Usage = NO_USAGE;
     const log = (error: string | null) =>
@@ -135,21 +155,25 @@ export class ClaudeSession implements ConversationSession {
         ...usage,
         ms: Date.now() - start,
         error,
+        turn,
+        attempt,
       });
     try {
       const proc = (this.proc ??= this.spawnSession(sessionArgs(seed, this.choice)));
+      this.seeded = true;
       const line = await this.nextResult(proc, message);
       const reply = readClaudeReply({ code: 0, stdout: line, stderr: "" });
       response = reply.text;
       usage = reply.usage;
       const result = parseTurnResult(reply.text, seed.stepIds);
       this.transcript.push(...asked, { speaker: "character", text: result.line });
-      this.idleTimer = setTimeout(() => this.close(), IDLE_TIMEOUT_MS);
-      this.idleTimer.unref?.();
+      this.armIdle();
+      this.failures = 0;
       log(null);
       return result;
     } catch (err) {
       this.close();
+      this.failures++;
       log(err instanceof Error ? err.message : String(err));
       throw err;
     } finally {

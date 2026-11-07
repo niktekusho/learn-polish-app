@@ -281,14 +281,15 @@ A spoken role-play with an LLM character from the current **Story**, set right a
 last **Episode** read and played toward a **Goal**. Open: the character follows wherever the learner takes it. Not an **Exercise**:
 the learner steers it, though the character is nudged to make due **Productive** lemmas
 the natural answer. Counts for the daily once the learner reaches the **Debrief** having
-spoken at least 3 turns, whether or not the **Goal** was met.
+spoken at least 3 turns, whether or not the **Goal** was met. Shown in the UI as
+_Conversazione_.
 _Avoid_: dialogue, chat, scene
 
 **Goal**:
 The Italian task card a **Conversation** is played toward: _buy two rolls, ask if
 there is fresh poppy-seed cake, pay_. A checklist of **Goal steps**, met when every step
 is ticked. A met Goal never ends the scene: the learner chooses when to go to the
-**Debrief**.
+**Debrief**. Shown in the UI as _Obiettivo_.
 _Avoid_: mission, quest, objective
 
 **Goal step**:

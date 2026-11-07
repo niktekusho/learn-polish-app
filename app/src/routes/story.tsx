@@ -6,6 +6,7 @@ import {
   BookOpen,
   CircleAlert,
   Flag,
+  MessagesSquare,
   RefreshCw,
   RotateCcw,
 } from "lucide-react";
@@ -120,12 +121,29 @@ function StoryPage() {
         Leggi l'episodio {current.episodeNumber}
       </Link>
     );
+  // The Conversation follows the last Episode read.
+  const talkButton = (wide: boolean) =>
+    read.length > 0 && (
+      <Link to="/conversation" className={`${BTN_QUIET} ${wide ? "w-full" : ""}`}>
+        <MessagesSquare size={18} />
+        Conversazione
+      </Link>
+    );
 
   return (
     <div className={`${PAGE} ${COVER_GROUND}`}>
       <TopBar />
       <main className="min-h-0 flex-1 overflow-auto sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] sm:overflow-hidden">
-        <Cover story={story} read={read.length} action={readButton(false)} />
+        <Cover
+          story={story}
+          read={read.length}
+          action={
+            <>
+              {readButton(false)}
+              {talkButton(false)}
+            </>
+          }
+        />
         <section
           className={`border-t border-rule bg-paper/70 px-4 pt-5 pb-7 sm:overflow-auto sm:border-t-0 sm:border-l sm:bg-paper sm:px-6 sm:py-3 lg:px-12 lg:py-8 ${REVEAL}`}
           style={order(4)}
@@ -144,9 +162,10 @@ function StoryPage() {
         </section>
       </main>
       {/* Narrow: the action docks at the bottom, in thumb reach. */}
-      {current && (
-        <div className="grid shrink-0 border-t border-rule bg-paper/85 px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom))] sm:hidden">
+      {(current || read.length > 0) && (
+        <div className="grid shrink-0 gap-2 border-t border-rule bg-paper/85 px-4 pt-3 pb-[max(20px,env(safe-area-inset-bottom))] sm:hidden">
           {readButton(true)}
+          {talkButton(true)}
         </div>
       )}
     </div>
@@ -197,7 +216,7 @@ function Cover({ story, read, action }: { story: Story; read: number; action: Re
           {read} di {story.totalEpisodes} episodi letti
         </span>
       </div>
-      <div className="mt-2 hidden sm:flex">{action}</div>
+      <div className="mt-2 hidden gap-2 sm:flex">{action}</div>
     </div>
   );
 }

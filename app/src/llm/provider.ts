@@ -654,6 +654,94 @@ export function parseReportReviewJson(stdout: string, itemCount: number): (Repor
   return reviews.map((r) => reportVerdict.safeParse(r).data ?? null);
 }
 
+// --- Scene preparation (CONTEXT.md "Conversation", "Goal") ------------------
+// ONE story-tier call per scene, outside the turn loop. The model picks a character and
+// voices by key, checked here against the outline and the catalog; Goal step ids are not its job.
+
+export interface SceneRequest {
+  episode: string; // the Episode the scene follows
+  characters: string[]; // the Story outline's character lines
+  profile: Record<"name" | "job" | "city" | "partner" | "hobbies", string>;
+  dueLemmas: string[];
+  voices: { id: string; label: string }[] | null; // set when the Story has no voices yet
+}
+
+export interface SceneResult {
+  character: number; // index into the request's characters
+  scene: string;
+  steps: string[]; // Italian Goal steps, in card order
+  roleFacts: string | null;
+  opening: { line: string; italian: string; hint: string[]; modelLine: string };
+  voices: string[] | null; // one catalog id per character, when the request had voices
+}
+
+export function buildScenePrompt(req: SceneRequest): string {
+  const p = req.profile;
+  const due = req.dueLemmas.length
+    ? `Parole che lo studente sta ripassando: ${req.dueLemmas.join(", ")}. Scegli l'obiettivo ` +
+      "in modo che qualcuna di queste sia la risposta naturale. "
+    : "";
+  const voices = req.voices
+    ? "voices: per ogni personaggio, nello stesso ordine dell'elenco, l'id della voce più " +
+      "adatta tra queste (più personaggi possono avere la stessa voce):\n" +
+      req.voices.map((v) => `- ${v.id}: ${v.label}`).join("\n") +
+      "\n"
+    : "voices: null.\n";
+  return (
+    "Prepara una scena di conversazione parlata in polacco per uno studente italiano " +
+    "principiante (sotto A1). La scena si svolge subito dopo l'episodio qui sotto, tra lo " +
+    "studente e uno dei personaggi della storia. Lo studente interpreta se stesso, dal suo " +
+    "profilo. " +
+    due +
+    "Campi:\n" +
+    "character: il numero del personaggio nell'elenco (da 0).\n" +
+    "scene: dove e quando avviene la scena, una frase in italiano.\n" +
+    "steps: da 2 a 4 passi dell'obiettivo dello studente, in italiano, brevi e concreti " +
+    "(es. «Compra due panini», «Paga»), ognuno fattibile con una frase semplice.\n" +
+    "roleFacts: se l'obiettivo assegna allo studente un ruolo, i fatti di quel ruolo in " +
+    "italiano (es. «Hai una prenotazione a nome Rossi per due notti»), altrimenti null.\n" +
+    "opening: la prima battuta del personaggio. line: in polacco, una o due frasi brevi " +
+    "con parole comuni; italian: la sua traduzione italiana; hint: da 2 a 4 parole " +
+    "polacche chiave, in forma base, per la probabile risposta dello studente; " +
+    "modelLine: una frase polacca breve e completa che lo studente potrebbe rispondere.\n" +
+    voices +
+    "Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
+    '{"character":0,"scene":"...","steps":["..."],"roleFacts":null,' +
+    '"opening":{"line":"...","italian":"...","hint":["..."],"modelLine":"..."},"voices":null}\n\n' +
+    `Profilo dello studente: si chiama ${p.name}, lavoro: ${p.job}, vive a ${p.city}, ` +
+    `partner: ${p.partner}, hobby: ${p.hobbies}.\n` +
+    `Personaggi:\n${req.characters.map((c, i) => `${i}. ${c}`).join("\n")}\n\n` +
+    `Episodio:\n${req.episode}`
+  );
+}
+
+const sceneResponse = z.object({
+  character: z.number().int().min(0),
+  scene: z.string().trim().min(1),
+  steps: z.array(z.string().trim().min(1)).min(2).max(4),
+  roleFacts: z.string().trim().min(1).nullable(),
+  opening: z.object({
+    line: z.string().trim().min(1),
+    italian: z.string().trim().min(1),
+    hint: z.array(z.string().trim().min(1)),
+    modelLine: z.string().trim().min(1),
+  }),
+  voices: z.array(z.string()).nullable().default(null),
+});
+
+export function parseSceneJson(stdout: string, req: SceneRequest): SceneResult {
+  const scene = parseJsonOutput(stdout, "scene", sceneResponse);
+  if (scene.character >= req.characters.length) {
+    throw new Error(`scene character ${scene.character} out of range (${req.characters.length})`);
+  }
+  if (!req.voices) return { ...scene, voices: null };
+  const ids = new Set(req.voices.map((v) => v.id));
+  if (scene.voices?.length !== req.characters.length || !scene.voices.every((v) => ids.has(v))) {
+    throw new Error(`scene voices ${JSON.stringify(scene.voices)} do not match the catalog`);
+  }
+  return scene;
+}
+
 /** Optional capabilities: providers without them fail any generated Polish text. */
 export interface Proofreader {
   proofread?(text: string): Promise<ProofreadFlag[]>;
@@ -685,4 +773,8 @@ export interface StoryProvider extends Proofreader {
   premises(pastGenres: string[]): Promise<StoryPremise[]>;
   outline(premise: StoryPremise): Promise<StoryOutline>;
   episode(req: EpisodeRequest): Promise<string>;
+}
+
+export interface SceneProvider {
+  scene(req: SceneRequest): Promise<SceneResult>;
 }

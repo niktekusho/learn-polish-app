@@ -1,3 +1,4 @@
+import { appConversationService } from "#/conversation/server";
 import { db } from "#/db/index";
 import { analyze } from "#/import/sidecar";
 import { getGlossProvider, getStoryProvider } from "#/llm/index";
@@ -9,5 +10,11 @@ export function appStoryService() {
     provider: getStoryProvider(),
     analyze,
     checker: getGlossProvider(),
+    onEpisodeRead: (textId) =>
+      appConversationService()
+        .prepareScene(textId)
+        .catch((err) =>
+          console.error(`[conversation] background scene for ${textId} failed:`, err),
+        ),
   });
 }

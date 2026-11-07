@@ -240,3 +240,52 @@ test("a scene without Goal steps still gets a valid schema that ticks nothing", 
   await started;
   expect(JSON.parse(flag(procs[0], "--json-schema")).properties.stepsTicked.maxItems).toBe(0);
 });
+
+test("warm spawns the process at once, and the first send seeds it with the transcript", async () => {
+  const s = session();
+  s.warm({ ...seed, transcript: [{ speaker: "character", text: "Dzień dobry!" }] });
+  expect(procs).toHaveLength(1);
+  expect(procs[0].written).toHaveLength(0);
+
+  const sent = s.send("Poproszę bułkę.");
+  procs[0].emit(resultEvent());
+  await sent;
+  expect(procs).toHaveLength(1);
+  expect(procs[0].userText(0)).toBe(
+    "Scene so far:\nCharacter: Dzień dobry!\nLearner: Poproszę bułkę.\n\nReply as the character to the learner's last line.",
+  );
+});
+
+test("a warmed session left without a turn for 10 minutes is killed", async () => {
+  const s = session();
+  s.warm(seed);
+  await vi.advanceTimersByTimeAsync(10 * 60_000);
+  expect(procs[0].killed).toBe(true);
+});
+
+test("warming a session that already runs a process spawns nothing", () => {
+  const s = session();
+  s.warm(seed);
+  s.warm(seed);
+  expect(procs).toHaveLength(1);
+});
+
+test("each turn is logged with the learner turn it answers and its attempt", async () => {
+  const s = session();
+  s.warm({ ...seed, transcript: [{ speaker: "character", text: "Dzień dobry!" }] });
+  const lost = s.send("Poproszę bułkę.");
+  procs[0].crash();
+  await expect(lost).rejects.toThrow();
+  const retry = s.send("Poproszę bułkę.");
+  procs[1].emit(resultEvent());
+  await retry;
+  const next = s.send("Dziękuję.");
+  procs[1].emit(resultEvent());
+  await next;
+
+  expect(calls.map((c) => [c.turn, c.attempt])).toEqual([
+    [1, 1],
+    [1, 2],
+    [2, 1],
+  ]);
+});

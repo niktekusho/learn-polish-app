@@ -35,6 +35,8 @@ export interface StoryDeps {
   mweHeadwords?: Map<string, string[]>; // tests skip the dictionary lookup
   // Absent: an episode with an MWE match or a Formula candidate fails.
   checker?: MweChecker;
+  // Called on an Episode's first read: the Conversation that follows it is prepared here.
+  onEpisodeRead?: (textId: number) => void;
 }
 
 export interface Episode {
@@ -233,6 +235,7 @@ export function storyService(db: DB, deps: StoryDeps) {
 
       db.update(sourceText).set({ readAt: now }).where(eq(sourceText.id, textId)).run();
       const { inserted, complete } = recordActivity(db, "episode", now);
+      deps.onEpisodeRead?.(textId);
       if (isLast) {
         db.update(story)
           .set({ status: "finished", endedAt: now })

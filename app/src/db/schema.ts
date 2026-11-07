@@ -223,6 +223,83 @@ export const learnerProfile = sqliteTable(
 );
 
 /**
+ * A Conversation (CONTEXT.md): a role-play set right after an Episode, played toward a Goal.
+ * Written by the scene preparation call; one per Episode.
+ */
+export const conversation = sqliteTable("conversation", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  storyId: integer("story_id")
+    .notNull()
+    .references(() => story.id, { onDelete: "cascade" }),
+  episodeId: integer("episode_id")
+    .notNull()
+    .unique()
+    .references(() => sourceText.id, { onDelete: "cascade" }),
+  character: text("character").notNull(), // the name, as storyCharacters gives it
+  characterLine: text("character_line").notNull(), // the outline line that describes them
+  scene: text("scene").notNull(), // Italian: where and when
+  // Goal steps in card order; tickedTurn is the learner turn that ticked the step.
+  steps: text("steps", { mode: "json" })
+    .$type<{ id: string; text: string; tickedTurn: number | null }[]>()
+    .notNull(),
+  roleFacts: text("role_facts"), // the facts of a role the Goal assigns, in Italian
+  // The character's opening line and the first Hint pair.
+  opening: text("opening", { mode: "json" })
+    .$type<{ line: string; italian: string; hint: string[]; modelLine: string }>()
+    .notNull(),
+  // Due Productive lemmas captured when the scene was prepared.
+  dueLemmas: text("due_lemmas", { mode: "json" }).$type<string[]>().notNull(),
+  status: text("status", { enum: ["open", "debriefed"] })
+    .notNull()
+    .default("open"),
+  turnCount: integer("turn_count").notNull().default(0), // learner turns
+  createdAt: integer("created_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+  updatedAt: integer("updated_at", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+/** One learner turn and the character's reply. The reply columns stay null until it arrives. */
+export const conversationTurn = sqliteTable(
+  "conversation_turn",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    conversationId: integer("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    turn: integer("turn").notNull(), // 1 for the learner's first turn
+    learnerText: text("learner_text").notNull(), // the transcript
+    line: text("line"),
+    italian: text("italian"),
+    understood: integer("understood", { mode: "boolean" }),
+    stepsTicked: text("steps_ticked", { mode: "json" }).$type<string[]>(),
+    hint: text("hint", { mode: "json" }).$type<string[]>(),
+    modelLine: text("model_line"),
+    attempts: integer("attempts").notNull().default(0), // replies asked of the session
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [uniqueIndex("conversation_turn_uq").on(t.conversationId, t.turn)],
+);
+
+/** The Piper voice a Story character speaks with, kept across its Conversations. */
+export const characterVoice = sqliteTable(
+  "character_voice",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    storyId: integer("story_id")
+      .notNull()
+      .references(() => story.id, { onDelete: "cascade" }),
+    character: text("character").notNull(),
+    voice: text("voice").notNull(), // a sidecar catalog id
+  },
+  (t) => [uniqueIndex("character_voice_uq").on(t.storyId, t.character)],
+);
+
+/**
  * A repaired Lemma slip (CONTEXT.md), shown once to the learner as
  * "myśli → myśleć". Text, not FKs: the slip row is deleted by the repair.
  */
@@ -259,6 +336,12 @@ export const llmCall = sqliteTable("llm_call", {
   apiMs: integer("api_ms"),
   ms: integer("ms").notNull(),
   error: text("error"), // null when the output parsed
+  // Conversation turns only: the learner turn answered (0 for an opening) and which try.
+  conversationId: integer("conversation_id").references(() => conversation.id, {
+    onDelete: "set null",
+  }),
+  turn: integer("turn"),
+  attempt: integer("attempt"),
 });
 
 /**
