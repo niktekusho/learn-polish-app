@@ -52,6 +52,9 @@ export class ScriptedSession implements ConversationSession {
   private stepIds: string[] | null = null;
   private next = 0;
 
+  /** Each send first takes an error off `failures`, if any: tests share one plan across respawns. */
+  constructor(private readonly failures: Error[] = []) {}
+
   async start(seed: SessionSeed): Promise<TurnResult> {
     this.stepIds = seed.stepIds;
     this.next = 0;
@@ -66,6 +69,8 @@ export class ScriptedSession implements ConversationSession {
 
   async send(_learnerTurn: string, { lastTurn = false }: SendOptions = {}): Promise<TurnResult> {
     if (!this.stepIds) throw new Error("session not started");
+    const failure = this.failures.shift();
+    if (failure) throw failure;
     return lastTurn ? GOODBYE : this.play();
   }
 

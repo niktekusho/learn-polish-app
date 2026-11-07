@@ -90,7 +90,6 @@ export class ClaudeSession implements ConversationSession {
   private seeded = false; // the process has been sent the transcript
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
   private busy = false;
-  private failures = 0; // failed attempts at the turn being asked
 
   constructor(
     private readonly spawnSession: SpawnSession = spawnClaudeSession,
@@ -102,7 +101,6 @@ export class ClaudeSession implements ConversationSession {
     this.close();
     this.seed = seed;
     this.transcript = [...seed.transcript];
-    this.failures = 0;
     return this.turn(null);
   }
 
@@ -114,9 +112,12 @@ export class ClaudeSession implements ConversationSession {
     this.armIdle();
   }
 
-  send(learnerTurn: string, { lastTurn = false }: SendOptions = {}): Promise<TurnResult> {
+  send(
+    learnerTurn: string,
+    { lastTurn = false, attempt = 1 }: SendOptions = {},
+  ): Promise<TurnResult> {
     if (!this.seed) return Promise.reject(new Error("session not started"));
-    return this.turn(learnerTurn, lastTurn);
+    return this.turn(learnerTurn, lastTurn, attempt);
   }
 
   close(): void {
@@ -133,7 +134,11 @@ export class ClaudeSession implements ConversationSession {
     this.idleTimer.unref?.();
   }
 
-  private async turn(learnerTurn: string | null, lastTurn = false): Promise<TurnResult> {
+  private async turn(
+    learnerTurn: string | null,
+    lastTurn = false,
+    attempt = 1,
+  ): Promise<TurnResult> {
     const seed = this.seed!;
     if (this.busy) throw new Error("a turn is already in progress");
     this.busy = true;
@@ -145,7 +150,6 @@ export class ClaudeSession implements ConversationSession {
       ? buildTurnMessage(learnerTurn ?? "", lastTurn)
       : buildSeedMessage([...this.transcript, ...asked], lastTurn);
     const turn = [...this.transcript, ...asked].filter((l) => l.speaker === "learner").length;
-    const attempt = this.failures + 1;
     let response: string | null = null;
     let usage: Usage = NO_USAGE;
     const log = (error: string | null) =>
@@ -170,12 +174,10 @@ export class ClaudeSession implements ConversationSession {
       const result = parseTurnResult(reply.text, seed.stepIds);
       this.transcript.push(...asked, { speaker: "character", text: result.line });
       this.armIdle();
-      this.failures = 0;
       log(null);
       return result;
     } catch (err) {
       this.close();
-      this.failures++;
       log(err instanceof Error ? err.message : String(err));
       throw err;
     } finally {

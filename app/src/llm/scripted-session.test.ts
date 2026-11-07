@@ -31,6 +31,16 @@ test("a warmed stub skips the lines already in the transcript", async () => {
   expect((await s.send("Poproszę dwie bułki.")).stepsTicked).toEqual(["order"]);
 });
 
+test("a failure plan fails the next sends, across the sessions that share it", async () => {
+  const plan = [new Error("turn timed out after 30s")];
+  const first: ConversationSession = new ScriptedSession(plan);
+  first.warm(seed);
+  await expect(first.send("x")).rejects.toThrow(/timed out/);
+  const second: ConversationSession = new ScriptedSession(plan);
+  second.warm(seed);
+  expect((await second.send("x")).line).toBe("Dzień dobry! W czym mogę pomóc?");
+});
+
 test("the stub says goodbye on the last turn", async () => {
   const s: ConversationSession = new ScriptedSession();
   await s.start(seed);

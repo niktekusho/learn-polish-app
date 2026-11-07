@@ -194,7 +194,7 @@ export const dailyActivity = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     day: text("day").notNull(), // local date, YYYY-MM-DD
-    kind: text("kind", { enum: ["practice", "episode"] }).notNull(),
+    kind: text("kind", { enum: ["practice", "episode", "conversation"] }).notNull(),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -316,6 +316,23 @@ export const characterVoice = sqliteTable(
     voice: text("voice").notNull(), // a sidecar catalog id
   },
   (t) => [uniqueIndex("character_voice_uq").on(t.storyId, t.character)],
+);
+
+/** Character memory (CONTEXT.md): what a Story character knows about the learner. */
+export const characterMemory = sqliteTable(
+  "character_memory",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    storyId: integer("story_id")
+      .notNull()
+      .references(() => story.id, { onDelete: "cascade" }),
+    character: text("character").notNull(),
+    lines: text("lines", { mode: "json" }).$type<string[]>().notNull(), // Italian
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => [uniqueIndex("character_memory_uq").on(t.storyId, t.character)],
 );
 
 /**

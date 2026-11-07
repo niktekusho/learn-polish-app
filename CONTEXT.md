@@ -260,10 +260,12 @@ done yet does not break it: it ends yesterday until the day is over. Shown in th
 _giorni di fila_.
 
 **Recap**:
-Today's progress, derived from the review log and never stored: new lemmas, lemmas whose
-stability grew, lemmas that became **Mature** (each with the track that moved it), and the
-**Streak**. Shown in the UI as _Riepilogo di oggi_, or _Giornata completa_ once the whole
-daily routine is done.
+Today's progress, derived from the review log and the day's activity and never stored: new
+lemmas, lemmas whose stability grew, lemmas that became **Mature** (each with the track that
+moved it), the **Streak**, and the **Conversation** that counted for the day with its
+**Heard line** count. Shown
+in the UI as _Riepilogo di oggi_, or _Giornata completa_ once the whole daily routine is
+done.
 _Avoid_: summary, report
 
 **Proofread**:
@@ -281,7 +283,9 @@ A spoken role-play with an LLM character from the current **Story**, set right a
 last **Episode** read and played toward a **Goal**. Open: the character follows wherever the learner takes it. Not an **Exercise**:
 the learner steers it, though the character is nudged to make due **Productive** lemmas
 the natural answer. Counts for the daily once the learner reaches the **Debrief** having
-spoken at least 3 turns, whether or not the **Goal** was met. Shown in the UI as
+spoken at least 3 turns, whether or not the **Goal** was met; a shorter one leaves the
+Conversation as the day's item until the next day. One left mid-scene stays current, even
+after a newer **Episode** is read, until its **Debrief**. Shown in the UI as
 _Conversazione_. Its scene is its setting, one Italian line on where and when, and
 scene preparation is the call that writes its setting, **Goal** and opening: "scene"
 never names the Conversation itself.
@@ -307,7 +311,8 @@ _Il tuo profilo_.
 
 **Character memory**:
 What a **Story** character knows about the learner from past **Conversations** in that
-story: a few lines updated after each **Debrief**. Story-scoped: what carries across
+story: a few lines the **Debrief** call rewrites. Free text with nothing deterministic to
+check it against, so it is kept short (at most 5 lines) and only steers the character. Story-scoped: what carries across
 stories belongs in the **Learner profile**.
 
 **Help ladder**:
@@ -336,7 +341,8 @@ _Avoid_: review (that is an FSRS review), feedback, report
 
 **Heard line**:
 A character line in a **Conversation** the learner followed by ear, without revealing its
-text. Counted as listening progress, never graded.
+text. Counted as listening progress, never graded. Shown in the UI as _battuta seguita a
+orecchio_.
 
 **Echo**:
 A lemma the character used in its last line or two, repeated by the learner. Never graded:

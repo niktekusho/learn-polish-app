@@ -117,22 +117,32 @@ function Home() {
                 ))}
               </div>
             </Step>
-            <Step
-              to="/story"
-              name="Episodio"
-              done={recap.episodeDone}
-              next={recap.practiceDone && !recap.episodeDone}
-              go="Leggi"
-              sub={
-                !recap.episodeDone &&
-                episode && (
-                  <>
-                    <i className="font-serif">{episode.title}</i> · {episode.number} di{" "}
-                    {episode.total}
-                  </>
-                )
-              }
-            />
+            {recap.item === "conversation" ? (
+              <Step
+                to="/conversation"
+                name="Conversazione"
+                done={recap.itemDone}
+                next={recap.practiceDone && !recap.itemDone}
+                go="Parla"
+              />
+            ) : (
+              <Step
+                to="/story"
+                name="Episodio"
+                done={recap.itemDone}
+                next={recap.practiceDone && !recap.itemDone}
+                go="Leggi"
+                sub={
+                  !recap.itemDone &&
+                  episode && (
+                    <>
+                      <i className="font-serif">{episode.title}</i> · {episode.number} di{" "}
+                      {episode.total}
+                    </>
+                  )
+                }
+              />
+            )}
           </ul>
           {recap.complete && (
             <Link
@@ -218,7 +228,7 @@ function Step({
   sub,
   children,
 }: {
-  to: "/practice" | "/story";
+  to: "/practice" | "/story" | "/conversation";
   name: string;
   done: boolean;
   next: boolean;

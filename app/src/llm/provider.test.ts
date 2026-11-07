@@ -295,6 +295,7 @@ describe("parseSceneJson", () => {
     characters: ["Ala – una ragazza", "Pan Jan – il vicino"],
     profile: { name: "Marco", job: "", city: "", partner: "", hobbies: "" },
     dueLemmas: [],
+    memory: [[], []],
     voices: [
       { id: "gosia", label: "Voce femminile" },
       { id: "bass", label: "Voce maschile" },
@@ -347,20 +348,32 @@ describe("parseDebriefJson", () => {
     corrected: "dwie bułki",
     italian: `Con i nomi femminili il due è «dwie» (${n}).`,
   });
-  const reply = (corrections: unknown[]) => JSON.stringify({ corrections });
+  const reply = (corrections: unknown[], memory: string[] = []) =>
+    JSON.stringify({ corrections, memory });
 
   test("keeps the corrections in the model's order, recurring patterns first", () => {
     const kawa = { said: "Jeden kawa,", corrected: "jedną kawę", italian: "Accusativo." };
-    expect(parseDebriefJson(reply([correction(1), kawa]), said)).toEqual([correction(1), kawa]);
+    expect(parseDebriefJson(reply([correction(1), kawa]), said).corrections).toEqual([
+      correction(1),
+      kawa,
+    ]);
   });
 
   test("drops a correction of words the learner never said", () => {
     const invented = { said: "trzy bułki", corrected: "trzy bułki", italian: "x" };
-    expect(parseDebriefJson(reply([invented, correction(1)]), said)).toEqual([correction(1)]);
+    expect(parseDebriefJson(reply([invented, correction(1)]), said).corrections).toEqual([
+      correction(1),
+    ]);
   });
 
-  test("rejects a reply without a corrections list", () => {
+  test("keeps at most 5 Character memory lines, in the model's order", () => {
+    const memory = Array.from({ length: 7 }, (_, i) => `Ricordo ${i + 1}.`);
+    expect(parseDebriefJson(reply([], memory), said).memory).toEqual(memory.slice(0, 5));
+  });
+
+  test("rejects a reply without a corrections list or a memory list", () => {
     expect(() => parseDebriefJson("Ottimo lavoro!", said)).toThrow(/debrief/);
     expect(() => parseDebriefJson(JSON.stringify({ items: [] }), said)).toThrow();
+    expect(() => parseDebriefJson(JSON.stringify({ corrections: [] }), said)).toThrow();
   });
 });

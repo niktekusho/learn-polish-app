@@ -1,4 +1,3 @@
-import type { DebriefCorrection } from "#/db/schema";
 import { spawn } from "node:child_process";
 import {
   buildComprehensionPrompt,
@@ -19,6 +18,7 @@ import {
   type ComprehensionRequest,
   type ComprehensionResult,
   type DebriefRequest,
+  type DebriefResult,
   type EpisodeRequest,
   type GlossProvider,
   type GlossRequest,
@@ -296,7 +296,7 @@ export abstract class CliProvider implements GlossProvider, StoryProvider, Scene
     return this.run("scene", "story", buildScenePrompt(req), (out) => parseSceneJson(out, req));
   }
 
-  debrief(req: DebriefRequest, conversationId: number): Promise<DebriefCorrection[]> {
+  debrief(req: DebriefRequest, conversationId: number): Promise<DebriefResult> {
     const said = req.transcript.flatMap((l) => (l.speaker === "learner" ? [l.text] : []));
     return this.run(
       "debrief",

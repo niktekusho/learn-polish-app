@@ -23,6 +23,7 @@ export interface TurnResult {
 
 export interface SendOptions {
   lastTurn?: boolean; // the hard stop: the character replies, then closes the scene
+  attempt?: number; // which try at this learner turn, from 1, for the call log
 }
 
 /**

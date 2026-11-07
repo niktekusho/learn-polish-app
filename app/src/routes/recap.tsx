@@ -16,6 +16,11 @@ export const Route = createFileRoute("/recap")({
   loader: () => getRecapFn(),
 });
 
+const ITEM = {
+  episode: { to: "/story", go: "Leggi l'episodio", missing: "l'episodio" },
+  conversation: { to: "/conversation", go: "Inizia la conversazione", missing: "la conversazione" },
+} as const;
+
 const REVEAL = "animate-rise motion-reduce:animate-none [animation-delay:calc(var(--i)*90ms)]";
 const order = (i: number) => ({ "--i": i }) as React.CSSProperties;
 
@@ -31,14 +36,15 @@ function RecapPage() {
     r.matured.examples.length > 0
       ? [plural(r.matured.count, "Consolidata oggi", "Consolidate oggi"), r.matured.examples]
       : ["Più solide oggi", r.stronger.examples];
-  const missing = [!r.practiceDone && "la pratica", !r.episodeDone && "l'episodio"].filter(Boolean);
+  const item = ITEM[r.item];
+  const missing = [!r.practiceDone && "la pratica", !r.itemDone && item.missing].filter(Boolean);
   const action = r.complete ? (
     <Link to="/" className={BTN_QUIET}>
       Torna alla Home
     </Link>
   ) : (
-    <Link to={r.practiceDone ? "/story" : "/practice"} className={BTN_PRIMARY}>
-      {r.practiceDone ? "Leggi l'episodio" : "Inizia la pratica"}
+    <Link to={r.practiceDone ? item.to : "/practice"} className={BTN_PRIMARY}>
+      {r.practiceDone ? item.go : "Inizia la pratica"}
     </Link>
   );
 
@@ -100,6 +106,13 @@ function RecapPage() {
                 icon={<Flame size={18} className="text-productive" />}
               />
             </div>
+            {r.conversation && (
+              <p className="font-serif text-[16px] text-ink-2">
+                Conversazione fatta, con {r.conversation.heardLines}{" "}
+                {plural(r.conversation.heardLines, "battuta seguita", "battute seguite")} a
+                orecchio.
+              </p>
+            )}
             <div className="hidden justify-items-start sm:grid">{action}</div>
           </div>
         </div>

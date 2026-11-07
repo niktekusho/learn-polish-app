@@ -4,8 +4,10 @@ import {
   countDistinct,
   desc,
   eq,
+  gt,
   gte,
   inArray,
+  isNotNull,
   lt,
   min,
   ne,
@@ -14,13 +16,25 @@ import {
 import { alias } from "drizzle-orm/sqlite-core";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
-import { dailyActivity, gloss, lemma, reviewLog, token } from "#/db/schema";
+import {
+  conversation,
+  dailyActivity,
+  gloss,
+  lemma,
+  reviewLog,
+  sourceText,
+  story,
+  token,
+} from "#/db/schema";
+import { heardLineCount } from "#/conversation/heard-lines";
 import { MATURE_DAYS, type Track, startOfDay } from "#/fsrs/index";
 import { NAME_POS } from "#/reader/name";
 import { plural } from "#/plural";
 
 type DB = BetterSQLite3Database<typeof schema>;
-export type ActivityKind = "practice" | "episode";
+/** The daily routine is Practice plus one item: Episodes and Conversations alternate by day. */
+export type RoutineItem = "episode" | "conversation";
+export type ActivityKind = "practice" | RoutineItem;
 
 const EXAMPLES = 3;
 
@@ -37,8 +51,10 @@ export interface Recap {
   matured: { count: number; examples: RecapWord[] };
   streak: number;
   practiceDone: boolean;
-  episodeDone: boolean;
-  complete: boolean; // giornata completa: both items done
+  item: RoutineItem; // the day's item after Practice
+  itemDone: boolean;
+  complete: boolean; // giornata completa: Practice and the day's item done
+  conversation: { heardLines: number } | null; // the last Conversation debriefed today
 }
 
 /** Local calendar day as YYYY-MM-DD. */
@@ -65,7 +81,51 @@ export function recordActivity(
 ): { inserted: boolean; complete: boolean } {
   const day = localDay(now);
   const inserted = db.insert(dailyActivity).values({ day, kind }).onConflictDoNothing().run();
-  return { inserted: inserted.changes > 0, complete: kindsDone(db, day).size === 2 };
+  const done = kindsDone(db, day);
+  return { inserted: inserted.changes > 0, complete: isComplete(done, dayItem(db, done, now)) };
+}
+
+const isComplete = (done: Set<ActivityKind>, item: RoutineItem) =>
+  done.has("practice") && done.has(item);
+
+/**
+ * The day's item: the one done today, else the current Conversation until it is debriefed.
+ * A Debrief too short to count keeps the Conversation as the day's item until tomorrow.
+ */
+function dayItem(db: DB, done: Set<ActivityKind>, now: Date): RoutineItem {
+  if (done.has("episode")) return "episode";
+  if (done.has("conversation")) return "conversation";
+  const episodeId = conversationEpisode(db);
+  if (episodeId === null) return "episode";
+  const c = db
+    .select({ status: conversation.status, updatedAt: conversation.updatedAt })
+    .from(conversation)
+    .where(eq(conversation.episodeId, episodeId))
+    .get();
+  if (c?.status !== "debriefed") return "conversation";
+  return c.updatedAt >= startOfDay(now) ? "conversation" : "episode";
+}
+
+/**
+ * The Episode whose Conversation is current: a started, open Conversation, so reading a newer
+ * Episode never abandons one, else the last Episode read in a Story not abandoned.
+ */
+export function conversationEpisode(db: DB): number | null {
+  const started = db
+    .select({ episodeId: conversation.episodeId })
+    .from(conversation)
+    .where(and(eq(conversation.status, "open"), gt(conversation.turnCount, 0)))
+    .orderBy(desc(conversation.updatedAt), desc(conversation.id))
+    .get();
+  if (started) return started.episodeId;
+  const read = db
+    .select({ id: sourceText.id })
+    .from(sourceText)
+    .innerJoin(story, eq(story.id, sourceText.storyId))
+    .where(and(isNotNull(sourceText.readAt), ne(story.status, "abandoned")))
+    .orderBy(desc(sourceText.readAt), desc(sourceText.id))
+    .get();
+  return read?.id ?? null;
 }
 
 function kindsDone(db: DB, day: string): Set<ActivityKind> {
@@ -172,14 +232,37 @@ function lemmaGlosses(db: DB, lemmaIds: number[]): Map<number, string> {
 /** The daily recap for `now`'s local day. Derived, nothing stored. */
 export function getRecap(db: DB, now = new Date()): Recap {
   const done = kindsDone(db, localDay(now));
+  const item = dayItem(db, done, now);
   const from = startOfDay(now);
   return {
     ...summarize(db, from, addDays(from, 1)),
     streak: streak(db, now),
     practiceDone: done.has("practice"),
-    episodeDone: done.has("episode"),
-    complete: done.size === 2,
+    item,
+    itemDone: done.has(item),
+    complete: isComplete(done, item),
+    conversation: done.has("conversation")
+      ? debriefedConversation(db, from, addDays(from, 1))
+      : null,
   };
+}
+
+/** The last Conversation debriefed in [from, to), with its Heard line count. */
+function debriefedConversation(db: DB, from: Date, to: Date): Recap["conversation"] {
+  // A debriefed Conversation is never written again, so updatedAt is its Debrief time.
+  const c = db
+    .select({ id: conversation.id })
+    .from(conversation)
+    .where(
+      and(
+        eq(conversation.status, "debriefed"),
+        gte(conversation.updatedAt, from),
+        lt(conversation.updatedAt, to),
+      ),
+    )
+    .orderBy(desc(conversation.updatedAt))
+    .get();
+  return c ? { heardLines: heardLineCount(db, c.id) } : null;
 }
 
 /** One-line note at the end of a Practice session: its lemmas' reviews since it started. */

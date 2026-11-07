@@ -1,7 +1,8 @@
-import { and, asc, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import {
+  characterMemory,
   characterVoice,
   conversation,
   conversationTurn,
@@ -11,7 +12,6 @@ import {
   knowledge,
   lemma,
   sourceText,
-  story,
 } from "#/db/schema";
 import { dictionaryWords } from "#/dictionary/service";
 import { dueLemmas } from "#/fsrs/index";
@@ -19,21 +19,31 @@ import { gradeTurn, metLemmas, type TurnEvidence } from "./grading";
 import { tokenLemma, upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse, Voice } from "#/import/sidecar";
 import { buildCharacterBrief } from "#/llm/conversation-brief";
-import type { ConversationSession, SessionSeed, TranscriptLine } from "#/llm/conversation-session";
+import type {
+  ConversationSession,
+  SessionSeed,
+  TranscriptLine,
+  TurnResult,
+} from "#/llm/conversation-session";
 import { MAX_CORRECTIONS, type SceneProvider, type SceneRequest } from "#/llm/provider";
 import { getLearnerProfile, type LearnerProfile } from "#/profile/service";
 import { knowledgeFlags } from "#/reader/knowledge";
+import { conversationEpisode, recordActivity } from "#/recap/service";
+import { heardLineCount } from "./heard-lines";
 import type { PanelToken } from "#/reader/types";
 import { storyCharacters } from "#/story/character-names";
 
 type DB = BetterSQLite3Database<typeof schema>;
 type ConversationRow = typeof conversation.$inferSelect;
+type TurnRow = typeof conversationTurn.$inferSelect;
 
 // Due Productive lemmas the scene is nudged toward: a few, so the Goal stays natural.
 const DUE_LEMMAS = 5;
 // A scene this long gets the Debrief button highlighted; at LAST_TURN the character closes it.
 const NUDGE_TURN = 15;
 const LAST_TURN = 25;
+// Learner turns a debriefed Conversation needs to count for the daily routine.
+const DAILY_TURNS = 3;
 
 export interface ConversationDeps {
   provider: SceneProvider;
@@ -121,6 +131,18 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     return new Map(rows.map((r) => [r.character, r.voice]));
   }
 
+  /** Character memory lines per character name, for the Story's characters that have any. */
+  function memoriesOf(storyId: number): Map<string, string[]> {
+    const rows = db
+      .select()
+      .from(characterMemory)
+      .where(eq(characterMemory.storyId, storyId))
+      .all();
+    return new Map(rows.map((r) => [r.character, r.lines]));
+  }
+
+  const memoryOf = (c: ConversationRow) => memoriesOf(c.storyId).get(c.character) ?? [];
+
   /** One scene call for `episodeId`, and the row values it gives. */
   async function askScene(episodeId: number, profile: LearnerProfile) {
     const episode = db.select().from(sourceText).where(eq(sourceText.id, episodeId)).get();
@@ -129,12 +151,14 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     const characters = storyCharacters(db, storyId);
     // A Story gets its voices on its first Conversation and keeps them.
     const voices = voicesOf(storyId).size === 0 ? await deps.voices() : null;
+    const memories = memoriesOf(storyId);
     const req: SceneRequest = {
       episode: episode.content,
       characters: characters.map((c) => c.description),
       profile,
       dueLemmas: dueLemmas(db, "productive", { now: now(), limit: DUE_LEMMAS }).map((l) => l.lemma),
       voices: voices && voices.map(({ id, label }) => ({ id, label })),
+      memory: characters.map((c) => memories.get(c.name) ?? []),
     };
     const scene = await deps.provider.scene(req);
     const character = characters[scene.character];
@@ -181,18 +205,6 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     return job;
   }
 
-  /** The last Episode read in a Story still going or finished, not one abandoned. */
-  function lastReadEpisode(): number | null {
-    const row = db
-      .select({ id: sourceText.id })
-      .from(sourceText)
-      .innerJoin(story, eq(story.id, sourceText.storyId))
-      .where(and(isNotNull(sourceText.readAt), ne(story.status, "abandoned")))
-      .orderBy(desc(sourceText.readAt), desc(sourceText.id))
-      .get();
-    return row?.id ?? null;
-  }
-
   function ending(c: ConversationRow): Ending {
     return {
       highlightDebrief: c.turnCount >= NUDGE_TURN || c.steps.every((s) => s.tickedTurn !== null),
@@ -233,12 +245,12 @@ export function conversationService(db: DB, deps: ConversationDeps) {
   }
 
   /**
-   * The Conversation after the last Episode read. Missing (the background preparation
+   * The current Conversation (see `conversationEpisode`). Missing (the background preparation
    * failed or is still running): wait for it or prepare it now.
    */
   async function current(): Promise<CurrentConversation> {
     if (!getLearnerProfile(db)) return { needsProfile: true };
-    const episodeId = lastReadEpisode();
+    const episodeId = conversationEpisode(db);
     if (episodeId === null) return { needsProfile: false, conversation: null };
     await running.get(episodeId)?.catch(() => {});
     await prepareScene(episodeId);
@@ -300,7 +312,7 @@ export function conversationService(db: DB, deps: ConversationDeps) {
         steps: c.steps.map(({ id, text }) => ({ id, text })),
         roleFacts: c.roleFacts,
         profile: profile(),
-        memory: [],
+        memory: memoryOf(c),
         dueLemmas: c.dueLemmas,
       }),
       stepIds: c.steps.map((s) => s.id),
@@ -340,6 +352,32 @@ export function conversationService(db: DB, deps: ConversationDeps) {
   }
 
   /**
+   * Send turn `t` to the character. The first failure at a turn is retried at once, so a hiccup
+   * is invisible; after that each call is one attempt, as the learner presses Riprova.
+   */
+  async function ask(t: TurnRow): Promise<TurnResult> {
+    const tries = t.attempts === 0 ? 2 : 1;
+    for (let i = 1; ; i++) {
+      const attempt = t.attempts + i;
+      db.update(conversationTurn)
+        .set({ attempts: attempt })
+        .where(eq(conversationTurn.id, t.id))
+        .run();
+      try {
+        return await sessionOf(get(t.conversationId)).send(t.learnerText, {
+          lastTurn: t.turn === LAST_TURN,
+          attempt,
+        });
+      } catch (err) {
+        // The next attempt gets a freshly spawned session, reseeded from the stored transcript.
+        sessions.get(t.conversationId)?.close();
+        sessions.delete(t.conversationId);
+        if (i === tries || get(t.conversationId).status !== "open") throw err;
+      }
+    }
+  }
+
+  /**
    * Ask the session to answer the learner's last turn, and grade the turn if the character
    * understood it. A failed reply grades nothing and can be asked again.
    */
@@ -348,17 +386,13 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     if (c.status !== "open") throw new Error("the Conversation is debriefed");
     const t = turnsOf(id).at(-1);
     if (!t || t.line !== null) throw new Error("no turn is waiting for a reply");
-    db.update(conversationTurn)
-      .set({ attempts: t.attempts + 1 })
-      .where(eq(conversationTurn.id, t.id))
-      .run();
     // Analysis runs alongside the session, so grading adds no wait. A failed analysis grades
     // nothing: failing the reply would make the retry send the turn to the character again.
     const evidence = evidenceOf(c, t.learnerText).catch((e: unknown) => {
       console.error(`conversation ${id} turn ${t.turn} not graded:`, e);
       return null;
     });
-    const result = await sessionOf(c).send(t.learnerText, { lastTurn: t.turn === LAST_TURN });
+    const result = await ask(t);
     const analyzed = await evidence;
     // A Debrief tapped while the reply was on its way ended the scene at this turn.
     if (get(id).status !== "open") throw new Error("the Conversation is debriefed");
@@ -400,17 +434,38 @@ export function conversationService(db: DB, deps: ConversationDeps) {
   async function debrief(id: number): Promise<ConversationView> {
     const c = get(id);
     if (c.status === "debriefed") return view(c);
-    const corrections =
+    const memory = memoryOf(c);
+    const result =
       c.turnCount === 0
-        ? []
-        : (await deps.provider.debrief({ transcript: transcriptOf(c) }, id)).slice(
-            0,
-            MAX_CORRECTIONS,
+        ? { corrections: [], memory: [] }
+        : await deps.provider.debrief(
+            { transcript: transcriptOf(c), character: c.characterLine, memory },
+            id,
           );
-    db.update(conversation)
-      .set({ status: "debriefed", corrections, updatedAt: now() })
-      .where(eq(conversation.id, id))
-      .run();
+    db.transaction((tx) => {
+      tx.update(conversation)
+        .set({
+          status: "debriefed",
+          corrections: result.corrections.slice(0, MAX_CORRECTIONS),
+          updatedAt: now(),
+        })
+        .where(eq(conversation.id, id))
+        .run();
+      if (c.turnCount === 0) return;
+      tx.insert(characterMemory)
+        .values({
+          storyId: c.storyId,
+          character: c.character,
+          lines: result.memory,
+          updatedAt: now(),
+        })
+        .onConflictDoUpdate({
+          target: [characterMemory.storyId, characterMemory.character],
+          set: { lines: result.memory, updatedAt: now() },
+        })
+        .run();
+    });
+    if (c.turnCount >= DAILY_TURNS) recordActivity(db, "conversation", now());
     sessions.get(id)?.close();
     sessions.delete(id);
     return view(get(id));
@@ -451,13 +506,6 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     if (!t || t.line === null) throw new Error(`turn ${turn} has no character line`);
     if (!higher(t.help)) return;
     db.update(conversationTurn).set({ help: level }).where(eq(conversationTurn.id, t.id)).run();
-  }
-
-  /** Character lines the learner followed by ear, without revealing them (CONTEXT.md "Heard line"). */
-  function heardLines(id: number): number {
-    const c = get(id);
-    const lines = turnsOf(id).filter((t) => t.line !== null && !t.lineRevealed).length;
-    return lines + (c.openingRevealed ? 0 : 1);
   }
 
   /**
@@ -512,7 +560,7 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     debrief,
     reveal,
     revealHelp,
-    heardLines,
+    heardLines: (id: number) => heardLineCount(db, id),
     words,
   };
 }

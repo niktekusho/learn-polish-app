@@ -141,12 +141,12 @@ test("activity is recorded once per day and kind; both kinds make a complete day
   expect(db.select().from(schema.dailyActivity).all()).toHaveLength(1);
   expect(getRecap(db, TODAY)).toMatchObject({
     practiceDone: true,
-    episodeDone: false,
+    itemDone: false,
     complete: false,
   });
 
   expect(recordActivity(db, "episode", TODAY)).toEqual({ inserted: true, complete: true });
-  expect(getRecap(db, TODAY)).toMatchObject({ episodeDone: true, complete: true });
+  expect(getRecap(db, TODAY)).toMatchObject({ itemDone: true, complete: true });
 });
 
 function day(offset: number) {
@@ -212,4 +212,89 @@ test("the episode line does not count proper nouns as new words", () => {
     new Map(),
   );
   expect(episodeLine(db, textId)).toBe("+2 parole nuove incontrate");
+});
+
+/** A Conversation on a new Episode, with a character line on each of `revealed`'s turns. */
+function addConversation(
+  db: DB,
+  c: { status: "open" | "debriefed"; updatedAt: Date; openingRevealed: boolean },
+  revealed: boolean[],
+) {
+  const s =
+    db.select().from(schema.story).get() ??
+    db
+      .insert(schema.story)
+      .values({
+        title: "Kot",
+        genre: "giallo",
+        hook: "h",
+        outline: { plot: "p", characters: ["Ala, una ragazza"], beats: ["a"] },
+        plannedEpisodes: 3,
+        status: "active",
+      })
+      .returning()
+      .get();
+  const episodeNumber = db.select().from(schema.sourceText).all().length + 1;
+  const [e] = db
+    .insert(schema.sourceText)
+    .values({ content: "Odcinek.", storyId: s.id, episodeNumber, readAt: c.updatedAt })
+    .returning()
+    .all();
+  const [row] = db
+    .insert(schema.conversation)
+    .values({
+      storyId: s.id,
+      episodeId: e.id,
+      character: "Ala",
+      characterLine: "Ala, una ragazza",
+      scene: "In panetteria, la mattina.",
+      steps: [],
+      opening: {
+        line: "Dzień dobry!",
+        italian: "Buongiorno!",
+        hint: [],
+        modelLine: "Dzień dobry.",
+      },
+      dueLemmas: [],
+      turnCount: revealed.length,
+      corrections: c.status === "debriefed" ? [] : null,
+      ...c,
+    })
+    .returning()
+    .all();
+  for (const [i, lineRevealed] of revealed.entries()) {
+    db.insert(schema.conversationTurn)
+      .values({
+        conversationId: row.id,
+        turn: i + 1,
+        learnerText: "Poproszę chleb.",
+        line: "Proszę.",
+        lineRevealed,
+      })
+      .run();
+  }
+}
+
+test("a Conversation debriefed today shows in the recap with its Heard line count", () => {
+  const db = freshDb();
+  addConversation(db, { status: "debriefed", updatedAt: TODAY, openingRevealed: false }, [
+    false,
+    true,
+    false,
+  ]);
+  recordActivity(db, "conversation", TODAY);
+
+  expect(getRecap(db, TODAY).conversation).toEqual({ heardLines: 3 });
+});
+
+test("a day without a counted, debriefed Conversation has no Conversation in the recap", () => {
+  const db = freshDb();
+  expect(getRecap(db, TODAY).conversation).toBeNull();
+
+  addConversation(db, { status: "debriefed", updatedAt: YESTERDAY, openingRevealed: false }, []);
+  addConversation(db, { status: "open", updatedAt: TODAY, openingRevealed: false }, [false]);
+  expect(getRecap(db, TODAY).conversation).toBeNull();
+
+  addConversation(db, { status: "debriefed", updatedAt: TODAY, openingRevealed: false }, [false]);
+  expect(getRecap(db, TODAY).conversation).toBeNull();
 });

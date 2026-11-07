@@ -666,6 +666,7 @@ export interface SceneRequest {
   profile: Record<"name" | "job" | "city" | "partner" | "hobbies", string>;
   dueLemmas: string[];
   voices: { id: string; label: string }[] | null; // set when the Story has no voices yet
+  memory: string[][]; // each character's Character memory lines, in `characters` order
 }
 
 export interface SceneResult {
@@ -712,10 +713,13 @@ export function buildScenePrompt(req: SceneRequest): string {
     '"opening":{"line":"...","italian":"...","hint":["..."],"modelLine":"..."},"voices":null}\n\n' +
     `Profilo dello studente: si chiama ${p.name}, lavoro: ${p.job}, vive a ${p.city}, ` +
     `partner: ${p.partner}, hobby: ${p.hobbies}.\n` +
-    `Personaggi:\n${req.characters.map((c, i) => `${i}. ${c}`).join("\n")}\n\n` +
+    `Personaggi:\n${req.characters.map((c, i) => `${i}. ${c}${memoryLine(req.memory[i])}`).join("\n")}\n\n` +
     `Episodio:\n${req.episode}`
   );
 }
+
+const memoryLine = (lines: string[] = []) =>
+  lines.length > 0 ? `\n   Ricordi sullo studente: ${lines.join(" ")}` : "";
 
 const sceneResponse = z.object({
   character: z.number().int().min(0),
@@ -749,9 +753,18 @@ export function parseSceneJson(stdout: string, req: SceneRequest): SceneResult {
 // against what they said, so the Debrief never corrects a sentence nobody spoke.
 
 export const MAX_CORRECTIONS = 10;
+export const MAX_MEMORY_LINES = 5;
 
 export interface DebriefRequest {
   transcript: TranscriptLine[]; // the opening, then each learner turn and its reply
+  character: string; // the outline line of the character the learner spoke with
+  memory: string[]; // that character's Character memory before this Conversation
+}
+
+/** The Debrief call also rewrites the character's memory, so memory costs no extra call. */
+export interface DebriefResult {
+  corrections: DebriefCorrection[];
+  memory: string[];
 }
 
 export function buildDebriefPrompt(req: DebriefRequest): string {
@@ -767,8 +780,13 @@ export function buildDebriefPrompt(req: DebriefRequest): string {
     "said, le parole sbagliate copiate esattamente da una battuta dello studente; " +
     "corrected, la forma corretta; italian, una sola riga in italiano che spiega la regola. " +
     "Nessun errore: corrections vuoto. Correggi solo lo studente, mai il personaggio. " +
+    `memory: al massimo ${MAX_MEMORY_LINES} righe brevi in italiano su ciò che il personaggio ` +
+    "sa ora dello studente, dai ricordi qui sotto aggiornati con questa conversazione: fatti " +
+    "personali e cose successe tra loro, non errori di polacco. " +
     "Rispondi SOLO con JSON valido, senza testo attorno, nel formato: " +
-    '{"corrections":[{"said":"...","corrected":"...","italian":"..."}]}\n\n' +
+    '{"corrections":[{"said":"...","corrected":"...","italian":"..."}],"memory":["..."]}\n\n' +
+    `Personaggio: ${req.character}\n` +
+    `Ricordi del personaggio sullo studente:\n${req.memory.map((m) => `- ${m}`).join("\n") || "(nessuno)"}\n\n` +
     `Conversazione:\n${lines.join("\n")}`
   );
 }
@@ -787,14 +805,19 @@ const normalized = (text: string) =>
     .replace(/\s+/g, " ")
     .trim();
 
-export function parseDebriefJson(stdout: string, learnerLines: string[]): DebriefCorrection[] {
-  const { corrections } = parseJsonOutput(
+export function parseDebriefJson(stdout: string, learnerLines: string[]): DebriefResult {
+  const { corrections, memory } = parseJsonOutput(
     stdout,
     "debrief",
-    z.object({ corrections: z.array(correction) }),
+    z.object({ corrections: z.array(correction), memory: z.array(z.string().trim().min(1)) }),
   );
   const spoken = learnerLines.map((l) => ` ${normalized(l)} `);
-  return corrections.filter((c) => spoken.some((l) => l.includes(` ${normalized(c.said)} `)));
+  return {
+    corrections: corrections.filter((c) =>
+      spoken.some((l) => l.includes(` ${normalized(c.said)} `)),
+    ),
+    memory: memory.slice(0, MAX_MEMORY_LINES),
+  };
 }
 
 /** Optional capabilities: providers without them fail any generated Polish text. */
@@ -832,5 +855,5 @@ export interface StoryProvider extends Proofreader {
 
 export interface SceneProvider {
   scene(req: SceneRequest): Promise<SceneResult>;
-  debrief(req: DebriefRequest, conversationId: number): Promise<DebriefCorrection[]>;
+  debrief(req: DebriefRequest, conversationId: number): Promise<DebriefResult>;
 }

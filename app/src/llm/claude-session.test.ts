@@ -270,16 +270,19 @@ test("warming a session that already runs a process spawns nothing", () => {
   expect(procs).toHaveLength(1);
 });
 
-test("each turn is logged with the learner turn it answers and its attempt", async () => {
+test("each turn is logged with the learner turn it answers and the attempt it was sent as", async () => {
+  const opened = { ...seed, transcript: [{ speaker: "character" as const, text: "Dzień dobry!" }] };
   const s = session();
-  s.warm({ ...seed, transcript: [{ speaker: "character", text: "Dzień dobry!" }] });
-  const lost = s.send("Poproszę bułkę.");
+  s.warm(opened);
+  const lost = s.send("Poproszę bułkę.", { attempt: 1 });
   procs[0].crash();
   await expect(lost).rejects.toThrow();
-  const retry = s.send("Poproszę bułkę.");
+  const fresh = session();
+  fresh.warm(opened);
+  const retry = fresh.send("Poproszę bułkę.", { attempt: 2 });
   procs[1].emit(resultEvent());
   await retry;
-  const next = s.send("Dziękuję.");
+  const next = fresh.send("Dziękuję.");
   procs[1].emit(resultEvent());
   await next;
 

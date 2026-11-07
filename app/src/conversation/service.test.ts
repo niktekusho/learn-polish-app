@@ -1,9 +1,15 @@
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
-import { expect, test } from "vitest";
+import { eq } from "drizzle-orm";
+import { expect, test, vi } from "vitest";
 import * as schema from "#/db/schema";
-import type { ConversationSession, SessionSeed, TurnResult } from "#/llm/conversation-session";
+import type {
+  ConversationSession,
+  SendOptions,
+  SessionSeed,
+  TurnResult,
+} from "#/llm/conversation-session";
 import type { DebriefRequest, SceneRequest, SceneResult } from "#/llm/provider";
 import { ScriptedSession } from "#/llm/scripted-session";
 import { saveLearnerProfile } from "#/profile/service";
@@ -11,6 +17,8 @@ import { upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import { gradeLemma, type Track } from "#/fsrs/index";
 import { insertEntryBatch } from "#/dictionary/loader";
+import { recordCall } from "#/llm/call-log";
+import { ClaudeCliProvider } from "#/llm/claude-cli";
 import { conversationService } from "./service";
 
 const NOW = new Date("2026-11-07T10:00:00");
@@ -54,7 +62,8 @@ function sceneReply(n: number, req: SceneRequest): SceneResult {
 
 /**
  * Answers each scene call in turn; an Error in `fails` fails that call instead. A Debrief
- * corrects each learner line, so its corrections follow the transcript it was sent.
+ * corrects each learner line, so its corrections follow the transcript it was sent, and adds
+ * one numbered Character memory line to the lines it was sent.
  */
 function fakeProvider(fails: (Error | null)[] = []) {
   return {
@@ -70,9 +79,12 @@ function fakeProvider(fails: (Error | null)[] = []) {
       this.debriefs.push({ req, conversationId });
       const fail = fails.shift();
       if (fail) throw fail;
-      return req.transcript
-        .filter((l) => l.speaker === "learner")
-        .map((l, i) => ({ said: l.text, corrected: `${l.text}!`, italian: `Regola ${i + 1}.` }));
+      return {
+        corrections: req.transcript
+          .filter((l) => l.speaker === "learner")
+          .map((l, i) => ({ said: l.text, corrected: `${l.text}!`, italian: `Regola ${i + 1}.` })),
+        memory: [`Ricordo ${this.debriefs.length}`, ...req.memory],
+      };
     },
   };
 }
@@ -133,6 +145,7 @@ class QueuedSession implements ConversationSession {
   warmed: SessionSeed[] = [];
   sent: string[] = [];
   lastTurns: boolean[] = []; // per send, whether the character was told to close the scene
+  attempts: number[] = [];
   constructor(private readonly replies: (Partial<TurnResult> | Error)[]) {}
   async start(): Promise<TurnResult> {
     throw new Error("the service never starts a session");
@@ -140,9 +153,10 @@ class QueuedSession implements ConversationSession {
   warm(seed: SessionSeed) {
     this.warmed.push(seed);
   }
-  async send(learnerTurn: string, options?: { lastTurn?: boolean }): Promise<TurnResult> {
+  async send(learnerTurn: string, options?: SendOptions): Promise<TurnResult> {
     this.sent.push(learnerTurn);
     this.lastTurns.push(options?.lastTurn ?? false);
+    this.attempts.push(options?.attempt ?? 0);
     const next = this.replies.shift() ?? {};
     if (next instanceof Error) throw next;
     return {
@@ -347,15 +361,89 @@ test("a step keeps the turn that first ticked it", async () => {
 });
 
 test("a failed reply keeps the learner turn, and asking again answers it", async () => {
-  const { db, svc, id } = await opened([new Error("timed out")]);
+  const { db, svc, id } = await opened([new Error("timed out"), new Error("timed out")]);
   svc.addTurn(id, "Dzień dobry.");
   await expect(svc.reply(id)).rejects.toThrow("timed out");
   expect(() => svc.addTurn(id, "Halo?")).toThrow(/waiting/);
 
   expect(await svc.reply(id)).toMatchObject({ turn: 1, line: "Tak." });
   expect(db.select().from(schema.conversationTurn).all()).toMatchObject([
-    { turn: 1, learnerText: "Dzień dobry.", line: "Tak.", attempts: 2 },
+    { turn: 1, learnerText: "Dzień dobry.", line: "Tak.", attempts: 3 },
   ]);
+});
+
+/** A Conversation on the scripted stub, opened; `plan` fails the stub's next sends. */
+async function scripted(plan: Error[]) {
+  const ctx = setup({ session: () => new ScriptedSession(plan) });
+  const { conversation } = (await ctx.svc.current()) as { conversation: { id: number } };
+  ctx.svc.open(conversation.id);
+  return { ...ctx, id: conversation.id };
+}
+
+const timedOut = () => new Error("turn timed out after 30s");
+
+test("a failed reply is retried once on a fresh session reseeded with the transcript", async () => {
+  const { db, svc, id, sessions } = await scripted([timedOut()]);
+  svc.addTurn(id, "Poproszę dwie bułki.");
+  // The stub skips the lines it was seeded with, so this is the reply to the stored opening.
+  expect((await svc.reply(id)).line).toBe("Dwie bułki, proszę bardzo. Coś jeszcze?");
+  expect(sessions).toHaveLength(2);
+  expect(db.select().from(schema.conversationTurn).get()).toMatchObject({ attempts: 2 });
+});
+
+test("after the retry fails, each Riprova is one more attempt, with no cap", async () => {
+  const { db, svc, id } = await scripted(Array.from({ length: 7 }, timedOut));
+  svc.addTurn(id, "Poproszę dwie bułki.");
+  await expect(svc.reply(id)).rejects.toThrow(/timed out/);
+  const attempts = () => db.select().from(schema.conversationTurn).get()!.attempts;
+  expect(attempts()).toBe(2);
+  for (let press = 1; press <= 5; press++) {
+    await expect(svc.reply(id)).rejects.toThrow(/timed out/);
+    expect(attempts()).toBe(2 + press);
+  }
+  expect((await svc.reply(id)).line).toBe("Dwie bułki, proszę bardzo. Coś jeszcze?");
+  expect(attempts()).toBe(8);
+});
+
+test("each attempt at a turn is sent with its attempt number, for the call log", async () => {
+  const { svc, id, queued } = await opened([timedOut(), timedOut(), timedOut(), {}]);
+  svc.addTurn(id, "Dzień dobry.");
+  await expect(svc.reply(id)).rejects.toThrow();
+  await expect(svc.reply(id)).rejects.toThrow();
+  await svc.reply(id);
+  svc.addTurn(id, "Dziękuję.");
+  await svc.reply(id);
+  expect(queued.attempts).toEqual([1, 2, 3, 4, 1]);
+});
+
+test("the Debrief is reachable while the character does not answer", async () => {
+  const { svc, id, provider } = await scripted([timedOut(), timedOut()]);
+  svc.addTurn(id, "Poproszę dwie bułki.");
+  await expect(svc.reply(id)).rejects.toThrow();
+  expect((await svc.debrief(id)).status).toBe("debriefed");
+  expect(provider.debriefs[0].req.transcript.at(-1)).toEqual({
+    speaker: "learner",
+    text: "Poproszę dwie bułki.",
+  });
+});
+
+test("reopening an open Conversation on a later day continues the stored transcript in a new session", async () => {
+  const { db, svc, id } = await scripted([]);
+  svc.addTurn(id, "Poproszę dwie bułki.");
+  await svc.reply(id);
+
+  // A later day runs a new server process: nothing of the old session is left.
+  vi.resetModules();
+  const later = (await import("./service")).conversationService(db, {
+    provider: fakeProvider(),
+    voices: async () => CATALOG,
+    analyze: fakeAnalyze,
+    createSession: () => new ScriptedSession(),
+    now: () => new Date("2026-11-09T10:00:00"),
+  });
+  later.open(id);
+  later.addTurn(id, "To wszystko.");
+  expect((await later.reply(id)).line).toBe("To będzie cztery złote.");
 });
 
 test("opening the screen warms one session seeded with the brief and the transcript so far", async () => {
@@ -798,4 +886,95 @@ test("a reply that arrives after the Debrief is not stored or graded", async () 
   expect(provider.debriefs[0].req.transcript.at(-1)).toEqual({ speaker: "learner", text: "chleb" });
   expect(db.select().from(schema.conversationTurn).get()).toMatchObject({ line: null });
   expect(graded(db, "productive").knowledge).toEqual([]);
+});
+
+/** Plays one learner turn in the Conversation after `episodeId` and taps Debrief. */
+async function playAndDebrief({ db, svc }: ReturnType<typeof setup>, episodeId: number) {
+  await svc.prepareScene(episodeId);
+  const { id } = db
+    .select()
+    .from(schema.conversation)
+    .where(eq(schema.conversation.episodeId, episodeId))
+    .get()!;
+  await speakTurns(svc, id, 1);
+  await svc.debrief(id);
+}
+
+test("the Debrief updates the character's memory, and the next scene preparation receives it", async () => {
+  const ctx = setup({ episodes: 3, session: () => new QueuedSession([]) });
+  const { provider, svc, episodeIds } = ctx;
+  await svc.prepareScene(episodeIds[0]);
+  expect(provider.requests[0].memory).toEqual([[], []]);
+  await playAndDebrief(ctx, episodeIds[0]);
+  expect(provider.debriefs[0].req).toMatchObject({ character: "Pan Jan – il vicino", memory: [] });
+
+  await playAndDebrief(ctx, episodeIds[1]);
+  expect(provider.requests[1].memory).toEqual([[], ["Ricordo 1"]]);
+  expect(provider.debriefs[1].req.memory).toEqual(["Ricordo 1"]);
+
+  await svc.prepareScene(episodeIds[2]);
+  expect(provider.requests[2].memory).toEqual([[], ["Ricordo 2", "Ricordo 1"]]);
+});
+
+test("the next Conversation's session is briefed with the character's memory", async () => {
+  const ctx = setup({ episodes: 2, session: () => new QueuedSession([]) });
+  await playAndDebrief(ctx, ctx.episodeIds[0]);
+  await ctx.svc.prepareScene(ctx.episodeIds[1]);
+  const { conversation } = (await ctx.svc.current()) as { conversation: { id: number } };
+  ctx.svc.open(conversation.id);
+
+  const [first, second] = ctx.sessions as QueuedSession[];
+  expect(first.warmed[0].brief).not.toContain("Ricordo");
+  expect(second.warmed[0].brief).toContain("Ricordo 1");
+});
+
+test("a new Story starts with no Character memory, even for a character of the same name", async () => {
+  const ctx = setup({ session: () => new QueuedSession([]) });
+  await playAndDebrief(ctx, ctx.episodeIds[0]);
+  ctx.db.update(schema.story).set({ status: "finished" }).run();
+  const [nextStoryEpisode] = seedStory(ctx.db);
+  await ctx.svc.prepareScene(nextStoryEpisode);
+  expect(ctx.provider.requests[1].memory).toEqual([[], []]);
+
+  await playAndDebrief(ctx, nextStoryEpisode);
+  expect(ctx.provider.debriefs[1].req.memory).toEqual([]);
+  expect(ctx.sessions[1]).toMatchObject({
+    warmed: [{ brief: expect.not.stringContaining("Ricordo") }],
+  });
+});
+
+test("Character memory costs no LLM call: a played Conversation logs one scene call and one Debrief call", async () => {
+  const { db, episodeIds } = setup({ episodes: 2 });
+  const prompts: string[] = [];
+  const reply = (result: unknown) => ({
+    code: 0,
+    stdout: JSON.stringify({ type: "result", is_error: false, result: JSON.stringify(result) }),
+    stderr: "",
+  });
+  const provider = new ClaudeCliProvider(
+    async (prompt) => {
+      prompts.push(prompt);
+      if (prompts.length === 2) {
+        return reply({ corrections: [], memory: ["Marco ama il pane di segale."] });
+      }
+      return reply({
+        ...sceneReply(prompts.length, { characters: ["", ""], voices: CATALOG } as SceneRequest),
+        character: 1,
+      });
+    },
+    (call) => recordCall(db, "claude-cli", call),
+  );
+  const svc = conversationService(db, {
+    provider,
+    voices: async () => CATALOG,
+    analyze: fakeAnalyze,
+    createSession: () => new QueuedSession([]),
+    now: () => NOW,
+  });
+  await playAndDebrief({ db, svc } as ReturnType<typeof setup>, episodeIds[0]);
+  await svc.prepareScene(episodeIds[1]);
+
+  const calls = db.select({ call: schema.llmCall.call }).from(schema.llmCall).all();
+  expect(calls.map((c) => c.call)).toEqual(["scene", "debrief", "scene"]);
+  expect(prompts[2]).toContain("Marco ama il pane di segale.");
 });

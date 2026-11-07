@@ -183,6 +183,13 @@
       "when": 1794076759133,
       "tag": "0025_conversation_debrief",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1794078680507,
+      "tag": "0026_character_memory",
+      "breakpoints": true
     }
   ]
 }

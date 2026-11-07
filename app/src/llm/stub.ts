@@ -1,6 +1,6 @@
-import type { DebriefCorrection } from "#/db/schema";
 import type {
   DebriefRequest,
+  DebriefResult,
   ChoiceQuestion,
   ComprehensionRequest,
   ComprehensionResult,
@@ -24,6 +24,7 @@ import type {
   StoryPremise,
   StoryProvider,
 } from "./provider";
+import { MAX_MEMORY_LINES } from "./provider";
 
 // Deterministic, offline stand-in for a real LLM. Produces a unique, stable
 // string per lemma so caching, the word panel and the MCQ distractors (#9)
@@ -123,10 +124,14 @@ export class StubProvider implements GlossProvider, StoryProvider, SceneProvider
   }
 
   // Corrects the learner's first line, if any, so dev shows a Debrief with one entry.
-  async debrief(req: DebriefRequest): Promise<DebriefCorrection[]> {
+  async debrief(req: DebriefRequest): Promise<DebriefResult> {
     const first = req.transcript.find((l) => l.speaker === "learner");
-    if (!first) return [];
-    return [{ said: first.text, corrected: first.text, italian: "Correzione stub." }];
+    const memory = [...req.memory, "Ricordo stub."].slice(-MAX_MEMORY_LINES);
+    if (!first) return { corrections: [], memory };
+    return {
+      corrections: [{ said: first.text, corrected: first.text, italian: "Correzione stub." }],
+      memory,
+    };
   }
 
   async passageQuestion(req: PassageQuestionRequest): Promise<ChoiceQuestion> {
