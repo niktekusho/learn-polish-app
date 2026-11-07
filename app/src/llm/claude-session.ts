@@ -63,9 +63,15 @@ function sessionArgs(seed: SessionSeed, { model, effort }: ModelChoice): string[
     "--system-prompt",
     seed.brief,
     "--json-schema",
-    JSON.stringify(z.toJSONSchema(turnResultSchema(seed.stepIds), { io: "input" })),
+    JSON.stringify(turnJsonSchema(seed.stepIds)),
     ...LEAN_ARGS,
   ];
+}
+
+// The CLI fails to start on the draft 2020-12 `$schema` URL zod writes: it bundles no such draft.
+function turnJsonSchema(stepIds: string[]) {
+  const { $schema: _, ...schema } = z.toJSONSchema(turnResultSchema(stepIds), { io: "input" });
+  return schema;
 }
 
 const userMessage = (text: string) =>

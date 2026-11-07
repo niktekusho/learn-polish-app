@@ -103,6 +103,7 @@ test("start passes the brief and schema as flags and seeds one message with the 
   expect(p.args).toEqual(expect.arrayContaining(["--input-format", "stream-json"]));
   const schema = JSON.parse(flag(p, "--json-schema"));
   expect(schema.properties.stepsTicked.items.enum).toEqual(["order", "pay"]);
+  expect(schema).not.toHaveProperty("$schema");
   expect(p.written).toHaveLength(1);
   expect(p.userText(0)).toContain("Learner: Poproszę bułkę.");
   expect(p.userText(0)).toContain("Character: Dzień dobry!");

@@ -51,6 +51,13 @@ on the phone.
   `CLAUDE_STORY_EFFORT=low`. Defaults: Haiku, Sonnet, Opus and Haiku (`CONVERSATION`) at medium effort; Codex runs
   its configured model. Every call lands in the `llm_call` table with its gzipped prompt and
   reply, tokens and API time.
+- **Pick the Conversation model:** `pnpm --filter app bench:conversation <out.json> [runs]`
+  with a sidecar up (`SIDECAR_URL=http://localhost:10001` reuses prod's). It replays the
+  canned Conversations through every Haiku and Sonnet effort cell, asks you to rate a blind
+  sample of lines 1 to 3, and prints the metrics table and the winning cell's env knobs. It
+  reads known lemmas from the dev DB and refuses the prod DB, so run `pnpm db:prod-copy`
+  first: level fit is only as current as the dev DB. A rerun with the same `out.json`
+  resumes after the last finished cell.
 - **Screenshot a page:** `scripts/shoot.sh <path> <out.png> [W,H]` against the dev server
   (`BASE_URL` overrides). Sizes for the three prototype frames are in the script.
 - **Check everything:** `pnpm check` runs the pre-commit checks on the whole tree (format, dashes, lint,
