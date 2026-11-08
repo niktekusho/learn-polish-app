@@ -10,7 +10,7 @@
     "db:migrate": "pnpm --filter app db:migrate",
     "db:prod-copy": "sh scripts/prod-copy.sh",
     "start": "concurrently -k -n app,sidecar -c blue,green \"pnpm --filter app start\" \"pnpm start:sidecar\"",
-    "start:sidecar": "cd sidecar && uv run uvicorn main:app --port 10001",
+    "start:sidecar": "cd sidecar && TRANSCRIBE_DUMP=1 TRANSCRIBE_DUMP_DIR=\"$HOME/Library/Application Support/learn-polish/clips\" uv run uvicorn main:app --port 10001",
     "prepare": "vp config",
     "fmt": "vp fmt",
     "fmt:check": "vp fmt --check",

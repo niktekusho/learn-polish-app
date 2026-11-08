@@ -14,6 +14,7 @@ one, and swaps to it only if the build succeeds. Decisions and reasons: ADR-0006
 | Prod git clone             | `~/apps/learn-polish/repo` (never edit; reset on every poll)      |
 | Builds, one per commit     | `~/apps/learn-polish/releases/<sha>` + `<sha>.log` (last 3)       |
 | Live build                 | `~/apps/learn-polish/current` → symlink to a release              |
+| Recorded speech clips      | `~/Library/Application Support/learn-polish/clips/` (every `/transcribe` input, never pruned) |
 | App + sidecar log          | `~/Library/Logs/learn-polish.log`                                 |
 | Deploy log                 | `~/Library/Logs/learn-polish-deploy.log`                          |
 | launchd jobs               | `~/Library/LaunchAgents/com.niktekusho.learn-polish{,-deploy}.plist` (sources in `ops/`) |

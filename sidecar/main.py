@@ -105,7 +105,7 @@ class TranscribeResponse(BaseModel):
 # transcript can be split into capture-side (play the file: silent/garbled?)
 # vs model-side (clear audio, wrong text).
 _DUMP_ENABLED = os.environ.get("TRANSCRIBE_DUMP") == "1"
-_DUMP_STEM = Path(os.getcwd()) / "clips-dump"
+_DUMP_STEM = Path(os.environ.get("TRANSCRIBE_DUMP_DIR") or Path(os.getcwd()) / "clips-dump")
 _DUMP_EXT = {"audio/ogg": ".ogg", "audio/webm": ".webm", "audio/mp4": ".m4a"}
 
 _DUMP_STEM.mkdir(parents=True, exist_ok=True)
