@@ -6,7 +6,8 @@ import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import { dueLemmas, initialKnowledgeFields } from "#/fsrs/index";
 import { listContextBound, unmarkContextBound } from "#/maintenance/ops";
-import type { GlossProvider, ReportVerdict } from "#/llm/provider";
+import { fakeLlm } from "#/llm/fake";
+import type { ReportReviewItem, ReportVerdict } from "#/report/llm";
 import { pendingReports, reviewReports } from "#/report/review";
 import { answerItem, buildSession, reportItem, resumeSession, sessionSummary } from "./session";
 
@@ -94,12 +95,11 @@ test("resumeSession returns the held items and answered progress", () => {
   expect(resumeSession("nope")).toBeNull();
 });
 
-function verdictProvider(v: ReportVerdict): GlossProvider {
-  return {
+function verdictProvider(v: ReportVerdict) {
+  return fakeLlm({
     name: "claude-cli",
-    gloss: async () => "",
-    reviewReports: async (items) => items.map(() => v),
-  };
+    answers: { "report-review": (items: ReportReviewItem[]) => items.map(() => v) },
+  });
 }
 
 test("report flags the lemma out of practice without grading; its review brings it back", async () => {

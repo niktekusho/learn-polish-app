@@ -19,9 +19,9 @@ const importText = createServerFn({ method: "POST" })
     const { analyze } = await import("#/import/sidecar");
     const { importAnalysis } = await import("#/import/checked-import");
     const { db } = await import("#/db/index");
-    const { getGlossProvider } = await import("#/llm/index");
+    const { appLlm } = await import("#/llm/index");
     const analysis = await analyze(content);
-    return importAnalysis(db, getGlossProvider(), { title: data.title || null, content }, analysis);
+    return importAnalysis(db, appLlm(), { title: data.title || null, content }, analysis);
   });
 
 export const Route = createFileRoute("/import")({ component: Import });

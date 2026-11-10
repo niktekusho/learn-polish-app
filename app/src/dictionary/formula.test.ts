@@ -4,10 +4,13 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
+import type { OccurrenceResult, SenseGlossRequest } from "#/gloss/llm";
 import { getGloss } from "#/gloss/service";
 import { persistAnalysis } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import type { GlossProvider, MweCheckItem, OccurrenceResult } from "#/llm/provider";
+import type { Llm } from "#/llm/call";
+import { callsNamed, fakeLlm } from "#/llm/fake";
+import type { MweCheckItem } from "./llm";
 import { insertEntryBatch } from "./loader";
 import { sentenceText } from "./mwe-check";
 import { repairFormulas, resolveFormulas, suppressFormula } from "./formula";
@@ -67,19 +70,25 @@ const VERB: AnalyzeResponse = {
   ],
 };
 
-/** Accepts every candidate except in sentences asking for something ("o"). */
-function fakeChecker(fail = 0) {
-  const calls: MweCheckItem[][] = [];
-  return {
-    name: "stub" as const,
-    calls,
-    async checkMwes(items: MweCheckItem[]) {
-      calls.push(items);
-      if (calls.length <= fail) throw new Error("bad JSON");
-      return items.map((i) => !i.sentence.includes(" o "));
-    },
+/**
+ * The mwe-check answer: fails the first `fail` checks, then accepts every candidate
+ * except in sentences asking for something ("o").
+ */
+function checkAnswer(fail = 0) {
+  let checks = 0;
+  return (items: MweCheckItem[]) => {
+    if (++checks <= fail) throw new Error("bad JSON");
+    return items.map((i) => !i.sentence.includes(" o "));
   };
 }
+
+function fakeChecker(fail = 0) {
+  return fakeLlm({ answers: { "mwe-check": checkAnswer(fail) } });
+}
+
+/** The items of each mwe-check call, in call order. */
+const checks = (llm: ReturnType<typeof fakeLlm>) =>
+  callsNamed(llm, "mwe-check").map((c) => c.req as MweCheckItem[]);
 
 async function importText(db: DB, analysis: AnalyzeResponse, checker = fakeChecker()) {
   const formulas = await resolveFormulas(db, checker, analysis);
@@ -102,7 +111,7 @@ test("an interjection use becomes its own formula unit", async () => {
   await importText(db, FORMULA, checker);
 
   expect(lemmaOf(db, "Proszę ")).toEqual([{ lemma: "proszę", pos: "INTJ" }]);
-  expect(checker.calls[0]).toEqual([
+  expect(checks(checker)[0]).toEqual([
     { headword: "proszę", meaning: "please; here you are", sentence: "– Proszę – mówi Marco." },
   ]);
 });
@@ -119,7 +128,7 @@ test("a word already lemmatized as itself is never a candidate", async () => {
   seedDictionary(db);
   const checker = fakeChecker();
   await importText(db, { sentences: [{ tokens: [w("Tak", "tak", "PART")] }] }, checker);
-  expect(checker.calls).toHaveLength(0);
+  expect(checks(checker)).toHaveLength(0);
 });
 
 test("a check that fails 3 times fails the import with nothing saved", async () => {
@@ -134,14 +143,6 @@ test("a check that fails twice is retried", async () => {
   seedDictionary(db);
   await importText(db, FORMULA, fakeChecker(2));
   expect(lemmaOf(db, "Proszę ")).toEqual([{ lemma: "proszę", pos: "INTJ" }]);
-});
-
-test("a provider without the check fails an import with candidates", async () => {
-  const db = freshDb();
-  seedDictionary(db);
-  await expect(resolveFormulas(db, { name: "stub" }, FORMULA)).rejects.toThrow(/stub/);
-  const noCandidates = { sentences: [{ tokens: [w("chleb", "chleb", "NOUN")] }] };
-  expect(await resolveFormulas(db, { name: "stub" }, noCandidates)).toEqual(new Map());
 });
 
 test("repair moves past occurrences and deletes the verb left without any", async () => {
@@ -194,20 +195,18 @@ test("the formula's inline gloss is chosen from the interjection senses", async 
   await importText(db, FORMULA);
   const [formula] = db.select().from(schema.lemma).where(eq(schema.lemma.lemma, "proszę")).all();
   let offered: string[] = [];
-  const provider: GlossProvider = {
-    name: "stub",
-    async gloss() {
-      throw new Error("not used");
+  const provider = fakeLlm({
+    answers: {
+      "sense-gloss": (req: SenseGlossRequest) => {
+        offered = req.senses.map((s) => s.gloss);
+        return {
+          translations: req.senses.map((s) => ({ index: s.index, italian: `IT:${s.gloss}` })),
+          bestIndex: 1,
+          occurrence: { index: 1 },
+        };
+      },
     },
-    async glossSenses(req) {
-      offered = req.senses.map((s) => s.gloss);
-      return {
-        translations: req.senses.map((s) => ({ index: s.index, italian: `IT:${s.gloss}` })),
-        bestIndex: 1,
-        occurrence: { index: 1 },
-      };
-    },
-  };
+  });
   const res = await getGloss(
     db,
     { lemmaId: formula.id, lemma: "proszę", pos: "INTJ", sentence: "– Proszę – mówi Marco." },
@@ -250,32 +249,24 @@ const ASK = sentence(
 
 /** Answers every occurrence with `pick`; its check rejects sentences asking for something. */
 function clickProvider(pick: OccurrenceResult = VORREI, failChecks = 0) {
-  const checker = fakeChecker(failChecks);
-  return {
-    name: "stub",
-    calls: checker.calls,
-    async gloss() {
-      throw new Error("not used");
-    },
-    async glossSenses(req) {
-      return {
+  return fakeLlm({
+    answers: {
+      "sense-gloss": (req: SenseGlossRequest) => ({
         translations: req.senses.map((s) => ({ index: s.index, italian: `IT:${s.gloss}` })),
         bestIndex: 0,
         occurrence: pick,
-      };
+      }),
+      occurrence: () => pick,
+      "mwe-check": checkAnswer(failChecks),
     },
-    async glossOccurrence() {
-      return pick;
-    },
-    checkMwes: checker.checkMwes,
-  } satisfies GlossProvider & { calls: MweCheckItem[][] };
+  });
 }
 
 function store(db: DB, analysis: AnalyzeResponse) {
   return persistAnalysis(db, { content: "x" }, analysis, new Date(), new Map()).textId;
 }
 
-async function click(db: DB, provider: GlossProvider, textId: number, surface: string) {
+async function click(db: DB, provider: Llm, textId: number, surface: string) {
   const [t] = db
     .select({
       id: schema.token.id,
@@ -346,8 +337,8 @@ test("a promotion moves the accepted past occurrences and deletes the emptied ve
 
   await click(db, provider, textId, "Poproszę ");
 
-  expect(provider.calls).toHaveLength(1);
-  expect(provider.calls[0]).toEqual([
+  expect(checks(provider)).toHaveLength(1);
+  expect(checks(provider)[0]).toEqual([
     { headword: "poproszę", meaning: "vorrei (ordinando, cortese)", sentence: "Poproszę kawę." },
   ]);
   expect(lemmaOf(db, "Poproszę ")).toEqual([
@@ -422,8 +413,8 @@ test("a later import checks a click-found formula in the one Formula call", asyn
     checker,
   );
 
-  expect(checker.calls).toHaveLength(1);
-  expect(checker.calls[0].map((i) => [i.headword, i.meaning])).toEqual([
+  expect(checks(checker)).toHaveLength(1);
+  expect(checks(checker)[0].map((i) => [i.headword, i.meaning])).toEqual([
     ["poproszę", "vorrei (ordinando, cortese)"],
     ["proszę", "please"],
   ]);
@@ -458,7 +449,7 @@ test("suppressing a formula returns its tokens to the verb and stops detecting i
   }
   const checker = fakeChecker();
   await importText(db, ORDER_2, checker);
-  expect(checker.calls).toHaveLength(0);
+  expect(checks(checker)).toHaveLength(0);
   expect(lemmaOf(db, "Poproszę ").map((l) => l.lemma)).toEqual(["poprosić", "poprosić"]);
 
   const res = await click(db, clickProvider(), textId, "Poproszę ");
@@ -478,5 +469,5 @@ test("suppressing a dictionary-found formula skips it in imports and repair", as
   const checker = fakeChecker();
   await importText(db, FORMULA, checker);
   expect(await repairFormulas(db, checker)).toEqual({ moved: 0, deletedLemmas: 0 });
-  expect(checker.calls).toHaveLength(0);
+  expect(checks(checker)).toHaveLength(0);
 });

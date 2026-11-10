@@ -7,7 +7,9 @@ import * as schema from "#/db/schema";
 import { insertEntryBatch } from "#/dictionary/loader";
 import { senseKey } from "#/dictionary/service";
 import { persistAnalysis } from "#/import/pipeline";
-import type { GlossProvider, OccurrenceResult } from "#/llm/provider";
+import type { Llm } from "#/llm/call";
+import { callsNamed, fakeLlm } from "#/llm/fake";
+import type { OccurrenceResult, SenseGlossRequest } from "./llm";
 import { getGloss, regenerateGloss, setManualGloss } from "./service";
 
 function freshDb() {
@@ -18,15 +20,10 @@ function freshDb() {
   return db;
 }
 
-function countingProvider(): GlossProvider & { calls: number } {
-  return {
-    name: "stub",
-    calls: 0,
-    async gloss(req) {
-      this.calls++;
-      return `IT:${req.lemma}`;
-    },
-  };
+const sentenceAnswer = { gloss: (req: { lemma: string }) => `IT:${req.lemma}` };
+
+function countingProvider() {
+  return fakeLlm({ answers: sentenceAnswer });
 }
 
 function addLemma(db: ReturnType<typeof freshDb>, word: string) {
@@ -46,11 +43,11 @@ test("first lookup generates + caches (with provider tag); second serves cache",
 
   const first = await getGloss(db, input, provider);
   expect(first).toEqual({ italian: "IT:kot", occurrence: null, cached: false });
-  expect(provider.calls).toBe(1);
+  expect(provider.calls).toHaveLength(1);
 
   const second = await getGloss(db, input, provider);
   expect(second).toEqual({ italian: "IT:kot", occurrence: null, cached: true });
-  expect(provider.calls).toBe(1); // zero extra calls on cache hit
+  expect(provider.calls).toHaveLength(1); // zero extra calls on cache hit
 
   const [row] = db.select().from(schema.gloss).all();
   expect(row.provider).toBe("stub");
@@ -67,7 +64,7 @@ test("no sentence context: never generates or caches, returns null", async () =>
     provider,
   );
   expect(res).toEqual({ italian: null, occurrence: null, cached: false });
-  expect(provider.calls).toBe(0);
+  expect(provider.calls).toHaveLength(0);
   expect(db.select().from(schema.gloss).all()).toHaveLength(0);
 });
 
@@ -79,7 +76,7 @@ test("no-context caller still reads an existing cached gloss", async () => {
 
   const res = await getGloss(db, { lemmaId, lemma: "dom", pos: "NOUN", sentence: "" }, provider);
   expect(res).toEqual({ italian: "IT:dom", occurrence: null, cached: true });
-  expect(provider.calls).toBe(1);
+  expect(provider.calls).toHaveLength(1);
 });
 
 test("manual gloss overrides a cached machine gloss and is not regenerated over", async () => {
@@ -120,32 +117,22 @@ test("regenerate discards even a manual gloss and generates fresh", async () => 
     provider,
   );
   expect(res).toEqual({ italian: "IT:kot", occurrence: null, cached: false });
-  expect(provider.calls).toBe(1);
+  expect(provider.calls).toHaveLength(1);
 });
 
 // --- Hybrid per-sense path (kaikki home dictionary) -------------------------
 
 function senseProvider(bestIndex = 1) {
-  return {
-    name: "stub",
-    calls: 0,
-    senseCalls: 0,
-    async gloss(req) {
-      this.calls++;
-      return `IT:${req.lemma}`;
-    },
-    async glossSenses(req) {
-      this.senseCalls++;
-      return {
-        translations: req.senses.map((s) => ({
-          index: s.index,
-          italian: `IT-sense:${s.gloss}`,
-        })),
+  return fakeLlm({
+    answers: {
+      ...sentenceAnswer,
+      "sense-gloss": (req: SenseGlossRequest) => ({
+        translations: req.senses.map((s) => ({ index: s.index, italian: `IT-sense:${s.gloss}` })),
         bestIndex,
         occurrence: { index: bestIndex },
-      };
+      }),
     },
-  } satisfies GlossProvider & { calls: number; senseCalls: number };
+  });
 }
 
 function seedDictEntry(db: ReturnType<typeof freshDb>, word: string) {
@@ -178,8 +165,8 @@ test("hybrid: one call writes per-sense rows + best sense as inline gloss", asyn
     provider,
   );
   expect(res).toEqual({ italian: "IT-sense:lock", occurrence: null, cached: false });
-  expect(provider.senseCalls).toBe(1);
-  expect(provider.calls).toBe(0); // sentence-context path never ran
+  expect(callsNamed(provider, "sense-gloss")).toHaveLength(1);
+  expect(callsNamed(provider, "gloss")).toHaveLength(0); // sentence-context path never ran
 
   const rows = db.select().from(schema.gloss).all();
   expect(rows).toHaveLength(4); // 3 per-sense + 1 inline (sense='')
@@ -194,7 +181,7 @@ test("hybrid: one call writes per-sense rows + best sense as inline gloss", asyn
     provider,
   );
   expect(again).toEqual({ italian: "IT-sense:lock", occurrence: null, cached: true });
-  expect(provider.senseCalls).toBe(1);
+  expect(callsNamed(provider, "sense-gloss")).toHaveLength(1);
 });
 
 test("hybrid: lemma not in dictionary falls back to sentence-context path", async () => {
@@ -208,8 +195,8 @@ test("hybrid: lemma not in dictionary falls back to sentence-context path", asyn
     provider,
   );
   expect(res).toEqual({ italian: "IT:pies", occurrence: null, cached: false });
-  expect(provider.senseCalls).toBe(0);
-  expect(provider.calls).toBe(1);
+  expect(callsNamed(provider, "sense-gloss")).toHaveLength(0);
+  expect(callsNamed(provider, "gloss")).toHaveLength(1);
   expect(db.select().from(schema.gloss).all()).toHaveLength(1);
 });
 
@@ -226,7 +213,7 @@ test("hybrid: pre-existing inline gloss short-circuits, no sense call", async ()
     provider,
   );
   expect(res).toEqual({ italian: "castello", occurrence: null, cached: true });
-  expect(provider.senseCalls).toBe(0);
+  expect(callsNamed(provider, "sense-gloss")).toHaveLength(0);
 });
 
 test("hybrid: empty sentence stays read-only even for in-dictionary lemmas", async () => {
@@ -241,7 +228,7 @@ test("hybrid: empty sentence stays read-only even for in-dictionary lemmas", asy
     provider,
   );
   expect(res).toEqual({ italian: null, occurrence: null, cached: false });
-  expect(provider.senseCalls).toBe(0);
+  expect(callsNamed(provider, "sense-gloss")).toHaveLength(0);
   expect(db.select().from(schema.gloss).all()).toHaveLength(0);
 });
 
@@ -278,22 +265,27 @@ test("regenerate wipes per-sense rows too and re-runs the hybrid path", async ()
   const db = freshDb();
   const lemmaId = addLemma(db, "zamek");
   seedDictEntry(db, "zamek");
-  const provider = senseProvider(2);
-  await getGloss(
-    db,
-    { lemmaId, lemma: "zamek", pos: "NOUN", sentence: "Zamek błyskawiczny." },
-    provider,
-  );
+  let round = 0;
+  const provider = fakeLlm({
+    answers: {
+      "sense-gloss": (req: SenseGlossRequest) => {
+        round++;
+        return {
+          translations: req.senses.map((s) => ({ index: s.index, italian: `${s.gloss} ${round}` })),
+          bestIndex: 2,
+          occurrence: { index: 2 },
+        };
+      },
+    },
+  });
+  const input = { lemmaId, lemma: "zamek", pos: "NOUN", sentence: "Zamek błyskawiczny." };
+  await getGloss(db, input, provider);
   expect(db.select().from(schema.gloss).all()).toHaveLength(4);
 
-  const res = await regenerateGloss(
-    db,
-    { lemmaId, lemma: "zamek", pos: "NOUN", sentence: "Zamek błyskawiczny." },
-    provider,
-  );
-  expect(res.italian).toBe("IT-sense:zipper");
-  expect(provider.senseCalls).toBe(2);
-  expect(db.select().from(schema.gloss).all()).toHaveLength(4); // fresh set
+  const res = await regenerateGloss(db, input, provider);
+  expect(res.italian).toBe("zipper 2");
+  const rows = db.select().from(schema.gloss).all();
+  expect(rows.map((r) => r.italian).sort()).toEqual(["castle 2", "lock 2", "zipper 2", "zipper 2"]);
 });
 
 test("a Name is never glossed", async () => {
@@ -305,31 +297,24 @@ test("a Name is never glossed", async () => {
     provider,
   );
   expect(res).toEqual({ italian: null, occurrence: null, cached: false });
-  expect(provider.calls).toBe(0);
+  expect(provider.calls).toHaveLength(0);
 });
 
 function meaningProvider(pick: (sentence: string) => OccurrenceResult, failLater = false) {
-  return {
-    name: "stub",
-    calls: 0,
-    async gloss(req) {
-      this.calls++;
-      return `IT:${req.lemma}`;
-    },
-    async glossSenses(req) {
-      this.calls++;
-      return {
+  return fakeLlm({
+    answers: {
+      ...sentenceAnswer,
+      "sense-gloss": (req: SenseGlossRequest) => ({
         translations: req.senses.map((s) => ({ index: s.index, italian: `IT:${s.gloss}` })),
         bestIndex: 0,
         occurrence: pick(req.sentence),
-      };
+      }),
+      occurrence: (req: { sentence: string }) => {
+        if (failLater) throw new Error("boom");
+        return pick(req.sentence);
+      },
     },
-    async glossOccurrence(req) {
-      this.calls++;
-      if (failLater) throw new Error("boom");
-      return pick(req.sentence);
-    },
-  } satisfies GlossProvider & { calls: number };
+  });
 }
 
 function seedDo(db: ReturnType<typeof freshDb>) {
@@ -378,7 +363,7 @@ async function clickDo(
   db: ReturnType<typeof freshDb>,
   tok: typeof schema.token.$inferSelect,
   sentence: string,
-  provider: GlossProvider,
+  provider: Llm,
 ) {
   return getGloss(
     db,
@@ -431,10 +416,10 @@ test("the first click makes one provider call; a second click on the token makes
   const provider = meaningProvider(DO_PICK);
 
   await clickDo(db, tok, "Idzie do piekarni", provider);
-  expect(provider.calls).toBe(1);
+  expect(provider.calls).toHaveLength(1);
   const again = await clickDo(db, tok, "Idzie do piekarni", provider);
   expect(again).toEqual({ italian: "IT:to, towards", occurrence: "IT:into, in", cached: true });
-  expect(provider.calls).toBe(1);
+  expect(provider.calls).toHaveLength(1);
 });
 
 test("a failed occurrence call shows the lemma gloss and writes no occurrence row", async () => {
@@ -484,7 +469,7 @@ test("an out-of-dictionary lemma gets free text, the first time from the lemma c
   );
 
   expect(res).toEqual({ italian: "IT:siema", occurrence: "IT:siema", cached: false });
-  expect(provider.calls).toBe(1);
+  expect(provider.calls).toHaveLength(1);
 });
 
 test("regenerate also deletes the lemma's occurrence glosses", async () => {
@@ -544,9 +529,9 @@ test("a one-sense word tapped in its base form takes that sense without a call; 
     );
 
   await click(first, "Kot śpi.");
-  expect(provider.calls).toBe(1);
+  expect(provider.calls).toHaveLength(1);
   expect(await click(base, "Widzę, że kot śpi.")).toMatchObject({ occurrence: "IT:cat" });
-  expect(provider.calls).toBe(1);
+  expect(provider.calls).toHaveLength(1);
   await click(inflected, "Mam kota.");
-  expect(provider.calls).toBe(2);
+  expect(provider.calls).toHaveLength(2);
 });

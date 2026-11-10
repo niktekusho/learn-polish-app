@@ -15,30 +15,27 @@ import {
 } from "#/db/schema";
 import { FORMULA_POS } from "#/import/classify";
 import { ensureReceptiveKnowledge } from "#/import/pipeline";
-import type { GlossProvider, MweCheckItem } from "#/llm/provider";
+import type { Llm } from "#/llm/call";
+import { type MweCheckItem, mweCheck } from "./llm";
 import { detectMwes, type MweMatch, type MweToken } from "./mwe";
 
 type DB = BetterSQLite3Database<typeof schema>;
-export type MweChecker = Pick<GlossProvider, "name" | "checkMwes">;
 
 const ATTEMPTS = 3;
 
 /**
  * Judge each candidate in its sentence (CONTEXT.md "Multi-word expression",
- * "Formula", "Name") with ONE provider call, retried. Throws, naming the provider and
+ * "Formula", "Name") with ONE LLM call, retried. Throws, naming the provider and
  * the cause, when the check cannot run; no candidates means no call.
  * A candidate's `meaning` overrides the one looked up for its headword.
  */
 export async function checkInContext(
   db: DB,
-  checker: MweChecker,
+  llm: Llm,
   kind: "MWE" | "Formula" | "Name",
   candidates: { headword: string; sentence: string; meaning?: string }[],
 ): Promise<boolean[]> {
   if (candidates.length === 0) return [];
-  if (!checker.checkMwes) {
-    throw new Error(`Provider "${checker.name}" cannot run the ${kind} check.`);
-  }
   // A formula found by a click has no interjection senses: its gloss is its meaning.
   const meaning =
     kind === "MWE"
@@ -49,16 +46,14 @@ export async function checkInContext(
   let cause: unknown;
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
     try {
-      const keep = await checker.checkMwes(items);
+      const keep = await llm.call(mweCheck, items);
       return itemOf.map((i) => keep[i]);
     } catch (err) {
       cause = err;
     }
   }
   const reason = cause instanceof Error ? cause.message : String(cause);
-  throw new Error(
-    `${kind} check by provider "${checker.name}" failed ${ATTEMPTS} times: ${reason}`,
-  );
+  throw new Error(`${kind} check by provider "${llm.name}" failed ${ATTEMPTS} times: ${reason}`);
 }
 
 /**
@@ -66,7 +61,7 @@ export async function checkInContext(
  * ones. An MWE lemma left without occurrences is deleted with its knowledge
  * and history. Returns the number of occurrences dropped.
  */
-export async function recheckMwes(db: DB, checker: MweChecker): Promise<number> {
+export async function recheckMwes(db: DB, llm: Llm): Promise<number> {
   // ponytail: one prompt for every occurrence; chunk it if recheck outgrows one reply.
   const occurrences = db
     .select({
@@ -81,7 +76,7 @@ export async function recheckMwes(db: DB, checker: MweChecker): Promise<number> 
     .all();
   const keep = await checkInContext(
     db,
-    checker,
+    llm,
     "MWE",
     occurrences.map((o) => ({
       headword: o.headword,
@@ -144,7 +139,7 @@ export function forgetUnit(db: DB, lemmaId: number): void {
  * occurrence already covers), check the matches in context, then lift the
  * suppression with the accepted ones. A failed check leaves it suppressed.
  */
-export async function restoreMwe(db: DB, checker: MweChecker, lemmaId: number): Promise<void> {
+export async function restoreMwe(db: DB, llm: Llm, lemmaId: number): Promise<void> {
   const [row] = db.select({ headword: lemma.lemma }).from(lemma).where(eq(lemma.id, lemmaId)).all();
   if (!row) return;
   const headwords = new Map([[row.headword.split(" ")[0].toLowerCase(), [row.headword]]]);
@@ -183,7 +178,7 @@ export async function restoreMwe(db: DB, checker: MweChecker, lemmaId: number): 
   }
   const keep = await checkInContext(
     db,
-    checker,
+    llm,
     "MWE",
     matches.map((m) => ({
       headword: row.headword,

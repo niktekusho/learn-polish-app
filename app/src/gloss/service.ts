@@ -1,13 +1,19 @@
 import { and, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
-import { gloss, occurrenceGloss } from "#/db/schema";
 import { promoteFormula } from "#/dictionary/formula";
 import { lookupDictionary, senseKey } from "#/dictionary/service";
 import { FORMULA_POS } from "#/import/classify";
-import { getGlossProvider } from "#/llm/index";
-import type { GlossProvider, OccurrenceResult, SenseGlossResult } from "#/llm/provider";
+import type { Llm } from "#/llm/call";
+import { appLlm } from "#/llm/index";
 import { isName } from "#/reader/name";
+import {
+  occurrenceGloss,
+  type OccurrenceResult,
+  senseGloss,
+  type SenseGlossResult,
+  sentenceGloss,
+} from "./llm";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -21,7 +27,7 @@ export interface GlossResult {
   occurrence: string | null; // what the clicked occurrence means; null without a token or on failure
   occurrenceError?: string; // why the occurrence gloss (or its formula promotion) failed
   formula?: { lemmaId: number; lemma: string; pos: string }; // the unit the token was promoted to
-  cached: boolean; // true = served from cache (no provider call)
+  cached: boolean; // true = served from cache (no LLM call)
 }
 
 export interface GlossInput {
@@ -46,20 +52,20 @@ type Meaning =
  * to the cache would become *the* gloss for that lemma forever, defeating the
  * disambiguation design. So a caller with no sentence (e.g. Practice) reads the
  * cache only: a miss returns { italian: null } and writes nothing. The cache
- * row records which provider produced it, so stub output can be purged later.
+ * row records which LLM adapter produced it, so stub output can be purged later.
  *
  * The lemma gloss is ALWAYS the sense='' row, and stays a dictionary sense.
- * When the lemma is in the home dictionary and the provider supports it, the
- * hybrid path (ADR-0002) fills the cache in one call: every Wiktionary sense
+ * When the lemma is in the Home dictionary, the hybrid path (ADR-0002) fills
+ * the cache in one call: every Wiktionary sense
  * gets a per-sense row (sense = senseKey(english)), the sense the LLM flags as
- * fitting the sentence is copied into sense='', and the occurrence answer
- * rides along. Later occurrences cost one occurrence call each. Out-of-
+ * fitting the sentence is copied into sense='', and the same reply answers
+ * for the occurrence. Later occurrences cost one occurrence call each. Out-of-
  * dictionary lemmas keep the sentence-context path below (sense='').
  */
 export async function getGloss(
   db: DB,
   input: GlossInput,
-  provider: GlossProvider = getGlossProvider(),
+  llm: Llm = appLlm(),
 ): Promise<GlossResult> {
   // A Name has no Italian meaning to learn (CONTEXT.md "Name").
   if (isName(input.pos)) return { italian: null, occurrence: null, cached: false };
@@ -72,22 +78,20 @@ export async function getGloss(
   const sentence = input.sentence.trim();
   if (!sentence) return { italian: cached, occurrence: null, cached: false }; // read-only, no context
 
-  const senses = provider.glossSenses
-    ? lookupDictionary(db, input.lemma, input.pos, input.lemmaId)
-        .entries.flatMap((e) => e.senses)
-        .slice(0, MAX_SENSES)
-    : [];
+  const senses = lookupDictionary(db, input.lemma, input.pos, input.lemmaId)
+    .entries.flatMap((e) => e.senses)
+    .slice(0, MAX_SENSES);
   const surface = input.token?.surface.trim() ?? input.lemma;
   const req = { ...input, sentence, surface };
 
   if (cached === null) {
     const meaning =
       senses.length > 0
-        ? await glossFromSenses(db, req, senses, provider)
-        : await glossFromSentence(db, req, provider);
+        ? await glossFromSenses(db, req, senses, llm)
+        : await glossFromSentence(db, req, llm);
     if (!input.token)
       return { italian: lemmaGloss(db, input.lemmaId), occurrence: null, cached: false };
-    return saveOccurrence(db, input, input.token, meaning, senses.length > 0, provider);
+    return saveOccurrence(db, input, input.token, meaning, senses.length > 0, llm);
   }
 
   // Only senses with an Italian gloss can be pointed to.
@@ -98,24 +102,23 @@ export async function getGloss(
   // A base form of a one-sense word has nothing to choose; an inflected form may be a fixed use.
   const baseForm = surface.toLowerCase() === input.lemma.toLowerCase();
   if (senses.length === 1 && offered.length === 1 && baseForm) {
-    return saveOccurrence(db, input, input.token, toMeaning({ index: 0 }, offered), true, provider);
+    return saveOccurrence(db, input, input.token, toMeaning({ index: 0 }, offered), true, llm);
   }
-  if (!provider.glossOccurrence) return { italian: cached, occurrence: null, cached: true };
   let answer: OccurrenceResult;
   try {
-    answer = await provider.glossOccurrence({
+    answer = await llm.call(occurrenceGloss, {
       ...req,
       senses: offered.map((s, index) => ({ index, ...s })),
     });
   } catch (err) {
     console.error(
-      `[gloss] provider "${provider.name}" failed the occurrence of lemma "${input.lemma}" (token ${input.token.id}):`,
+      `[gloss] provider "${llm.name}" failed the occurrence of lemma "${input.lemma}" (token ${input.token.id}):`,
       err,
     );
     return {
       italian: cached,
       occurrence: null,
-      occurrenceError: `Provider "${provider.name}": ${errorMessage(err)}`,
+      occurrenceError: `Provider "${llm.name}": ${errorMessage(err)}`,
       cached: true,
     };
   }
@@ -125,7 +128,7 @@ export async function getGloss(
     input.token,
     toMeaning(answer, offered),
     offered.length > 0,
-    provider,
+    llm,
   );
 }
 
@@ -139,13 +142,13 @@ async function saveOccurrence(
   tok: { id: number; surface: string },
   meaning: Meaning,
   hasSenses: boolean,
-  provider: GlossProvider,
+  llm: Llm,
 ): Promise<GlossResult> {
   const inflected = tok.surface.trim().toLowerCase() !== input.lemma.toLowerCase();
   const word = input.pos !== "MWE" && input.pos !== FORMULA_POS;
   if (meaning.sense === null && meaning.fixed && hasSenses && inflected && word) {
     try {
-      const formula = await promoteFormula(db, provider, {
+      const formula = await promoteFormula(db, llm, {
         tokenId: tok.id,
         surface: tok.surface,
         italian: meaning.italian,
@@ -172,14 +175,14 @@ async function saveOccurrence(
   const italian =
     meaning.sense === null
       ? meaning.italian
-      : (senseGloss(db, input.lemmaId, meaning.sense) ?? lemmaGloss(db, input.lemmaId)!);
-  db.insert(occurrenceGloss)
+      : (glossOfSense(db, input.lemmaId, meaning.sense) ?? lemmaGloss(db, input.lemmaId)!);
+  db.insert(schema.occurrenceGloss)
     .values({
       tokenId: tok.id,
       lemmaId: input.lemmaId,
       sense: meaning.sense,
       italian,
-      provider: provider.name,
+      provider: llm.name,
     })
     .onConflictDoNothing()
     .run();
@@ -191,14 +194,10 @@ async function saveOccurrence(
 }
 
 /** Sentence-context glossing for out-of-dictionary lemmas: the answer is free text. */
-async function glossFromSentence(
-  db: DB,
-  input: GlossInput,
-  provider: GlossProvider,
-): Promise<Meaning> {
+async function glossFromSentence(db: DB, input: GlossInput, llm: Llm): Promise<Meaning> {
   let italian: string;
   try {
-    italian = await provider.gloss({
+    italian = await llm.call(sentenceGloss, {
       lemma: input.lemma,
       pos: input.pos,
       sentence: input.sentence,
@@ -208,17 +207,17 @@ async function glossFromSentence(
     // surfaces as the panel's generic "failed" state, hiding the real cause
     // (e.g. `claude exited 1: 401 Invalid authentication credentials`).
     console.error(
-      `[gloss] provider "${provider.name}" failed for lemma "${input.lemma}" (id ${input.lemmaId}):`,
+      `[gloss] provider "${llm.name}" failed for lemma "${input.lemma}" (id ${input.lemmaId}):`,
       err,
     );
     throw err;
   }
-  db.insert(gloss)
+  db.insert(schema.gloss)
     .values({
       lemmaId: input.lemmaId,
       sense: "",
       italian,
-      provider: provider.name,
+      provider: llm.name,
     })
     .onConflictDoNothing()
     .run();
@@ -226,7 +225,7 @@ async function glossFromSentence(
 }
 
 /**
- * Hybrid per-sense glossing: ONE provider call translates all senses, flags
+ * Hybrid per-sense glossing: ONE LLM call translates all senses, flags
  * the one fitting the sentence and answers for the occurrence. All writes
  * land in one transaction so a junk response caches nothing.
  * onConflictDoNothing everywhere: existing rows (manual per-sense edits,
@@ -236,11 +235,11 @@ async function glossFromSenses(
   db: DB,
   input: GlossInput & { surface: string },
   senses: { gloss: string }[],
-  provider: GlossProvider,
+  llm: Llm,
 ): Promise<Meaning> {
   let result: SenseGlossResult;
   try {
-    result = await provider.glossSenses!({
+    result = await llm.call(senseGloss, {
       lemma: input.lemma,
       pos: input.pos,
       surface: input.surface,
@@ -249,7 +248,7 @@ async function glossFromSenses(
     });
   } catch (err) {
     console.error(
-      `[gloss] provider "${provider.name}" failed sense-glossing lemma "${input.lemma}" (id ${input.lemmaId}):`,
+      `[gloss] provider "${llm.name}" failed sense-glossing lemma "${input.lemma}" (id ${input.lemmaId}):`,
       err,
     );
     throw err;
@@ -258,22 +257,22 @@ async function glossFromSenses(
   const best = result.translations.find((t) => t.index === result.bestIndex)!;
   db.transaction((tx) => {
     for (const t of result.translations) {
-      tx.insert(gloss)
+      tx.insert(schema.gloss)
         .values({
           lemmaId: input.lemmaId,
           sense: senseKey(senses[t.index].gloss),
           italian: t.italian,
-          provider: provider.name,
+          provider: llm.name,
         })
         .onConflictDoNothing()
         .run();
     }
-    tx.insert(gloss)
+    tx.insert(schema.gloss)
       .values({
         lemmaId: input.lemmaId,
         sense: "",
         italian: best.italian,
-        provider: provider.name,
+        provider: llm.name,
       })
       .onConflictDoNothing()
       .run();
@@ -288,23 +287,25 @@ function toMeaning(answer: OccurrenceResult, senses: { gloss: string }[]): Meani
 }
 
 function lemmaGloss(db: DB, lemmaId: number): string | null {
-  return senseGloss(db, lemmaId, "");
+  return glossOfSense(db, lemmaId, "");
 }
 
-function senseGloss(db: DB, lemmaId: number, sense: string): string | null {
+function glossOfSense(db: DB, lemmaId: number, sense: string): string | null {
   const [row] = db
-    .select({ italian: gloss.italian })
-    .from(gloss)
-    .where(and(eq(gloss.lemmaId, lemmaId), eq(gloss.sense, sense)))
+    .select({ italian: schema.gloss.italian })
+    .from(schema.gloss)
+    .where(and(eq(schema.gloss.lemmaId, lemmaId), eq(schema.gloss.sense, sense)))
     .all();
   return row?.italian ?? null;
 }
 
 function cachedOccurrence(db: DB, tokenId: number, lemmaId: number): string | null {
   const [row] = db
-    .select({ italian: occurrenceGloss.italian })
-    .from(occurrenceGloss)
-    .where(and(eq(occurrenceGloss.tokenId, tokenId), eq(occurrenceGloss.lemmaId, lemmaId)))
+    .select({ italian: schema.occurrenceGloss.italian })
+    .from(schema.occurrenceGloss)
+    .where(
+      and(eq(schema.occurrenceGloss.tokenId, tokenId), eq(schema.occurrenceGloss.lemmaId, lemmaId)),
+    )
     .all();
   return row?.italian ?? null;
 }
@@ -321,10 +322,10 @@ function errorMessage(err: unknown): string {
 export function setManualGloss(db: DB, lemmaId: number, italian: string): string {
   const value = italian.trim();
   if (!value) throw new Error("manual gloss cannot be empty");
-  db.insert(gloss)
+  db.insert(schema.gloss)
     .values({ lemmaId, sense: "", italian: value, provider: "manual" })
     .onConflictDoUpdate({
-      target: [gloss.lemmaId, gloss.sense],
+      target: [schema.gloss.lemmaId, schema.gloss.sense],
       set: { italian: value, provider: "manual" },
     })
     .run();
@@ -339,9 +340,9 @@ export function setManualGloss(db: DB, lemmaId: number, italian: string): string
 export async function regenerateGloss(
   db: DB,
   input: GlossInput,
-  provider: GlossProvider = getGlossProvider(),
+  llm: Llm = appLlm(),
 ): Promise<GlossResult> {
-  db.delete(gloss).where(eq(gloss.lemmaId, input.lemmaId)).run();
-  db.delete(occurrenceGloss).where(eq(occurrenceGloss.lemmaId, input.lemmaId)).run();
-  return getGloss(db, input, provider);
+  db.delete(schema.gloss).where(eq(schema.gloss.lemmaId, input.lemmaId)).run();
+  db.delete(schema.occurrenceGloss).where(eq(schema.occurrenceGloss.lemmaId, input.lemmaId)).run();
+  return getGloss(db, input, llm);
 }

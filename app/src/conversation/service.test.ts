@@ -10,7 +10,7 @@ import type {
   SessionSeed,
   TurnResult,
 } from "#/llm/conversation-session";
-import type { DebriefRequest, SceneRequest, SceneResult } from "#/llm/provider";
+import { callsNamed, type FakeLlm, fakeLlm } from "#/llm/fake";
 import { ScriptedSession } from "#/llm/scripted-session";
 import { saveLearnerProfile } from "#/profile/service";
 import { upsertLemma } from "#/import/pipeline";
@@ -19,6 +19,7 @@ import { gradeLemma, type Track } from "#/fsrs/index";
 import { insertEntryBatch } from "#/dictionary/loader";
 import { recordCall } from "#/llm/call-log";
 import { ClaudeCliProvider } from "#/llm/claude-cli";
+import type { DebriefRequest, SceneRequest, SceneResult } from "./llm";
 import { conversationService } from "./service";
 
 const NOW = new Date("2026-11-07T10:00:00");
@@ -61,33 +62,32 @@ function sceneReply(n: number, req: SceneRequest): SceneResult {
 }
 
 /**
- * Answers each scene call in turn; an Error in `fails` fails that call instead. A Debrief
- * corrects each learner line, so its corrections follow the transcript it was sent, and adds
- * one numbered Character memory line to the lines it was sent.
+ * Answers the nth scene call with `sceneReply(n)`; an Error in `fails` fails that call instead.
+ * A Debrief corrects each learner line, so its corrections follow the transcript it was sent,
+ * and adds one numbered Character memory line to the lines it was sent.
  */
-function fakeProvider(fails: (Error | null)[] = []) {
-  return {
-    requests: [] as SceneRequest[],
-    debriefs: [] as { req: DebriefRequest; conversationId: number }[],
-    async scene(req: SceneRequest) {
-      this.requests.push(req);
-      const fail = fails.shift();
-      if (fail) throw fail;
-      return sceneReply(this.requests.length, req);
-    },
-    async debrief(req: DebriefRequest, conversationId: number) {
-      this.debriefs.push({ req, conversationId });
-      const fail = fails.shift();
-      if (fail) throw fail;
-      return {
+function conversationLlm(fails: (Error | null)[] = []): FakeLlm {
+  const llm: FakeLlm = fakeLlm({
+    fails,
+    answers: {
+      scene: (req: SceneRequest) => sceneReply(scenes(llm).length, req),
+      debrief: (req: DebriefRequest) => ({
         corrections: req.transcript
           .filter((l) => l.speaker === "learner")
           .map((l, i) => ({ said: l.text, corrected: `${l.text}!`, italian: `Regola ${i + 1}.` })),
-        memory: [`Ricordo ${this.debriefs.length}`, ...req.memory],
-      };
+        memory: [`Ricordo ${debriefs(llm).length}`, ...req.memory],
+      }),
     },
-  };
+  });
+  return llm;
 }
+
+const scenes = (llm: FakeLlm) => callsNamed(llm, "scene").map((c) => c.req as SceneRequest);
+const debriefs = (llm: FakeLlm) =>
+  callsNamed(llm, "debrief").map((c) => ({
+    req: c.req as DebriefRequest,
+    conversationId: c.options?.conversationId,
+  }));
 
 function entry(word: string, pos: string, forms: string[] = []) {
   return {
@@ -190,10 +190,10 @@ function setup({
     entry("to wszystko", "phrase"),
   ]);
   const episodeIds = seedStory(db, episodes);
-  const provider = fakeProvider(fails);
+  const llm = conversationLlm(fails);
   const sessions: ConversationSession[] = [];
   const svc = conversationService(db, {
-    provider,
+    llm,
     voices: async () => CATALOG,
     analyze,
     createSession: () => {
@@ -203,16 +203,16 @@ function setup({
     },
     now: () => NOW,
   });
-  return { db, provider, sessions, svc, episodeIds };
+  return { db, llm, sessions, svc, episodeIds };
 }
 
 test("a scene prepared when the Episode is read is served on open without another call", async () => {
-  const { provider, svc, episodeIds } = setup();
+  const { llm, svc, episodeIds } = setup();
   await svc.prepareScene(episodeIds[0]);
-  expect(provider.requests).toHaveLength(1);
+  expect(scenes(llm)).toHaveLength(1);
 
   const current = await svc.current();
-  expect(provider.requests).toHaveLength(1);
+  expect(scenes(llm)).toHaveLength(1);
   expect(current).toMatchObject({
     needsProfile: false,
     conversation: {
@@ -230,25 +230,25 @@ test("a scene prepared when the Episode is read is served on open without anothe
 });
 
 test("when the background preparation failed, opening prepares the scene", async () => {
-  const { provider, svc, episodeIds } = setup({ fails: [new Error("timeout")] });
+  const { llm, svc, episodeIds } = setup({ fails: [new Error("timeout")] });
   await expect(svc.prepareScene(episodeIds[0])).rejects.toThrow("timeout");
 
   const current = await svc.current();
-  expect(provider.requests).toHaveLength(2);
+  expect(scenes(llm)).toHaveLength(2);
   expect(current).toMatchObject({ conversation: { scene: "Scena 2" } });
 });
 
 test("without a Learner profile no scene is prepared and opening asks for the profile", async () => {
-  const { provider, svc, episodeIds } = setup({ profile: false });
+  const { llm, svc, episodeIds } = setup({ profile: false });
   await svc.prepareScene(episodeIds[0]);
   expect(await svc.current()).toEqual({ needsProfile: true });
-  expect(provider.requests).toHaveLength(0);
+  expect(scenes(llm)).toHaveLength(0);
 });
 
 test("the scene follows the last Episode read, with its text and the Learner profile", async () => {
-  const { provider, svc } = setup({ episodes: 2 });
+  const { llm, svc } = setup({ episodes: 2 });
   expect(await svc.current()).toMatchObject({ conversation: { scene: "Scena 1" } });
-  expect(provider.requests[0]).toMatchObject({
+  expect(scenes(llm)[0]).toMatchObject({
     episode: "Odcinek 2.",
     characters: ["Ala – una ragazza", "Pan Jan – il vicino"],
     profile: PROFILE,
@@ -256,11 +256,11 @@ test("the scene follows the last Episode read, with its text and the Learner pro
 });
 
 test("each Story character gets a voice on the first Conversation and keeps it", async () => {
-  const { db, provider, svc, episodeIds } = setup({ episodes: 2 });
+  const { db, llm, svc, episodeIds } = setup({ episodes: 2 });
   await svc.prepareScene(episodeIds[0]);
   await svc.prepareScene(episodeIds[1]);
 
-  expect(provider.requests.map((r) => r.voices)).toEqual([CATALOG, null]);
+  expect(scenes(llm).map((r) => r.voices)).toEqual([CATALOG, null]);
   expect(
     db.select().from(schema.characterVoice).orderBy(schema.characterVoice.character).all(),
   ).toMatchObject([
@@ -271,7 +271,7 @@ test("each Story character gets a voice on the first Conversation and keeps it",
 });
 
 test("the scene is nudged toward the due Productive lemmas of the moment", async () => {
-  const { db, provider, svc, episodeIds } = setup();
+  const { db, llm, svc, episodeIds } = setup();
   const [l] = db.insert(schema.lemma).values({ lemma: "chleb", pos: "NOUN" }).returning().all();
   db.insert(schema.knowledge)
     .values({
@@ -284,7 +284,7 @@ test("the scene is nudged toward the due Productive lemmas of the moment", async
     })
     .run();
   await svc.prepareScene(episodeIds[0]);
-  expect(provider.requests[0].dueLemmas).toEqual(["chleb"]);
+  expect(scenes(llm)[0].dueLemmas).toEqual(["chleb"]);
 });
 
 test("reroll replaces the Goal, role facts, opening and first Hint pair", async () => {
@@ -417,11 +417,11 @@ test("each attempt at a turn is sent with its attempt number, for the call log",
 });
 
 test("the Debrief is reachable while the character does not answer", async () => {
-  const { svc, id, provider } = await scripted([timedOut(), timedOut()]);
+  const { svc, id, llm } = await scripted([timedOut(), timedOut()]);
   svc.addTurn(id, "Poproszę dwie bułki.");
   await expect(svc.reply(id)).rejects.toThrow();
   expect((await svc.debrief(id)).status).toBe("debriefed");
-  expect(provider.debriefs[0].req.transcript.at(-1)).toEqual({
+  expect(debriefs(llm)[0].req.transcript.at(-1)).toEqual({
     speaker: "learner",
     text: "Poproszę dwie bułki.",
   });
@@ -435,7 +435,7 @@ test("reopening an open Conversation on a later day continues the stored transcr
   // A later day runs a new server process: nothing of the old session is left.
   vi.resetModules();
   const later = (await import("./service")).conversationService(db, {
-    provider: fakeProvider(),
+    llm: conversationLlm(),
     voices: async () => CATALOG,
     analyze: fakeAnalyze,
     createSession: () => new ScriptedSession(),
@@ -573,7 +573,7 @@ test("a Hint word absent from the Home dictionary's forms is not shown", async (
 });
 
 test("Hint and Model line reveals are stored on the turn that offers them, with no LLM call, and a later Hint tap keeps the Model line", async () => {
-  const { provider, svc, id, queued } = await opened([{}, {}]);
+  const { llm, svc, id, queued } = await opened([{}, {}]);
   svc.revealHelp(id, 0, "modelLine");
   svc.revealHelp(id, 0, "hint");
   for (const text of ["a", "b"]) {
@@ -585,7 +585,7 @@ test("Hint and Model line reveals are stored on the turn that offers them, with 
   expect((await svc.current()) as unknown).toMatchObject({
     conversation: { opening: { help: "modelLine" }, turns: [{ help: "hint" }, { help: null }] },
   });
-  expect(provider.requests).toHaveLength(1);
+  expect(scenes(llm)).toHaveLength(1);
   expect(queued.sent).toEqual(["a", "b"]);
 });
 
@@ -795,14 +795,14 @@ test("turn 25 tells the character to close the scene, and no further turn can be
 });
 
 test("tapping Debrief mid-scene sends the transcript, stores the corrections and closes the scene", async () => {
-  const { db, provider, svc, id } = await opened([{ line: "Dzień dobry." }, { line: "Proszę." }]);
+  const { db, llm, svc, id } = await opened([{ line: "Dzień dobry." }, { line: "Proszę." }]);
   await speakTurns(svc, id, 2);
   svc.addTurn(id, "Halo?"); // still waiting for its reply: the learner's words still count
 
   const debriefed = await svc.debrief(id);
-  expect(provider.debriefs).toHaveLength(1);
-  expect(provider.debriefs[0].conversationId).toBe(id);
-  expect(provider.debriefs[0].req.transcript).toEqual([
+  expect(debriefs(llm)).toHaveLength(1);
+  expect(debriefs(llm)[0].conversationId).toBe(id);
+  expect(debriefs(llm)[0].req.transcript).toEqual([
     { speaker: "character", text: "Otwarcie 1." },
     { speaker: "learner", text: "Zdanie 1." },
     { speaker: "character", text: "Dzień dobry." },
@@ -824,7 +824,7 @@ test("tapping Debrief mid-scene sends the transcript, stores the corrections and
 });
 
 test("a debriefed Conversation is not offered again as open: it shows its Debrief", async () => {
-  const { provider, svc, id } = await opened([]);
+  const { llm, svc, id } = await opened([]);
   await speakTurns(svc, id, 1);
   await svc.debrief(id);
 
@@ -832,26 +832,26 @@ test("a debriefed Conversation is not offered again as open: it shows its Debrie
     conversation: { id, status: "debriefed", corrections: [{ said: "Zdanie 1." }] },
   });
   expect(await svc.debrief(id)).toMatchObject({ status: "debriefed" });
-  expect(provider.debriefs).toHaveLength(1);
+  expect(debriefs(llm)).toHaveLength(1);
   await expect(svc.reroll(id)).rejects.toThrow();
 });
 
 test("a Debrief before the learner has spoken asks nothing and has no corrections", async () => {
-  const { provider, svc, id } = await opened([]);
+  const { llm, svc, id } = await opened([]);
   expect(await svc.debrief(id)).toMatchObject({ status: "debriefed", corrections: [] });
-  expect(provider.debriefs).toHaveLength(0);
+  expect(debriefs(llm)).toHaveLength(0);
 });
 
 test("a failed Debrief call leaves the scene open, and tapping again retries it", async () => {
   const queued = new QueuedSession([]);
-  const { svc, provider } = setup({ session: () => queued, fails: [null, new Error("timeout")] });
+  const { svc, llm } = setup({ session: () => queued, fails: [null, new Error("timeout")] });
   const { conversation } = (await svc.current()) as { conversation: { id: number } };
   await speakTurns(svc, conversation.id, 1);
 
   await expect(svc.debrief(conversation.id)).rejects.toThrow("timeout");
   expect(await svc.current()).toMatchObject({ conversation: { status: "open" } });
   expect(await svc.debrief(conversation.id)).toMatchObject({ status: "debriefed" });
-  expect(provider.debriefs).toHaveLength(2);
+  expect(debriefs(llm)).toHaveLength(2);
 });
 
 test("at most 10 corrections are stored, in the order the Debrief gave them", async () => {
@@ -867,7 +867,7 @@ test("a reply that arrives after the Debrief is not stored or graded", async () 
   let answer: (r: TurnResult) => void = () => {};
   const slow = new QueuedSession([]);
   slow.send = () => new Promise((resolve) => (answer = resolve));
-  const { db, svc, provider } = setup({ session: () => slow });
+  const { db, svc, llm } = setup({ session: () => slow });
   const { conversation } = (await svc.current()) as { conversation: { id: number } };
   met(db, "chleb");
   svc.addTurn(conversation.id, "chleb");
@@ -883,7 +883,7 @@ test("a reply that arrives after the Debrief is not stored or graded", async () 
     modelLine: "",
   });
   await expect(pending).rejects.toThrow(/debriefed/);
-  expect(provider.debriefs[0].req.transcript.at(-1)).toEqual({ speaker: "learner", text: "chleb" });
+  expect(debriefs(llm)[0].req.transcript.at(-1)).toEqual({ speaker: "learner", text: "chleb" });
   expect(db.select().from(schema.conversationTurn).get()).toMatchObject({ line: null });
   expect(graded(db, "productive").knowledge).toEqual([]);
 });
@@ -902,18 +902,18 @@ async function playAndDebrief({ db, svc }: ReturnType<typeof setup>, episodeId: 
 
 test("the Debrief updates the character's memory, and the next scene preparation receives it", async () => {
   const ctx = setup({ episodes: 3, session: () => new QueuedSession([]) });
-  const { provider, svc, episodeIds } = ctx;
+  const { llm, svc, episodeIds } = ctx;
   await svc.prepareScene(episodeIds[0]);
-  expect(provider.requests[0].memory).toEqual([[], []]);
+  expect(scenes(llm)[0].memory).toEqual([[], []]);
   await playAndDebrief(ctx, episodeIds[0]);
-  expect(provider.debriefs[0].req).toMatchObject({ character: "Pan Jan – il vicino", memory: [] });
+  expect(debriefs(llm)[0].req).toMatchObject({ character: "Pan Jan – il vicino", memory: [] });
 
   await playAndDebrief(ctx, episodeIds[1]);
-  expect(provider.requests[1].memory).toEqual([[], ["Ricordo 1"]]);
-  expect(provider.debriefs[1].req.memory).toEqual(["Ricordo 1"]);
+  expect(scenes(llm)[1].memory).toEqual([[], ["Ricordo 1"]]);
+  expect(debriefs(llm)[1].req.memory).toEqual(["Ricordo 1"]);
 
   await svc.prepareScene(episodeIds[2]);
-  expect(provider.requests[2].memory).toEqual([[], ["Ricordo 2", "Ricordo 1"]]);
+  expect(scenes(llm)[2].memory).toEqual([[], ["Ricordo 2", "Ricordo 1"]]);
 });
 
 test("the next Conversation's session is briefed with the character's memory", async () => {
@@ -934,10 +934,10 @@ test("a new Story starts with no Character memory, even for a character of the s
   ctx.db.update(schema.story).set({ status: "finished" }).run();
   const [nextStoryEpisode] = seedStory(ctx.db);
   await ctx.svc.prepareScene(nextStoryEpisode);
-  expect(ctx.provider.requests[1].memory).toEqual([[], []]);
+  expect(scenes(ctx.llm)[1].memory).toEqual([[], []]);
 
   await playAndDebrief(ctx, nextStoryEpisode);
-  expect(ctx.provider.debriefs[1].req.memory).toEqual([]);
+  expect(debriefs(ctx.llm)[1].req.memory).toEqual([]);
   expect(ctx.sessions[1]).toMatchObject({
     warmed: [{ brief: expect.not.stringContaining("Ricordo") }],
   });
@@ -951,7 +951,7 @@ test("Character memory costs no LLM call: a played Conversation logs one scene c
     stdout: JSON.stringify({ type: "result", is_error: false, result: JSON.stringify(result) }),
     stderr: "",
   });
-  const provider = new ClaudeCliProvider(
+  const llm = new ClaudeCliProvider(
     async (prompt) => {
       prompts.push(prompt);
       if (prompts.length === 2) {
@@ -965,7 +965,7 @@ test("Character memory costs no LLM call: a played Conversation logs one scene c
     (call) => recordCall(db, "claude-cli", call),
   );
   const svc = conversationService(db, {
-    provider,
+    llm,
     voices: async () => CATALOG,
     analyze: fakeAnalyze,
     createSession: () => new QueuedSession([]),

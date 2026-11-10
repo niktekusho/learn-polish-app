@@ -12,7 +12,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { LlmCall } from "#/llm/cli";
-import type { EpisodeRequest, LlmTask } from "#/llm/provider";
+import type { LlmTier } from "#/llm/call";
+import type { EpisodeRequest } from "#/story/llm";
 
 interface Sample {
   words: number;
@@ -79,7 +80,7 @@ const REQUEST: Omit<EpisodeRequest, "newShare" | "feedback"> = {
 
 /** The episode instructions in Polish; the plan stays Italian, as the learner reads it. */
 async function polishEpisodePrompt(req: EpisodeRequest): Promise<string> {
-  const { EPISODE_WORDS, beatText } = await import("#/llm/provider");
+  const { EPISODE_WORDS, beatText } = await import("#/story/llm");
   return (
     `Napisz odcinek ${req.episodeNumber} z ${req.totalEpisodes} opowiadania w odcinkach ` +
     "PO POLSKU dla włoskiego ucznia, który dopiero zaczyna (poniżej A1).\n\n" +
@@ -136,13 +137,14 @@ async function setup() {
     await import("#/llm/claude-cli");
   const { dictionaryFlags, homeDictionary, NOT_IN_DICTIONARY } =
     await import("#/proofread/proofread");
+  const { proofread } = await import("#/proofread/llm");
   const { episodeMetrics } = await import("#/story/metrics");
   const { inLevelRange } = await import("#/story/service");
   const calls: LlmCall[] = [];
-  const provider = new ClaudeCliProvider(runClaude, (c) => calls.push(c));
+  const llm = new ClaudeCliProvider(runClaude, (c) => calls.push(c));
   const tiers = claudeTiers();
-  const ask = async (prompt: string, task: LlmTask) =>
-    readClaudeReply(await runClaude(prompt, tiers[task])).text;
+  const ask = async (prompt: string, tier: LlmTier) =>
+    readClaudeReply(await runClaude(prompt, tiers[tier])).text;
   const known = new Set(knownLemmas(db).map((l) => l.toLowerCase()));
   const inDictionary = homeDictionary(db);
 
@@ -150,7 +152,10 @@ async function setup() {
   async function measure(text: string): Promise<Sample> {
     const analysis = await analyze(text);
     const m = episodeMetrics(analysis, known);
-    const flags = [...dictionaryFlags(analysis, inDictionary), ...(await provider.proofread(text))];
+    const flags = [
+      ...dictionaryFlags(analysis, inDictionary),
+      ...(await llm.call(proofread, text)),
+    ];
     return {
       ...m,
       inLevelRange: inLevelRange(m.newShare) ? 1 : 0,
@@ -159,22 +164,25 @@ async function setup() {
       text,
     };
   }
-  return { db, analyze, provider, ask, calls, measure };
+  return { db, analyze, llm, ask, calls, measure };
 }
 
 async function run(label: string, n: number, out: string) {
-  const { provider, measure } = await setup();
+  const { llm, measure } = await setup();
+  const { episode } = await import("#/story/llm");
   const { NEW_SHARE_TARGET } = await import("#/story/service");
   const samples: Sample[] = [];
   for (let i = 0; i < n; i++) {
-    samples.push(await measure(await provider.episode({ ...REQUEST, newShare: NEW_SHARE_TARGET })));
+    samples.push(
+      await measure(await llm.call(episode, { ...REQUEST, newShare: NEW_SHARE_TARGET })),
+    );
     console.error(`${label} ${i + 1}/${n}`);
   }
   save(out, { label, samples });
 }
 
 async function full(label: string, n: number, out: string) {
-  const { db, analyze, provider, calls, measure } = await setup();
+  const { db, analyze, llm, calls, measure } = await setup();
   const { writeEpisode } = await import("#/story/service");
   const { textChanges } = await import("#/proofread/proofread");
   const samples: Sample[] = [];
@@ -183,7 +191,7 @@ async function full(label: string, n: number, out: string) {
     const start = Date.now();
     let sample: Sample;
     try {
-      const w = await writeEpisode(db, { provider, analyze }, REQUEST);
+      const w = await writeEpisode(db, { llm, analyze }, REQUEST);
       // The extra Proofread in measure() is not part of the pipeline: take the stats first.
       const stats = callStats(calls, start);
       sample = {
@@ -230,11 +238,11 @@ function emptySample(): Sample {
 
 async function ab(n: number, out: string) {
   const { ask, measure } = await setup();
-  const { buildEpisodePrompt, parseEpisodeText } = await import("#/llm/provider");
+  const { episode } = await import("#/story/llm");
   const { NEW_SHARE_TARGET } = await import("#/story/service");
   const { z } = await import("zod");
   const req = { ...REQUEST, newShare: NEW_SHARE_TARGET };
-  const prompts = { it: buildEpisodePrompt(req), pl: await polishEpisodePrompt(req) };
+  const prompts = { it: episode.prompt(req), pl: await polishEpisodePrompt(req) };
   const runs: Record<"it" | "pl", Run> = {
     it: { label: "it", samples: [] },
     pl: { label: "pl", samples: [] },
@@ -248,7 +256,7 @@ async function ab(n: number, out: string) {
   });
   for (let i = 0; i < n; i++) {
     for (const lang of ["it", "pl"] as const) {
-      const text = parseEpisodeText(await ask(prompts[lang], "story"));
+      const text = episode.parse(await ask(prompts[lang], "story"), req);
       runs[lang].samples.push(await measure(text));
     }
     // Blind: a coin decides which text is A.

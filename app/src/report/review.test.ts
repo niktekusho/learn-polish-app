@@ -5,8 +5,7 @@ import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import { senseKey } from "#/dictionary/service";
-import type { GlossProvider, ReportReviewItem, ReportVerdict } from "#/llm/provider";
-import { StubProvider } from "#/llm/stub";
+import { fakeLlm } from "#/llm/fake";
 import { insertEntryBatch } from "#/dictionary/loader";
 import { persistAnalysis } from "#/import/pipeline";
 import {
@@ -17,6 +16,7 @@ import {
   takeCorrections,
   undoReview,
 } from "./review";
+import type { ReportReviewItem, ReportVerdict } from "./llm";
 
 type DB = ReturnType<typeof freshDb>;
 
@@ -89,36 +89,22 @@ function lemmaRow(db: DB, id: number) {
   return db.select().from(schema.lemma).where(eq(schema.lemma.id, id)).all()[0];
 }
 
-function fake(verdicts: (ReportVerdict | null)[]): GlossProvider & { calls: ReportReviewItem[][] } {
-  const calls: ReportReviewItem[][] = [];
-  return {
-    name: "claude-cli",
-    calls,
-    gloss: async () => "",
-    reviewReports: async (items) => {
-      calls.push(items);
-      return verdicts;
-    },
-  };
+function fake(verdicts: (ReportVerdict | null)[]) {
+  return fakeLlm({ name: "claude-cli", answers: { "report-review": () => verdicts } });
 }
+
+/** The items of each report-review call, in call order. */
+const reviewed = (llm: ReturnType<typeof fakeLlm>) =>
+  llm.calls.filter((c) => c.name === "report-review").map((c) => c.req as ReportReviewItem[]);
 
 test("one provider call reviews every wrong Report and applies each verdict", async () => {
   const db = freshDb();
   const tylko = seed(db, "tylko", { gloss: "ma anche", senses: [["only", "solo"]], flagged: "" });
   const tez = seed(db, "też", { gloss: "anche", senses: [["also", "anche"]], flagged: "?" });
-  let calls = 0;
-  const stub = new StubProvider();
-  const counted: GlossProvider = {
-    name: "stub",
-    gloss: async () => "",
-    reviewReports: (items) => {
-      calls++;
-      return stub.reviewReports(items);
-    },
-  };
+  const llm = fakeLlm();
 
-  expect(await reviewReports(db, counted)).toBe(2);
-  expect(calls).toBe(1);
+  expect(await reviewReports(db, llm)).toBe(2);
+  expect(reviewed(llm)).toHaveLength(1);
   expect(primary(db, tylko)).toMatchObject({ italian: "solo", provider: "stub" });
   expect(primary(db, tez).italian).toBe("anche");
   expect(lemmaRow(db, tylko).flaggedAt).toBeNull();
@@ -192,13 +178,7 @@ test("a manual primary gloss is never replaced", async () => {
 test("a provider failure leaves every Report pending and out of practice", async () => {
   const db = freshDb();
   seed(db, "tylko", { gloss: "ma anche", flagged: "" });
-  const failing: GlossProvider = {
-    name: "claude-cli",
-    gloss: async () => "",
-    reviewReports: async () => {
-      throw new Error("claude exited 1");
-    },
-  };
+  const failing = fakeLlm({ fails: [new Error("claude exited 1")] });
   await expect(reviewReports(db, failing)).rejects.toThrow("claude exited 1");
   expect(pendingReports(db)).toHaveLength(1);
   expect(db.select().from(schema.reportReview).all()).toHaveLength(0);
@@ -269,7 +249,7 @@ test("undoing a review that changed nothing files a Report the next review sees"
 
   const next = fake([{ gloss: "keep", contextBound: false, names: [], reason: "x" }]);
   await reviewReports(db, next);
-  expect(next.calls[0][0]).toMatchObject({
+  expect(reviewed(next)[0][0]).toMatchObject({
     note: "è sbagliata",
     previous: { reason: "Va bene.", undone: true },
   });
@@ -337,7 +317,7 @@ test("a reader Report moves the Name uses to the Name and deletes the word left 
   const provider = fake([{ gloss: "keep", contextBound: false, names: [0, 1], reason: "Nome." }]);
 
   expect(await reviewReports(db, provider)).toBe(1);
-  expect(provider.calls[0][0].names.map((c) => c.sentence)).toEqual([
+  expect(reviewed(provider)[0][0].names.map((c) => c.sentence)).toEqual([
     "Smok Iskra leci.",
     "Iskra śpi.",
   ]);
@@ -385,7 +365,7 @@ test("a Practice Report offers only capitalized occurrences, and a word with use
   const provider = fake([{ gloss: "keep", contextBound: false, names: [0], reason: "x" }]);
 
   expect(await reviewReports(db, provider)).toBe(1);
-  expect(provider.calls[0][0].names.map((c) => c.sentence)).toEqual(["Smok Iskra leci."]);
+  expect(reviewed(provider)[0][0].names.map((c) => c.sentence)).toEqual(["Smok Iskra leci."]);
   expect(lemmasOf(db, "iskry.")).toEqual([{ lemma: "iskra", pos: "NOUN" }]);
   expect(lemmasOf(db, "Iskra ")).toEqual([
     { lemma: "Iskra", pos: "PROPN" },

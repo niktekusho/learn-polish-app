@@ -47,8 +47,8 @@ const restoreMweFn = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { db } = await import("#/db/index");
     const { restoreMwe } = await import("#/dictionary/mwe-check");
-    const { getGlossProvider } = await import("#/llm/index");
-    await restoreMwe(db, getGlossProvider(), data.lemmaId);
+    const { appLlm } = await import("#/llm/index");
+    await restoreMwe(db, appLlm(), data.lemmaId);
   });
 
 const actionInput = z.object({
@@ -81,8 +81,8 @@ const runAction = createServerFn({ method: "POST" })
         return { deleted: ops.clearDictionary(db) };
       case "recheck-mwes": {
         const { recheckMwes } = await import("#/dictionary/mwe-check");
-        const { getGlossProvider } = await import("#/llm/index");
-        return { deleted: await recheckMwes(db, getGlossProvider()) };
+        const { appLlm } = await import("#/llm/index");
+        return { deleted: await recheckMwes(db, appLlm()) };
       }
       case "repair-names": {
         const r = ops.repairNames(db);
@@ -94,8 +94,8 @@ const runAction = createServerFn({ method: "POST" })
         };
       }
       case "repair-character-names": {
-        const { getGlossProvider } = await import("#/llm/index");
-        const r = await ops.repairCharacterNames(db, getGlossProvider());
+        const { appLlm } = await import("#/llm/index");
+        const r = await ops.repairCharacterNames(db, appLlm());
         return {
           deleted: r.deletedLemmas,
           note: `${r.moved} occurrences moved to their character.`,
@@ -103,15 +103,14 @@ const runAction = createServerFn({ method: "POST" })
       }
       case "repair-formulas": {
         const { repairFormulas } = await import("#/dictionary/formula");
-        const { getGlossProvider } = await import("#/llm/index");
-        const r = await repairFormulas(db, getGlossProvider());
+        const { appLlm } = await import("#/llm/index");
+        const r = await repairFormulas(db, appLlm());
         return { deleted: r.deletedLemmas, note: `${r.moved} occurrences moved to their formula.` };
       }
       case "proofread-episodes": {
-        const { getGlossProvider } = await import("#/llm/index");
+        const { appLlm } = await import("#/llm/index");
         const { analyze } = await import("#/import/sidecar");
-        const provider = getGlossProvider();
-        const r = await ops.proofreadEpisodes(db, { provider, analyze, checker: provider });
+        const r = await ops.proofreadEpisodes(db, { llm: appLlm(), analyze });
         const lines = [
           `${r.repaired.length} episodes corrected, ${r.failed.length} failed.`,
           ...r.repaired.flatMap((t) => t.changes.map((c) => `${t.label}: ${c}`)),

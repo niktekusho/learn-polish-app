@@ -14,9 +14,10 @@ import {
 } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
-import { knowledge, lemma, mweOccurrence, passageQuestion, sourceText, token } from "#/db/schema";
-import type { GlossProvider } from "#/llm/provider";
+import { knowledge, lemma, mweOccurrence, sourceText, token } from "#/db/schema";
+import type { Llm } from "#/llm/call";
 import { NAME_POS } from "#/reader/name";
+import { passageQuestion } from "./llm";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -118,12 +119,7 @@ function realPassage(db: DB, lemmaId: number) {
  * has the lemma, with one LLM call for the question. A lemma without a read
  * sentence, or whose call fails, caches nothing. Returns rows written.
  */
-export async function preparePassages(
-  db: DB,
-  lemmaIds: number[],
-  provider: GlossProvider,
-): Promise<number> {
-  if (!provider.passageQuestion) return 0;
+export async function preparePassages(db: DB, lemmaIds: number[], llm: Llm): Promise<number> {
   let written = 0;
   for (const lemmaId of lemmaIds) {
     const [l] = db
@@ -134,9 +130,9 @@ export async function preparePassages(
           eq(lemma.id, lemmaId),
           notExists(
             db
-              .select({ id: passageQuestion.id })
-              .from(passageQuestion)
-              .where(eq(passageQuestion.lemmaId, lemmaId)),
+              .select({ id: schema.passageQuestion.id })
+              .from(schema.passageQuestion)
+              .where(eq(schema.passageQuestion.lemmaId, lemmaId)),
           ),
         ),
       )
@@ -145,12 +141,12 @@ export async function preparePassages(
     const p = realPassage(db, lemmaId);
     if (!p) continue;
     try {
-      const q = await provider.passageQuestion({
+      const q = await llm.call(passageQuestion, {
         passage: p.passage,
         lemma: l.lemma,
         target: p.target,
       });
-      db.insert(passageQuestion)
+      db.insert(schema.passageQuestion)
         .values({
           lemmaId,
           passage: p.passage,
@@ -160,7 +156,7 @@ export async function preparePassages(
           question: q.question,
           choices: q.choices,
           correctIndex: q.correctIndex,
-          provider: provider.name,
+          provider: llm.name,
         })
         .run();
       written++;
@@ -207,9 +203,9 @@ export function passagePrepTargets(db: DB, now = new Date(), cap = PREP_CAP): nu
         ),
         notExists(
           db
-            .select({ id: passageQuestion.id })
-            .from(passageQuestion)
-            .where(eq(passageQuestion.lemmaId, knowledge.lemmaId)),
+            .select({ id: schema.passageQuestion.id })
+            .from(schema.passageQuestion)
+            .where(eq(schema.passageQuestion.lemmaId, knowledge.lemmaId)),
         ),
       ),
     )
@@ -225,11 +221,11 @@ let preparing = false;
  * Background run after a Practice session: fire-and-forget, one at a time
  * (a second trigger while one runs is dropped).
  */
-export async function prepareUpcomingPassages(db: DB, provider: GlossProvider): Promise<void> {
+export async function prepareUpcomingPassages(db: DB, llm: Llm): Promise<void> {
   if (preparing) return;
   preparing = true;
   try {
-    await preparePassages(db, passagePrepTargets(db), provider);
+    await preparePassages(db, passagePrepTargets(db), llm);
   } finally {
     preparing = false;
   }

@@ -2,21 +2,22 @@ import { asc, eq } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { comprehensionQuestion, sourceText } from "#/db/schema";
-import { getGlossProvider } from "#/llm/index";
-import type { GlossProvider } from "#/llm/provider";
+import type { Llm } from "#/llm/call";
+import { appLlm } from "#/llm/index";
+import { comprehension, type ComprehensionResult } from "./llm";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
 export interface ComprehensionCheck {
   questions: { question: string; choices: string[]; correctIndex: number }[];
-  cached: boolean; // true = served from cache (no provider call)
+  cached: boolean; // true = served from cache (no LLM call)
 }
 
 /**
  * Comprehension-check MCQs for a text, cached in `comprehension_question`.
  *
  * Lazily generated on the first check click (mirrors the lazy-gloss decision):
- * ONE provider call produces all questions, written in one transaction so a
+ * ONE LLM call produces all questions, written in one transaction so a
  * junk response caches nothing. Questions are disposable derived data: no
  * manual tier; the recourse for bad questions is regenerateComprehensionCheck.
  * The answer key is part of the cached question; grading happens client-side
@@ -25,7 +26,7 @@ export interface ComprehensionCheck {
 export async function getComprehensionCheck(
   db: DB,
   textId: number,
-  provider: GlossProvider = getGlossProvider(),
+  llm: Llm = appLlm(),
 ): Promise<ComprehensionCheck> {
   const existing = db
     .select()
@@ -47,18 +48,14 @@ export async function getComprehensionCheck(
   const [text] = db.select().from(sourceText).where(eq(sourceText.id, textId)).all();
   if (!text) throw new Error(`text ${textId} not found`);
 
-  if (!provider.comprehension) {
-    throw new Error(`provider "${provider.name}" does not support comprehension checks`);
-  }
-
-  let result: Awaited<ReturnType<NonNullable<GlossProvider["comprehension"]>>>;
+  let result: ComprehensionResult;
   try {
-    result = await provider.comprehension({ text: text.content });
+    result = await llm.call(comprehension, { text: text.content });
   } catch (err) {
     // Log server-side (the pnpm dev terminal): the error otherwise only
     // surfaces as the UI's generic "failed" state, hiding the real cause
     // (e.g. `claude exited 1: 401 Invalid authentication credentials`).
-    console.error(`[comprehension] provider "${provider.name}" failed for text ${textId}:`, err);
+    console.error(`[comprehension] provider "${llm.name}" failed for text ${textId}:`, err);
     throw err;
   }
 
@@ -74,7 +71,7 @@ export async function getComprehensionCheck(
           question: q.question,
           choices: q.choices,
           correctIndex: q.correctIndex,
-          provider: provider.name,
+          provider: llm.name,
         })
         .onConflictDoNothing()
         .run();
@@ -106,8 +103,8 @@ export async function getComprehensionCheck(
 export async function regenerateComprehensionCheck(
   db: DB,
   textId: number,
-  provider: GlossProvider = getGlossProvider(),
+  llm: Llm = appLlm(),
 ): Promise<ComprehensionCheck> {
   db.delete(comprehensionQuestion).where(eq(comprehensionQuestion.textId, textId)).run();
-  return getComprehensionCheck(db, textId, provider);
+  return getComprehensionCheck(db, textId, llm);
 }

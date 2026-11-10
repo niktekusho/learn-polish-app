@@ -7,8 +7,9 @@ import * as schema from "#/db/schema";
 import { persistAnalysis } from "#/import/pipeline";
 import { pruneOrphanLemmas } from "#/maintenance/ops";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import type { MweCheckItem } from "#/llm/provider";
+import { callsNamed, fakeLlm } from "#/llm/fake";
 import { importAnalysis } from "#/import/checked-import";
+import type { MweCheckItem } from "./llm";
 import { recheckMwes, restoreMwe, suppressMwe } from "./mwe-check";
 
 function freshDb() {
@@ -37,19 +38,17 @@ const ANALYSIS: AnalyzeResponse = {
 
 /** Throws on the first `fail` calls, then rejects every "To jest …" sentence; records each call. */
 function fakeProvider(fail = 0) {
-  const calls: MweCheckItem[][] = [];
-  return {
-    name: "stub" as const,
-    calls,
-    async checkMwes(items: MweCheckItem[]) {
-      calls.push(items);
-      if (calls.length <= fail) throw new Error("claude exited 1");
-      return items.map((i) => !i.sentence.startsWith("To jest"));
+  return fakeLlm({
+    fails: Array.from({ length: fail }, () => new Error("claude exited 1")),
+    answers: {
+      "mwe-check": (items: MweCheckItem[]) => items.map((i) => !i.sentence.startsWith("To jest")),
     },
-  };
+  });
 }
 
-const NO_CHECK = { name: "stub" as const };
+/** The items of each mwe-check call, in call order. */
+const checked = (llm: ReturnType<typeof fakeLlm>) =>
+  callsNamed(llm, "mwe-check").map((c) => c.req as MweCheckItem[]);
 
 function importChecked(
   db: ReturnType<typeof freshDb>,
@@ -102,7 +101,7 @@ test("a check that fails 3 times fails the import with nothing saved", async () 
   const provider = fakeProvider(3);
 
   await expect(importChecked(db, ANALYSIS, provider)).rejects.toThrow(/stub.*claude exited 1/);
-  expect(provider.calls).toHaveLength(3);
+  expect(checked(provider)).toHaveLength(3);
   expect(rowCounts(db)).toEqual([0, 0, 0, 0, 0]);
 });
 
@@ -112,20 +111,14 @@ test("a check that fails twice is retried", async () => {
   expect(headwordsLeft(db)).toEqual(["dzień dobry"]);
 });
 
-test("a provider without the check fails an import with matches", async () => {
-  const db = freshDb();
-  await expect(importChecked(db, ANALYSIS, NO_CHECK)).rejects.toThrow(/stub/);
-  expect(rowCounts(db)).toEqual([0, 0, 0, 0, 0]);
-});
-
 test("an import without matches never calls the check", async () => {
   const db = freshDb();
   const plain: AnalyzeResponse = { sentences: [{ tokens: [w("Kot", "kot", "NOUN")] }] };
   const provider = fakeProvider(3);
 
   await importChecked(db, plain, provider);
-  await importChecked(db, plain, NO_CHECK);
-  expect(provider.calls).toHaveLength(0);
+  await importChecked(db, plain, provider);
+  expect(checked(provider)).toHaveLength(0);
   expect(db.select().from(schema.sourceText).all()).toHaveLength(2);
 });
 
@@ -137,8 +130,8 @@ test("one call per check, identical sentences sent once", async () => {
   const provider = fakeProvider();
 
   await importChecked(db, repeated, provider);
-  expect(provider.calls).toHaveLength(1);
-  expect(provider.calls[0].map((i) => i.sentence)).toEqual(["To jest chleb", "Dzień dobry"]);
+  expect(checked(provider)).toHaveLength(1);
+  expect(checked(provider)[0].map((i) => i.sentence)).toEqual(["To jest chleb", "Dzień dobry"]);
 });
 
 test("a recheck drops past rejected matches; a failed recheck changes nothing", async () => {
@@ -146,7 +139,6 @@ test("a recheck drops past rejected matches; a failed recheck changes nothing", 
   persistAnalysis(db, { content: "x" }, ANALYSIS, new Date(), HEADWORDS);
 
   await expect(recheckMwes(db, fakeProvider(3))).rejects.toThrow(/stub/);
-  await expect(recheckMwes(db, NO_CHECK)).rejects.toThrow(/stub/);
   expect(headwordsLeft(db).sort()).toEqual(["dzień dobry", "to jest"]);
 
   expect(await recheckMwes(db, fakeProvider())).toBe(1);
@@ -195,7 +187,6 @@ test("a suppressed MWE disappears and later imports skip it; restore rechecks pa
   );
 
   await expect(restoreMwe(db, fakeProvider(3), toJest.id)).rejects.toThrow(/stub/);
-  await expect(restoreMwe(db, NO_CHECK, toJest.id)).rejects.toThrow(/stub/);
   expect(headwordsLeft(db)).toEqual(["dzień dobry"]);
   expect(db.select().from(schema.lemma).where(eq(schema.lemma.id, toJest.id)).all()).toEqual([
     expect.objectContaining({ suppressed: true }),
@@ -203,8 +194,8 @@ test("a suppressed MWE disappears and later imports skip it; restore rechecks pa
 
   const provider = fakeProvider();
   await restoreMwe(db, provider, toJest.id);
-  expect(provider.calls).toHaveLength(1);
-  expect(provider.calls[0].map((i) => i.sentence)).toEqual([
+  expect(checked(provider)).toHaveLength(1);
+  expect(checked(provider)[0].map((i) => i.sentence)).toEqual([
     "To jest chleb",
     "Kot, to jest zwierzę",
   ]);

@@ -10,9 +10,10 @@ import {
   upsertLemma,
 } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
+import type { Llm } from "#/llm/call";
 import { NAME_POS } from "#/reader/name";
 import { correctLemma } from "./lemma-correction";
-import { checkInContext, forgetUnit, type MweChecker, sentenceText } from "./mwe-check";
+import { checkInContext, forgetUnit, sentenceText } from "./mwe-check";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
@@ -42,7 +43,7 @@ export function formulaHeadword(db: DB, surface: string, tokenLemma: string): st
  */
 export async function resolveFormulas(
   db: DB,
-  checker: MweChecker,
+  llm: Llm,
   analysis: AnalyzeResponse,
 ): Promise<Map<number, AssignedLemma>> {
   const candidates: { position: number; headword: string; sentence: string }[] = [];
@@ -59,7 +60,7 @@ export async function resolveFormulas(
       position++;
     }
   }
-  const accepted = await checkInContext(db, checker, "Formula", candidates);
+  const accepted = await checkInContext(db, llm, "Formula", candidates);
   return new Map(
     candidates
       .filter((_, i) => accepted[i])
@@ -73,8 +74,8 @@ export interface FormulaRepair {
 }
 
 /** Formula detection over stored texts. */
-export async function repairFormulas(db: DB, checker: MweChecker): Promise<FormulaRepair> {
-  const moves = await formulaMoves(db, checker, (r) => formulaHeadword(db, r.surface, r.lemma));
+export async function repairFormulas(db: DB, llm: Llm): Promise<FormulaRepair> {
+  const moves = await formulaMoves(db, llm, (r) => formulaHeadword(db, r.surface, r.lemma));
   return db.transaction((tx) => applyFormulaMoves(tx, moves));
 }
 
@@ -92,7 +93,7 @@ export interface FormulaClick {
  */
 export async function promoteFormula(
   db: DB,
-  checker: MweChecker,
+  llm: Llm,
   click: FormulaClick,
 ): Promise<{ lemmaId: number; lemma: string; pos: string } | null> {
   const word = click.surface.trim().toLowerCase();
@@ -100,7 +101,7 @@ export async function promoteFormula(
   const meaning = click.note ? `${click.italian} (${click.note})` : click.italian;
   const moves = await formulaMoves(
     db,
-    checker,
+    llm,
     (r) =>
       r.id !== click.tokenId &&
       r.surface.trim().toLowerCase() === word &&
@@ -113,7 +114,7 @@ export async function promoteFormula(
   return db.transaction((tx) => {
     const formulaId = upsertLemma(tx, word, FORMULA_POS);
     tx.insert(gloss)
-      .values({ lemmaId: formulaId, sense: "", italian: meaning, provider: checker.name })
+      .values({ lemmaId: formulaId, sense: "", italian: meaning, provider: llm.name })
       .onConflictDoNothing()
       .run();
     const [clicked] = tx
@@ -131,7 +132,7 @@ export async function promoteFormula(
         lemmaId: formulaId,
         sense: null,
         italian: click.italian,
-        provider: checker.name,
+        provider: llm.name,
       })
       .onConflictDoNothing()
       .run();
@@ -178,7 +179,7 @@ type FormulaMove = { id: number; lemmaId: number; headword: string };
 /** Word tokens `headwordOf` names a formula for, kept when the check accepts them in their sentence. */
 async function formulaMoves(
   db: DB,
-  checker: MweChecker,
+  llm: Llm,
   headwordOf: (r: WordToken) => string | null,
   meaning?: string,
 ): Promise<FormulaMove[]> {
@@ -201,7 +202,7 @@ async function formulaMoves(
       ? [{ ...r, headword, meaning, sentence: sentenceText(db, r.textId, r.sentenceIndex) }]
       : [];
   });
-  const accepted = await checkInContext(db, checker, "Formula", candidates);
+  const accepted = await checkInContext(db, llm, "Formula", candidates);
   return candidates.filter((_, i) => accepted[i]);
 }
 

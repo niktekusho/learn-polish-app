@@ -6,6 +6,7 @@ import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
 import { recordCall } from "./call-log";
 import { ClaudeCliProvider } from "./claude-cli";
+import type { CallSpec } from "./call";
 import type { LlmCall } from "./cli";
 
 function migratedDb() {
@@ -13,6 +14,14 @@ function migratedDb() {
   migrate(db, { migrationsFolder: "drizzle" });
   return db;
 }
+
+const echo: CallSpec<{ sentence: string }, string> = {
+  name: "echo",
+  tier: "gloss",
+  prompt: (req) => `Repeat: ${req.sentence}`,
+  parse: (text) => text,
+  stub: (req) => req.sentence,
+};
 
 const unzip = (blob: Buffer | null) => (blob ? gunzipSync(blob).toString("utf8") : null);
 
@@ -97,14 +106,14 @@ test("a Claude CLI call lands in the log with its full text, usage and effort", 
     async () => ({ code: 0, stdout, stderr: "" }),
     (c) => recordCall(db, "claude-cli", c),
   );
-  await provider.gloss({ lemma: "robić", pos: "VERB", sentence: "Robię obiad." });
+  await provider.call(echo, { sentence: "Robię obiad." });
 
   const [row] = db.select().from(schema.llmCall).all();
   expect(unzip(row.prompt)).toContain("Robię obiad.");
   expect(unzip(row.response)).toBe("fare");
   expect(row).toMatchObject({
     provider: "claude-cli",
-    call: "gloss",
+    call: "echo",
     effort: "medium",
     inputTokens: 25,
     outputTokens: 1,
@@ -120,9 +129,7 @@ test("a failed Claude CLI call keeps the prompt, the raw output and the error", 
     async () => ({ code: 1, stdout: "half a reply", stderr: "" }),
     (c) => recordCall(db, "claude-cli", c),
   );
-  await expect(
-    provider.gloss({ lemma: "robić", pos: "VERB", sentence: "Robię obiad." }),
-  ).rejects.toThrow();
+  await expect(provider.call(echo, { sentence: "Robię obiad." })).rejects.toThrow();
 
   const [row] = db.select().from(schema.llmCall).all();
   expect(unzip(row.prompt)).toContain("Robię obiad.");

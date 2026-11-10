@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { z } from "zod";
-import type { StoryPremise } from "#/llm/provider";
+import type { StoryPremise } from "#/story/llm";
 import { plural } from "#/plural";
 import {
   BTN_DANGER,

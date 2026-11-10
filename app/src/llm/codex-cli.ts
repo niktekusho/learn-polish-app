@@ -9,7 +9,7 @@ import {
   spawnCli,
   tiersFromEnv,
 } from "./cli";
-import type { LlmTask, ProviderName } from "./provider";
+import type { LlmTier, ProviderName } from "./call";
 
 // Real Italian gloss via the `codex` CLI already on PATH. `codex exec --json` prints
 // one JSON event per line: the reply is the last agent message, and the usage comes
@@ -17,7 +17,7 @@ import type { LlmTask, ProviderName } from "./provider";
 
 // "codex" is Codex's configured default model, which gets no --model flag.
 const DEFAULT_MODEL = "codex";
-const MODELS: Record<LlmTask, string> = {
+const MODELS: Record<LlmTier, string> = {
   gloss: DEFAULT_MODEL,
   story: DEFAULT_MODEL,
   check: DEFAULT_MODEL,

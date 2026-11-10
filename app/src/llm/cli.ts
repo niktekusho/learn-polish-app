@@ -1,76 +1,5 @@
 import { spawn } from "node:child_process";
-import {
-  buildComprehensionPrompt,
-  buildCorrectionPrompt,
-  buildDebriefPrompt,
-  buildEpisodePrompt,
-  buildGlossPrompt,
-  buildMweCheckPrompt,
-  buildOccurrencePrompt,
-  buildPassageQuestionPrompt,
-  buildPremisesPrompt,
-  buildProofreadPrompt,
-  buildReportReviewPrompt,
-  buildScenePrompt,
-  buildSenseGlossPrompt,
-  buildStoryOutlinePrompt,
-  type ChoiceQuestion,
-  type ComprehensionRequest,
-  type ComprehensionResult,
-  type DebriefRequest,
-  type DebriefResult,
-  type EpisodeRequest,
-  type GlossProvider,
-  type GlossRequest,
-  type LlmTask,
-  type MweCheckItem,
-  type OccurrenceRequest,
-  type OccurrenceResult,
-  parseComprehensionJson,
-  parseCorrectedText,
-  parseDebriefJson,
-  parseEpisodeText,
-  parseGloss,
-  parseMweCheckJson,
-  parseOccurrenceJson,
-  parsePassageQuestionJson,
-  parsePremisesJson,
-  parseProofreadJson,
-  parseReportReviewJson,
-  parseSceneJson,
-  parseSenseGlossJson,
-  parseStoryOutlineJson,
-  type PassageQuestionRequest,
-  type ProofreadFlag,
-  type ProviderName,
-  type ReportReviewItem,
-  type ReportVerdict,
-  type SceneProvider,
-  type SceneRequest,
-  type SceneResult,
-  type SenseGlossRequest,
-  type SenseGlossResult,
-  type StoryOutline,
-  type StoryPremise,
-  type StoryProvider,
-} from "./provider";
-
-export type LlmCallName =
-  | "gloss"
-  | "sense-gloss"
-  | "occurrence"
-  | "comprehension"
-  | "passage-question"
-  | "mwe-check"
-  | "report-review"
-  | "proofread"
-  | "correction"
-  | "premises"
-  | "outline"
-  | "episode"
-  | "scene"
-  | "turn"
-  | "debrief";
+import type { CallOptions, CallSpec, Llm, LlmTier, ProviderName } from "./call";
 
 /** Token counts and API time a CLI reports; null where it reports none. */
 export interface Usage {
@@ -87,7 +16,7 @@ export interface CliReply {
 
 /** One LLM call, as the call log records it. */
 export interface LlmCall extends Usage {
-  call: LlmCallName;
+  call: string; // the spec name
   model: string;
   effort: string;
   prompt: string;
@@ -143,17 +72,17 @@ export function spawnCli(
 }
 
 /**
- * Model and effort per task tier, from `<CLI>_<TIER>_MODEL` and `<CLI>_<TIER>_EFFORT`
+ * Model and effort per tier, from `<CLI>_<TIER>_MODEL` and `<CLI>_<TIER>_EFFORT`
  * (e.g. CLAUDE_STORY_EFFORT=low), falling back to `models` at medium effort.
  */
 export function tiersFromEnv(
   cli: "CLAUDE" | "CODEX",
-  models: Record<LlmTask, string>,
+  models: Record<LlmTier, string>,
   env: Record<string, string | undefined>,
-): Record<LlmTask, ModelChoice> {
-  const choice = (task: LlmTask) => ({
-    model: env[`${cli}_${task.toUpperCase()}_MODEL`] || models[task],
-    effort: env[`${cli}_${task.toUpperCase()}_EFFORT`] || "medium",
+): Record<LlmTier, ModelChoice> {
+  const choice = (tier: LlmTier) => ({
+    model: env[`${cli}_${tier.toUpperCase()}_MODEL`] || models[tier],
+    effort: env[`${cli}_${tier.toUpperCase()}_EFFORT`] || "medium",
   });
   return {
     gloss: choice("gloss"),
@@ -175,135 +104,61 @@ export const NO_USAGE: Usage = {
  * output. Subclasses supply the shell-out, injectable so tests skip the process,
  * and how to read a reply from it. Every call, parsed or not, goes to `log`.
  */
-export abstract class CliProvider implements GlossProvider, StoryProvider, SceneProvider {
+export abstract class CliProvider implements Llm {
   abstract readonly name: ProviderName;
 
   constructor(
     private readonly exec: CliExec,
     private readonly log: (call: LlmCall) => void,
-    private readonly tiers: Record<LlmTask, ModelChoice>,
+    private readonly tiers: Record<LlmTier, ModelChoice>,
   ) {}
 
   /** The reply text and usage of a finished run; throws when the CLI failed. */
   protected abstract readReply(run: CliRun): CliReply;
 
-  private async run<T>(
-    call: LlmCallName,
-    task: LlmTask,
-    prompt: string,
-    parse: (out: string) => T,
-    conversationId?: number,
-  ) {
-    const start = Date.now();
-    const choice = this.tiers[task];
-    let response: string | null = null;
-    let usage = NO_USAGE;
-    const log = (error: string | null) =>
-      this.log({
-        call,
-        ...choice,
-        prompt,
-        response,
-        ...usage,
-        ms: Date.now() - start,
-        error,
-        conversationId,
-      });
-    try {
-      const ran = await this.exec(prompt, choice);
-      response = ran.stdout || null;
-      const reply = this.readReply(ran);
-      response = reply.text;
-      usage = reply.usage;
-      const out = parse(reply.text);
-      log(null);
-      return out;
-    } catch (err) {
-      log(err instanceof Error ? err.message : String(err));
-      throw err;
-    }
-  }
-
-  gloss(req: GlossRequest): Promise<string> {
-    return this.run("gloss", "gloss", buildGlossPrompt(req), parseGloss);
-  }
-
-  glossSenses(req: SenseGlossRequest): Promise<SenseGlossResult> {
-    return this.run("sense-gloss", "gloss", buildSenseGlossPrompt(req), (out) =>
-      parseSenseGlossJson(out, req.senses.length),
+  call<Req, Res>(spec: CallSpec<Req, Res>, req: Req, options?: CallOptions): Promise<Res> {
+    const choice = this.tiers[spec.tier];
+    const prompt = spec.prompt(req);
+    return loggedCall(
+      { call: spec.name, ...choice, prompt, conversationId: options?.conversationId },
+      () => this.exec(prompt, choice),
+      (run) => this.readReply(run),
+      (text) => spec.parse(text, req),
+      this.log,
     );
   }
+}
 
-  glossOccurrence(req: OccurrenceRequest): Promise<OccurrenceResult> {
-    return this.run("occurrence", "gloss", buildOccurrencePrompt(req), (out) =>
-      parseOccurrenceJson(out, req.senses.length),
-    );
-  }
+/** What a call log entry knows before the call runs. */
+export type CallEntry = Omit<LlmCall, keyof Usage | "response" | "ms" | "error">;
 
-  comprehension(req: ComprehensionRequest): Promise<ComprehensionResult> {
-    return this.run(
-      "comprehension",
-      "gloss",
-      buildComprehensionPrompt(req),
-      parseComprehensionJson,
-    );
-  }
-
-  passageQuestion(req: PassageQuestionRequest): Promise<ChoiceQuestion> {
-    return this.run(
-      "passage-question",
-      "gloss",
-      buildPassageQuestionPrompt(req),
-      parsePassageQuestionJson,
-    );
-  }
-
-  checkMwes(items: MweCheckItem[]): Promise<boolean[]> {
-    return this.run("mwe-check", "gloss", buildMweCheckPrompt(items), (out) =>
-      parseMweCheckJson(out, items.length),
-    );
-  }
-
-  reviewReports(items: ReportReviewItem[]): Promise<(ReportVerdict | null)[]> {
-    return this.run("report-review", "story", buildReportReviewPrompt(items), (out) =>
-      parseReportReviewJson(out, items.length),
-    );
-  }
-
-  proofread(text: string): Promise<ProofreadFlag[]> {
-    return this.run("proofread", "check", buildProofreadPrompt(text), (out) =>
-      parseProofreadJson(out, text),
-    );
-  }
-
-  correct(text: string, flags: ProofreadFlag[]): Promise<string> {
-    return this.run("correction", "story", buildCorrectionPrompt(text, flags), parseCorrectedText);
-  }
-
-  premises(pastGenres: string[]): Promise<StoryPremise[]> {
-    return this.run("premises", "story", buildPremisesPrompt(pastGenres), parsePremisesJson);
-  }
-
-  outline(premise: StoryPremise): Promise<StoryOutline> {
-    return this.run("outline", "story", buildStoryOutlinePrompt(premise), parseStoryOutlineJson);
-  }
-
-  episode(req: EpisodeRequest): Promise<string> {
-    return this.run("episode", "story", buildEpisodePrompt(req), parseEpisodeText);
-  }
-
-  scene(req: SceneRequest): Promise<SceneResult> {
-    return this.run("scene", "story", buildScenePrompt(req), (out) => parseSceneJson(out, req));
-  }
-
-  debrief(req: DebriefRequest, conversationId: number): Promise<DebriefResult> {
-    const said = req.transcript.flatMap((l) => (l.speaker === "learner" ? [l.text] : []));
-    return this.run(
-      "debrief",
-      "story",
-      buildDebriefPrompt(req),
-      (out) => parseDebriefJson(out, said),
-      conversationId,
-    );
+/**
+ * Runs one CLI call: times it, reads the reply out of the run, parses it and logs the
+ * call, parsed or not. A failure rethrows after the log, so the caller caches nothing.
+ */
+export async function loggedCall<T>(
+  entry: CallEntry,
+  exec: () => Promise<CliRun>,
+  readReply: (run: CliRun) => CliReply,
+  parse: (text: string) => T,
+  log: (call: LlmCall) => void,
+): Promise<T> {
+  const start = Date.now();
+  let response: string | null = null;
+  let usage = NO_USAGE;
+  const logged = (error: string | null) =>
+    log({ ...entry, response, ...usage, ms: Date.now() - start, error });
+  try {
+    const ran = await exec();
+    response = ran.stdout || null;
+    const reply = readReply(ran);
+    response = reply.text;
+    usage = reply.usage;
+    const out = parse(reply.text);
+    logged(null);
+    return out;
+  } catch (err) {
+    logged(err instanceof Error ? err.message : String(err));
+    throw err;
   }
 }

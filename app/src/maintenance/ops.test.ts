@@ -7,6 +7,8 @@ import * as schema from "#/db/schema";
 import { persistAnalysis } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
 import { initialKnowledgeFields } from "#/fsrs/index";
+import { fakeLlm } from "#/llm/fake";
+import type { CorrectionRequest } from "#/proofread/llm";
 import {
   backfillTokenTags,
   clearSourceTexts,
@@ -400,21 +402,15 @@ function practise(db: DB, word: string) {
   return id;
 }
 
-const proofreader = {
-  name: "stub" as const,
-  async proofread() {
-    return [];
-  },
-  async correct(text: string) {
-    return text === EP6 ? EP6_FIXED : text;
-  },
-};
-
 function repairDeps() {
   return {
-    provider: proofreader,
+    llm: fakeLlm({
+      answers: {
+        proofread: () => [],
+        correction: (req: CorrectionRequest) => (req.text === EP6 ? EP6_FIXED : req.text),
+      },
+    }),
     analyze: analyzeStory,
-    checker: proofreader,
     mweHeadwords: new Map(),
   };
 }

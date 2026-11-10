@@ -1,6 +1,6 @@
-// One-off: delete gloss rows produced by the dev StubGlossProvider. getGloss
+// One-off: delete gloss rows produced by the dev stub adapter (StubProvider). getGloss
 // reads the cache provider-blind, so leftover stub rows would shadow real
-// glosses once a real provider is active. Plain better-sqlite3 (no drizzle /
+// glosses once a real CLI adapter is active. Plain better-sqlite3 (no drizzle /
 // path aliases) so it runs under bare `node` with no TS toolchain.
 import Database from "better-sqlite3";
 import { fileURLToPath } from "node:url";

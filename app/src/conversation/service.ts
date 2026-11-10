@@ -25,11 +25,17 @@ import type {
   TranscriptLine,
   TurnResult,
 } from "#/llm/conversation-session";
-import { MAX_CORRECTIONS, type SceneProvider, type SceneRequest } from "#/llm/provider";
+import type { Llm } from "#/llm/call";
 import { getLearnerProfile, type LearnerProfile } from "#/profile/service";
 import { knowledgeFlags } from "#/reader/knowledge";
 import { conversationEpisode, recordActivity } from "#/recap/service";
 import { heardLineCount } from "./heard-lines";
+import {
+  debrief as debriefCall,
+  MAX_CORRECTIONS,
+  scene as sceneCall,
+  type SceneRequest,
+} from "./llm";
 import type { PanelToken } from "#/reader/types";
 import { storyCharacters } from "#/story/character-names";
 
@@ -46,7 +52,7 @@ const LAST_TURN = 25;
 const DAILY_TURNS = 3;
 
 export interface ConversationDeps {
-  provider: SceneProvider;
+  llm: Llm;
   voices: () => Promise<Voice[]>; // the sidecar's Piper catalog
   analyze: (text: string) => Promise<AnalyzeResponse>;
   createSession: (conversationId: number) => ConversationSession;
@@ -95,7 +101,7 @@ const inFlight = new WeakMap<DB, Map<number, Promise<void>>>();
 // respawns on the next turn, so an entry is never removed except by a reroll.
 const liveSessions = new WeakMap<DB, Map<number, ConversationSession>>();
 
-/** The Conversation seam: scene provider, sessions and clock injected so tests use fakes. */
+/** The Conversation seam: LLM, sessions and clock injected so tests use fakes. */
 export function conversationService(db: DB, deps: ConversationDeps) {
   const now = deps.now ?? (() => new Date());
   const running = inFlight.get(db) ?? new Map<number, Promise<void>>();
@@ -160,7 +166,7 @@ export function conversationService(db: DB, deps: ConversationDeps) {
       voices: voices && voices.map(({ id, label }) => ({ id, label })),
       memory: characters.map((c) => memories.get(c.name) ?? []),
     };
-    const scene = await deps.provider.scene(req);
+    const scene = await deps.llm.call(sceneCall, req);
     const character = characters[scene.character];
     return {
       voices: scene.voices?.map((voice, i) => ({ storyId, character: characters[i].name, voice })),
@@ -438,9 +444,10 @@ export function conversationService(db: DB, deps: ConversationDeps) {
     const result =
       c.turnCount === 0
         ? { corrections: [], memory: [] }
-        : await deps.provider.debrief(
+        : await deps.llm.call(
+            debriefCall,
             { transcript: transcriptOf(c), character: c.characterLine, memory },
-            id,
+            { conversationId: id },
           );
     db.transaction((tx) => {
       tx.update(conversation)

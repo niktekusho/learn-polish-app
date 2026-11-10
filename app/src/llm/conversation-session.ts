@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseJsonOutput } from "./json";
 
 /** One line of a Conversation, as the learner and the character spoke it. */
 export interface TranscriptLine {
@@ -57,16 +58,7 @@ export function turnResultSchema(stepIds: string[]) {
 }
 
 export function parseTurnResult(text: string, stepIds: string[]): TurnResult {
-  let json: unknown;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    throw new Error("turn reply is not JSON");
-  }
-  const parsed = turnResultSchema(stepIds).safeParse(json);
-  if (!parsed.success)
-    throw new Error(`turn reply does not match the schema: ${parsed.error.message}`);
-  return parsed.data;
+  return parseJsonOutput(text, "turn", turnResultSchema(stepIds));
 }
 
 export const LAST_TURN_NOTE =

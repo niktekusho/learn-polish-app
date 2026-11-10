@@ -2,8 +2,9 @@ import { and, eq, ne } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "#/db/schema";
 import { dictEntry, dictForm, lemma, sourceText, story, token } from "#/db/schema";
-import { checkInContext, forgetUnit, type MweChecker } from "#/dictionary/mwe-check";
+import { checkInContext, forgetUnit } from "#/dictionary/mwe-check";
 import { analysisSentence, upsertLemma } from "#/import/pipeline";
+import type { Llm } from "#/llm/call";
 import { NAME_POS } from "#/reader/name";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -75,7 +76,7 @@ export function characterForms(db: DB, characters: Character[]): Map<string, For
  */
 export async function resolveCharacterNames(
   db: DB,
-  checker: MweChecker,
+  llm: Llm,
   // An analysis, or stored tokens in position order: only surfaces are read.
   analysis: { sentences: { tokens: { surface: string }[] }[] },
   characters: Character[],
@@ -106,7 +107,7 @@ export async function resolveCharacterNames(
       position++;
     }
   }
-  const accepted = await checkInContext(db, checker, "Name", candidates);
+  const accepted = await checkInContext(db, llm, "Name", candidates);
   for (const c of candidates.filter((_, i) => accepted[i])) names.set(c.position, c.headword);
   return names;
 }

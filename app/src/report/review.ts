@@ -1,20 +1,12 @@
 import { and, asc, desc, eq, isNotNull, isNull, ne, or } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
-import {
-  dictEntry,
-  dictForm,
-  gloss,
-  lemma,
-  lemmaSlipRepair,
-  reportReview,
-  token,
-} from "#/db/schema";
+import { dictEntry, dictForm, gloss, lemma, lemmaSlipRepair, token } from "#/db/schema";
 import { sentenceText } from "#/dictionary/mwe-check";
 import { lookupDictionary } from "#/dictionary/service";
 import { nameBase } from "#/import/classify";
 import { ensureReceptiveKnowledge, upsertLemma } from "#/import/pipeline";
-import type { GlossProvider, ReportReviewItem, ReportVerdict } from "#/llm/provider";
+import type { Llm } from "#/llm/call";
 import { metSentences } from "#/passage/service";
 import { plural } from "#/plural";
 import { NAME_POS } from "#/reader/name";
@@ -25,9 +17,10 @@ import {
   storyCharacters,
   storyOf,
 } from "#/story/character-names";
+import { reportReview, type ReportReviewItem, type ReportVerdict } from "./llm";
 
 type DB = BetterSQLite3Database<typeof schema>;
-type Review = typeof reportReview.$inferSelect;
+type Review = typeof schema.reportReview.$inferSelect;
 
 interface Pending {
   id: number;
@@ -68,9 +61,9 @@ function primaryGloss(db: DB, lemmaId: number) {
 function latestReview(db: DB, lemmaId: number): Review | undefined {
   return db
     .select()
-    .from(reportReview)
-    .where(eq(reportReview.lemmaId, lemmaId))
-    .orderBy(desc(reportReview.id))
+    .from(schema.reportReview)
+    .where(eq(schema.reportReview.lemmaId, lemmaId))
+    .orderBy(desc(schema.reportReview.id))
     .limit(1)
     .all()[0];
 }
@@ -189,21 +182,16 @@ function glossAfter(item: ReportReviewItem, v: ReportVerdict): string | null | u
 }
 
 /**
- * Review every pending Report in one provider call and apply each valid
+ * Review every pending Report in one LLM call and apply each valid
  * verdict. An invalid item, or a failed call, stays pending for the next run.
  * Returns the number applied.
  */
-export async function reviewReports(
-  db: DB,
-  provider: GlossProvider,
-  now = new Date(),
-): Promise<number> {
-  if (!provider.reviewReports) return 0;
+export async function reviewReports(db: DB, llm: Llm, now = new Date()): Promise<number> {
   const pending = pendingReports(db);
   if (pending.length === 0) return 0;
   const candidates = pending.map((p) => nameCandidates(db, p));
   const items = pending.map((p, i) => reviewItem(db, p, candidates[i]));
-  const verdicts = await provider.reviewReports(items);
+  const verdicts = await llm.call(reportReview, items);
   let applied = 0;
   verdicts.forEach((v, i) => {
     const p = pending[i];
@@ -219,10 +207,10 @@ export async function reviewReports(
       const before = primaryGloss(tx, p.id);
       if (after !== null && after !== (before?.italian ?? null)) {
         tx.insert(gloss)
-          .values({ lemmaId: p.id, sense: "", italian: after, provider: provider.name })
+          .values({ lemmaId: p.id, sense: "", italian: after, provider: llm.name })
           .onConflictDoUpdate({
             target: [gloss.lemmaId, gloss.sense],
-            set: { italian: after, provider: provider.name },
+            set: { italian: after, provider: llm.name },
           })
           .run();
       }
@@ -231,7 +219,7 @@ export async function reviewReports(
         .where(eq(lemma.id, p.id))
         .run();
       const [{ id }] = tx
-        .insert(reportReview)
+        .insert(schema.reportReview)
         .values({
           lemmaId: p.id,
           word: p.lemma,
@@ -244,7 +232,7 @@ export async function reviewReports(
           reason: v.reason,
           reviewedAt: now,
         })
-        .returning({ id: reportReview.id })
+        .returning({ id: schema.reportReview.id })
         .all();
       // After the review row: a lemma left without tokens is deleted and the row keeps its word.
       const nameOf = new Map(names.map((c) => [c.tokenId, nameFor(tx, c)]));
@@ -252,7 +240,10 @@ export async function reviewReports(
       const { from } = moveToNames(tx, moves);
       if (from.length > 0) {
         const moved = from.map((f) => ({ ...f, name: nameOf.get(f.tokenId) as string }));
-        tx.update(reportReview).set({ names: moved }).where(eq(reportReview.id, id)).run();
+        tx.update(schema.reportReview)
+          .set({ names: moved })
+          .where(eq(schema.reportReview.id, id))
+          .run();
       }
     });
     applied++;
@@ -321,9 +312,9 @@ function reviewCorrection(db: DB, r: Review): Correction {
 function reviews(db: DB, onlyUnseen: boolean) {
   return db
     .select()
-    .from(reportReview)
-    .where(onlyUnseen ? isNull(reportReview.seenAt) : undefined)
-    .orderBy(desc(reportReview.id))
+    .from(schema.reportReview)
+    .where(onlyUnseen ? isNull(schema.reportReview.seenAt) : undefined)
+    .orderBy(desc(schema.reportReview.id))
     .all();
 }
 
@@ -349,7 +340,10 @@ export function takeCorrections(db: DB, now = new Date()): Correction[] {
         undone: false,
         undoable: false,
       }));
-    tx.update(reportReview).set({ seenAt: now }).where(isNull(reportReview.seenAt)).run();
+    tx.update(schema.reportReview)
+      .set({ seenAt: now })
+      .where(isNull(schema.reportReview.seenAt))
+      .run();
     tx.update(lemmaSlipRepair).set({ seenAt: now }).where(isNull(lemmaSlipRepair.seenAt)).run();
     return [...unseen, ...slips];
   });
@@ -362,7 +356,11 @@ export function takeCorrections(db: DB, now = new Date()): Correction[] {
  */
 export function undoReview(db: DB, reviewId: number, note = "", now = new Date()): void {
   db.transaction((tx) => {
-    const [r] = tx.select().from(reportReview).where(eq(reportReview.id, reviewId)).all();
+    const [r] = tx
+      .select()
+      .from(schema.reportReview)
+      .where(eq(schema.reportReview.id, reviewId))
+      .all();
     if (!r || r.undoneAt !== null || !isCurrent(tx, r)) {
       throw new Error("This review can no longer be undone.");
     }
@@ -392,6 +390,9 @@ export function undoReview(db: DB, reviewId: number, note = "", now = new Date()
       if (m.pos !== NAME_POS) ensureReceptiveKnowledge(tx, id, now);
       tx.update(token).set({ lemmaId: id }).where(eq(token.id, m.tokenId)).run();
     }
-    tx.update(reportReview).set({ undoneAt: now }).where(eq(reportReview.id, r.id)).run();
+    tx.update(schema.reportReview)
+      .set({ undoneAt: now })
+      .where(eq(schema.reportReview.id, r.id))
+      .run();
   });
 }

@@ -3,7 +3,7 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "#/db/schema";
 import { llmCall } from "#/db/schema";
 import type { LlmCall } from "./cli";
-import type { ProviderName } from "./provider";
+import type { ProviderName } from "./call";
 
 const MAX_ERROR = 500;
 

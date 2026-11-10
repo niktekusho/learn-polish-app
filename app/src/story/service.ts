@@ -3,18 +3,20 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema";
 import { sourceText, story } from "#/db/schema";
 import { knownLemmas } from "#/fsrs/index";
-import type { MweChecker } from "#/dictionary/mwe-check";
 import { importAnalysis } from "#/import/checked-import";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import {
-  beatText,
-  type EpisodeRequest,
-  type LevelFeedback,
-  type StoryPremise,
-  type StoryProvider,
-} from "#/llm/provider";
+import type { Llm } from "#/llm/call";
 import { proofreadText } from "#/proofread/proofread";
 import { episodeLine, newLemmaCount, recordActivity, wordCount } from "#/recap/service";
+import {
+  beatText,
+  episode,
+  type EpisodeRequest,
+  type LevelFeedback,
+  outline,
+  premises,
+  type StoryPremise,
+} from "./llm";
 import { levelOf } from "./metrics";
 
 type DB = BetterSQLite3Database<typeof schema>;
@@ -30,11 +32,9 @@ export const LEVEL_RETRIES = 2;
 export const inLevelRange = (share: number) => share >= NEW_SHARE_MIN && share <= NEW_SHARE_MAX;
 
 export interface StoryDeps {
-  provider: StoryProvider;
+  llm: Llm;
   analyze: (text: string) => Promise<AnalyzeResponse>;
   mweHeadwords?: Map<string, string[]>; // tests skip the dictionary lookup
-  // Absent: an episode with an MWE match or a Formula candidate fails.
-  checker?: MweChecker;
   // Called on an Episode's first read: the Conversation that follows it is prepared here.
   onEpisodeRead?: (textId: number) => void;
 }
@@ -69,7 +69,7 @@ export interface WrittenEpisode {
  */
 export async function writeEpisode(
   db: DB,
-  deps: Pick<StoryDeps, "provider" | "analyze">,
+  deps: Pick<StoryDeps, "llm" | "analyze">,
   req: Omit<EpisodeRequest, "newShare" | "feedback">,
 ): Promise<WrittenEpisode> {
   const knownSet = new Set(knownLemmas(db).map((l) => l.toLowerCase()));
@@ -77,7 +77,7 @@ export async function writeEpisode(
   let feedback: LevelFeedback | undefined;
   let drafts = 0;
   for (let attempt = 0; attempt <= LEVEL_RETRIES; attempt++) {
-    const text = await deps.provider.episode({ ...req, newShare: NEW_SHARE_TARGET, feedback });
+    const text = await deps.llm.call(episode, { ...req, newShare: NEW_SHARE_TARGET, feedback });
     drafts++;
     const analysis = await deps.analyze(text);
     const level = levelOf(analysis, knownSet);
@@ -101,7 +101,7 @@ export async function writeEpisode(
 // reader waits on a running background generation instead of starting another.
 const inFlight = new WeakMap<DB, Map<string, Promise<void>>>();
 
-/** The Story seam: provider and analyzer injected so tests use fakes. */
+/** The Story seam: LLM and analyzer injected so tests use fakes. */
 export function storyService(db: DB, deps: StoryDeps) {
   const running = inFlight.get(db) ?? new Map<string, Promise<void>>();
   inFlight.set(db, running);
@@ -134,7 +134,7 @@ export function storyService(db: DB, deps: StoryDeps) {
     );
     await importAnalysis(
       db,
-      deps.checker ?? { name: deps.provider.name },
+      deps.llm,
       {
         title: `${s.title} · episodio ${n}`,
         content: checked.text,
@@ -196,19 +196,22 @@ export function storyService(db: DB, deps: StoryDeps) {
         .from(story)
         .where(ne(story.status, "active"))
         .all();
-      return deps.provider.premises(past.map((p) => p.genre));
+      return deps.llm.call(
+        premises,
+        past.map((p) => p.genre),
+      );
     },
 
     /** Outline the story, persist it, and write episode 1 (the one visible wait). */
     async startStory(premise: StoryPremise): Promise<Episode | null> {
       if (activeStory()) throw new Error("a story is already active");
-      const outline = await deps.provider.outline(premise);
-      const planned = Math.min(MAX_EPISODES, outline.beats.length);
+      const plan = await deps.llm.call(outline, premise);
+      const planned = Math.min(MAX_EPISODES, plan.beats.length);
       const [s] = db
         .insert(story)
         .values({
           ...premise,
-          outline: { ...outline, beats: outline.beats.slice(0, planned) },
+          outline: { ...plan, beats: plan.beats.slice(0, planned) },
           plannedEpisodes: planned,
           status: "active",
         })

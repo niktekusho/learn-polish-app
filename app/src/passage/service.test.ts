@@ -7,7 +7,7 @@ import * as schema from "#/db/schema";
 import { initialKnowledgeFields } from "#/fsrs/index";
 import { persistAnalysis } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import type { GlossProvider, PassageQuestionRequest } from "#/llm/provider";
+import { callsNamed, fakeLlm } from "#/llm/fake";
 import { passagePrepTargets, preparePassages } from "./service";
 
 function freshDb() {
@@ -65,25 +65,20 @@ function lemmaId(db: DB, word: string) {
   return id;
 }
 
+const QUESTION = { question: "Dove?", choices: ["a casa", "al mare", "a scuola"], correctIndex: 0 };
+
 function fakeProvider(opts: { junk?: boolean } = {}) {
-  return {
-    name: "stub" as const,
-    calls: { question: 0 },
-    questionRequests: [] as PassageQuestionRequest[],
-    async gloss() {
-      return "unused";
+  return fakeLlm({
+    answers: {
+      "passage-question": () => {
+        if (opts.junk) throw new Error("passage question output is not JSON");
+        return QUESTION;
+      },
     },
-    async passageQuestion(req: PassageQuestionRequest) {
-      this.calls.question++;
-      this.questionRequests.push(req);
-      if (opts.junk) throw new Error("passage question output is not JSON");
-      return { question: "Dove?", choices: ["a casa", "al mare", "a scuola"], correctIndex: 0 };
-    },
-  } satisfies GlossProvider & {
-    calls: Record<string, number>;
-    questionRequests: PassageQuestionRequest[];
-  };
+  });
 }
+
+const questionCalls = (llm: ReturnType<typeof fakeLlm>) => callsNamed(llm, "passage-question");
 
 test("a real passage is cut around the shortest sentence holding the lemma", async () => {
   const db = freshDb();
@@ -96,8 +91,8 @@ test("a real passage is cut around the shortest sentence holding the lemma", asy
   const provider = fakeProvider();
 
   expect(await preparePassages(db, [lemmaId(db, "do")], provider)).toBe(1);
-  expect(provider.calls).toEqual({ question: 1 });
-  expect(provider.questionRequests[0]).toMatchObject({
+  expect(questionCalls(provider)).toHaveLength(1);
+  expect(questionCalls(provider)[0].req).toMatchObject({
     passage: "Ala ma kota. Idę do sklepu. Kot śpi.",
     lemma: "do",
     target: "do",
@@ -125,7 +120,7 @@ test("a lemma with no read sentence gets no passage and makes no call", async ()
   const provider = fakeProvider();
 
   expect(await preparePassages(db, [lemmaId(db, "za")], provider)).toBe(0);
-  expect(provider.calls).toEqual({ question: 0 });
+  expect(questionCalls(provider)).toHaveLength(0);
   expect(passagePrepTargets(db)).not.toContain(lemmaId(db, "za"));
 });
 
@@ -140,7 +135,7 @@ test("a junk question response caches nothing; a prepared lemma is skipped", asy
   await preparePassages(db, [id], fakeProvider());
   const again = fakeProvider();
   await preparePassages(db, [id], again);
-  expect(again.calls).toEqual({ question: 0 });
+  expect(questionCalls(again)).toHaveLength(0);
   expect(db.select().from(schema.passageQuestion).all()).toHaveLength(1);
 });
 

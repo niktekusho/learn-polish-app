@@ -12,7 +12,7 @@ import {
   spawnCli,
   tiersFromEnv,
 } from "./cli";
-import type { LlmTask, ProviderName } from "./provider";
+import type { LlmTier, ProviderName } from "./call";
 
 // Real Italian gloss via the `claude` CLI already on PATH (bills the user's
 // subscription, no API key). One-shot per call: `claude -p "<prompt>"` prints
@@ -20,7 +20,7 @@ import type { LlmTask, ProviderName } from "./provider";
 
 // Without --model the CLI uses the plan's default (a large model). Glosses are short.
 // A checking call runs on a stronger model than the one that wrote the text.
-const MODELS: Record<LlmTask, string> = {
+const MODELS: Record<LlmTier, string> = {
   gloss: "claude-haiku-5-5",
   story: "claude-sonnet-5-5",
   check: "claude-opus-5-5",

@@ -8,7 +8,8 @@ import { insertEntryBatch } from "#/dictionary/loader";
 import { importAnalysis } from "#/import/checked-import";
 import { persistAnalysis } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
-import type { MweCheckItem } from "#/llm/provider";
+import { callsNamed, fakeLlm } from "#/llm/fake";
+import type { MweCheckItem } from "#/dictionary/llm";
 import { repairCharacterNames } from "#/maintenance/ops";
 
 function freshDb() {
@@ -63,16 +64,16 @@ function seedStory(db: DB): number {
 
 /** Accepts a candidate unless its sentence speaks of fire ("pieca"). */
 function fakeChecker() {
-  const calls: MweCheckItem[][] = [];
-  return {
-    name: "stub" as const,
-    calls,
-    async checkMwes(items: MweCheckItem[]) {
-      calls.push(items);
-      return items.map((i) => !i.sentence.includes("pieca"));
+  return fakeLlm({
+    answers: {
+      "mwe-check": (items: MweCheckItem[]) => items.map((i) => !i.sentence.includes("pieca")),
     },
-  };
+  });
 }
+
+/** The items of each mwe-check call, in call order. */
+const checks = (llm: ReturnType<typeof fakeLlm>) =>
+  callsNamed(llm, "mwe-check").map((c) => c.req as MweCheckItem[]);
 
 function lemmaOf(db: DB, surface: string) {
   return db
@@ -123,7 +124,7 @@ test("a capitalized character name mid-sentence is that Name, even when it is a 
 
   expect(lemmaOf(db, "Iskrę ")).toEqual([{ lemma: "Iskra", pos: "PROPN" }]);
   expect(lemmaOf(db, "iskry")).toEqual([{ lemma: "iskra", pos: "NOUN" }]);
-  expect(checker.calls).toHaveLength(0);
+  expect(checks(checker)).toHaveLength(0);
 });
 
 test("a character name at sentence start that is also a common word is checked in its sentence", async () => {
@@ -146,8 +147,12 @@ test("a character name at sentence start that is also a common word is checked i
   expect(lemmaOf(db, "Iskra ")).toEqual([{ lemma: "Iskra", pos: "PROPN" }]);
   expect(lemmaOf(db, "Iskry ")).toEqual([{ lemma: "iskra", pos: "NOUN" }]);
   expect(lemmaOf(db, "Zosia ")).toEqual([{ lemma: "Zosia", pos: "PROPN" }]);
-  expect(checker.calls.flat().map((i) => i.headword)).toEqual(["Iskra", "Iskra"]);
-  expect(checker.calls[0][0].meaning).toContain("piccolo drago verde");
+  expect(
+    checks(checker)
+      .flat()
+      .map((i) => i.headword),
+  ).toEqual(["Iskra", "Iskra"]);
+  expect(checks(checker)[0][0].meaning).toContain("piccolo drago verde");
 });
 
 test("repair moves stored Episode occurrences to the character and deletes the emptied word", async () => {

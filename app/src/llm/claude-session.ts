@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { EMPTY_CWD, LEAN_ARGS, claudeTiers, readClaudeReply } from "./claude-cli";
-import { NO_USAGE, type LlmCall, type ModelChoice, type Usage } from "./cli";
+import { loggedCall, type LlmCall, type ModelChoice } from "./cli";
 import {
   buildSeedMessage,
   buildTurnMessage,
@@ -143,42 +143,29 @@ export class ClaudeSession implements ConversationSession {
     if (this.busy) throw new Error("a turn is already in progress");
     this.busy = true;
     if (this.idleTimer) clearTimeout(this.idleTimer);
-    const start = Date.now();
     const asked: TranscriptLine[] = learnerTurn ? [{ speaker: "learner", text: learnerTurn }] : [];
     // A seeded process holds the transcript already, so it gets the bare turn.
     const message = this.seeded
       ? buildTurnMessage(learnerTurn ?? "", lastTurn)
       : buildSeedMessage([...this.transcript, ...asked], lastTurn);
     const turn = [...this.transcript, ...asked].filter((l) => l.speaker === "learner").length;
-    let response: string | null = null;
-    let usage: Usage = NO_USAGE;
-    const log = (error: string | null) =>
-      this.log({
-        call: "turn",
-        ...this.choice,
-        prompt: message,
-        response,
-        ...usage,
-        ms: Date.now() - start,
-        error,
-        turn,
-        attempt,
-      });
     try {
-      const proc = (this.proc ??= this.spawnSession(sessionArgs(seed, this.choice)));
-      this.seeded = true;
-      const line = await this.nextResult(proc, message);
-      const reply = readClaudeReply({ code: 0, stdout: line, stderr: "" });
-      response = reply.text;
-      usage = reply.usage;
-      const result = parseTurnResult(reply.text, seed.stepIds);
+      const result = await loggedCall(
+        { call: "turn", ...this.choice, prompt: message, turn, attempt },
+        async () => {
+          const proc = (this.proc ??= this.spawnSession(sessionArgs(seed, this.choice)));
+          this.seeded = true;
+          return { code: 0, stdout: await this.nextResult(proc, message), stderr: "" };
+        },
+        readClaudeReply,
+        (text) => parseTurnResult(text, seed.stepIds),
+        this.log,
+      );
       this.transcript.push(...asked, { speaker: "character", text: result.line });
       this.armIdle();
-      log(null);
       return result;
     } catch (err) {
       this.close();
-      log(err instanceof Error ? err.message : String(err));
       throw err;
     } finally {
       this.busy = false;

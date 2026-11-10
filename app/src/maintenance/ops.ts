@@ -20,13 +20,14 @@ import {
   token,
 } from "#/db/schema";
 import { wipeDictionary } from "#/dictionary/loader";
-import { forgetUnit, type MweChecker } from "#/dictionary/mwe-check";
+import { forgetUnit } from "#/dictionary/mwe-check";
 import { slipTarget } from "#/dictionary/lemma-correction";
 import { entriesForPos, lookupDictionary, UPOS_TO_KAIKKI } from "#/dictionary/service";
 import { classifyToken } from "#/import/classify";
 import { importAnalysis } from "#/import/checked-import";
 import { ensureReceptiveKnowledge, upsertLemma } from "#/import/pipeline";
 import type { AnalyzeResponse } from "#/import/sidecar";
+import type { Llm } from "#/llm/call";
 import { type ProofreadDeps, proofreadText, textChanges } from "#/proofread/proofread";
 import { isName, NAME_POS } from "#/reader/name";
 import {
@@ -404,7 +405,7 @@ export interface EpisodeRepair {
  */
 export async function proofreadEpisodes(
   db: DB,
-  deps: ProofreadDeps & { checker: MweChecker; mweHeadwords?: Map<string, string[]> },
+  deps: ProofreadDeps & { mweHeadwords?: Map<string, string[]> },
 ): Promise<EpisodeRepair> {
   // Without a dictionary every lemma looks like a non-word and would be deleted.
   if (getStats(db).dictEntries === 0) throw new Error("Load the home dictionary first.");
@@ -424,7 +425,7 @@ export async function proofreadEpisodes(
       if (checked.flags.length === 0) continue;
       await importAnalysis(
         db,
-        deps.checker,
+        deps.llm,
         { textId: t.id, content: checked.text },
         checked.analysis,
         deps.mweHeadwords,
@@ -500,10 +501,7 @@ export interface CharacterNameRepair {
  * Apply the Story character rule (CONTEXT.md "Name") to stored Episodes, for
  * those imported before it. A check that cannot run throws with nothing changed.
  */
-export async function repairCharacterNames(
-  db: DB,
-  checker: MweChecker,
-): Promise<CharacterNameRepair> {
+export async function repairCharacterNames(db: DB, llm: Llm): Promise<CharacterNameRepair> {
   const moves: NameMove[] = [];
   for (const t of db.select().from(sourceText).where(isNotNull(sourceText.storyId)).all()) {
     const tokens = db
@@ -518,7 +516,7 @@ export async function repairCharacterNames(
       sentences[tok.sentenceIndex].tokens.push(tok);
     }
     const characters = storyCharacters(db, t.storyId as number);
-    const names = await resolveCharacterNames(db, checker, { sentences }, characters);
+    const names = await resolveCharacterNames(db, llm, { sentences }, characters);
     for (const [position, name] of names) moves.push({ tokenId: tokens[position].id, name });
   }
   return db.transaction((tx) => {

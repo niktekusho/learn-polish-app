@@ -3,13 +3,14 @@ import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "#/db/schema";
 import { dictEntry, dictForm } from "#/db/schema";
 import type { AnalyzeResponse, AnalyzedToken } from "#/import/sidecar";
-import type { GlossProvider, ProofreadFlag } from "#/llm/provider";
+import type { Llm } from "#/llm/call";
 import { isName } from "#/reader/name";
+import { correction, proofread, type ProofreadFlag } from "./llm";
 
 type DB = BetterSQLite3Database<typeof schema>;
 
 export interface ProofreadDeps {
-  provider: Pick<GlossProvider, "name" | "proofread" | "correct">;
+  llm: Llm;
   analyze: (text: string) => Promise<AnalyzeResponse>;
 }
 
@@ -80,23 +81,19 @@ export async function proofreadText(
   text: string,
   analysis?: AnalyzeResponse,
 ): Promise<Proofread> {
-  const { provider } = deps;
-  if (!provider.proofread || !provider.correct) {
-    throw new Error(`Provider "${provider.name}" cannot proofread generated Polish.`);
-  }
-  const { proofread, correct } = provider;
-  const withProvider = async <T>(what: string, call: Promise<T>): Promise<T> => {
+  const { llm } = deps;
+  const withLlmName = async <T>(what: string, call: Promise<T>): Promise<T> => {
     try {
       return await call;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
-      throw new Error(`${what} by provider "${provider.name}" failed: ${reason}`);
+      throw new Error(`${what} by provider "${llm.name}" failed: ${reason}`);
     }
   };
   const inDictionary = homeDictionary(db);
   const check = async (t: string, a: AnalyzeResponse) => [
     ...dictionaryFlags(a, inDictionary),
-    ...(await withProvider("Proofread", proofread.call(provider, t))),
+    ...(await withLlmName("Proofread", llm.call(proofread, t))),
   ];
 
   let current = { text, analysis: analysis ?? (await deps.analyze(text)) };
@@ -104,14 +101,17 @@ export async function proofreadText(
   let left = flags;
   let rounds = 0;
   while (left.length > 0 && rounds < CORRECTION_ROUNDS) {
-    const corrected = await withProvider("Correction", correct.call(provider, current.text, left));
+    const corrected = await withLlmName(
+      "Correction",
+      llm.call(correction, { text: current.text, flags: left }),
+    );
     current = { text: corrected, analysis: await deps.analyze(corrected) };
     left = await check(current.text, current.analysis);
     rounds++;
   }
   if (left.length > 0) {
     throw new Error(
-      `Correction by provider "${provider.name}" is still flagged: ` +
+      `Correction by provider "${llm.name}" is still flagged: ` +
         left.map((f) => `«${f.span}»: ${f.reason}`).join("; "),
     );
   }

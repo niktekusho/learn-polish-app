@@ -1,9 +1,22 @@
 import { expect, test } from "vitest";
-import { parseGloss } from "./provider";
+import type { CallSpec } from "./call";
 import type { CliRun, LlmCall } from "./cli";
 import { buildCodexArgs, codexTiers, CodexCliProvider } from "./codex-cli";
 
-const req = { lemma: "robić", pos: "VERB", sentence: "Robię obiad w kuchni." };
+/** Replies with the trimmed text, so these tests see only what the adapter does. */
+const echo: CallSpec<{ word: string }, string> = {
+  name: "echo",
+  tier: "gloss",
+  prompt: (req) => `Say ${req.word}.`,
+  parse: (text) => {
+    const out = text.trim();
+    if (!out) throw new Error("empty reply");
+    return out;
+  },
+  stub: (req) => req.word,
+};
+
+const req = { word: "robić" };
 
 /** What `codex exec --json` prints for a reply: one JSON event per line. */
 function codexJsonl(text: string): CliRun {
@@ -20,21 +33,9 @@ function codexJsonl(text: string): CliRun {
   return { code: 0, stdout: events.map((e) => JSON.stringify(e)).join("\n") + "\n", stderr: "" };
 }
 
-test("parseGloss trims a valid one-liner", () => {
-  expect(parseGloss("  fare\n")).toBe("fare");
-});
-
-test("parseGloss rejects empty output", () => {
-  expect(() => parseGloss("   \n")).toThrow();
-});
-
-test("parseGloss rejects a rambling response (too long)", () => {
-  expect(() => parseGloss("Ecco la glossa: ".repeat(10))).toThrow();
-});
-
 test("provider returns the parsed agent message from the CLI's JSON events", async () => {
   const provider = new CodexCliProvider(async () => codexJsonl("fare\n"));
-  expect(await provider.gloss(req)).toBe("fare");
+  expect(await provider.call(echo, req)).toBe("fare");
 });
 
 test("codex runs the configured default model unless an env var names one", () => {
@@ -64,7 +65,7 @@ test("codex runs the configured default model unless an env var names one", () =
 
 test("provider bubbles a CLI failure so nothing gets cached", async () => {
   const provider = new CodexCliProvider(async () => ({ code: 1, stdout: "", stderr: "boom" }));
-  await expect(provider.gloss(req)).rejects.toThrow(/codex exited 1: boom/);
+  await expect(provider.call(echo, req)).rejects.toThrow(/codex exited 1: boom/);
 });
 
 test("a call is logged with its usage; API time stays null", async () => {
@@ -73,10 +74,10 @@ test("a call is logged with its usage; API time stays null", async () => {
     async () => codexJsonl("fare\n"),
     (c) => calls.push(c),
   );
-  await provider.gloss(req);
+  await provider.call(echo, req);
   expect(calls).toEqual([
     {
-      call: "gloss",
+      call: "echo",
       model: "codex",
       effort: "medium",
       prompt: expect.stringContaining("robić"),
@@ -98,6 +99,38 @@ test("a failed turn is a failure that keeps the raw events", async () => {
     async () => ({ code: 0, stdout, stderr: "" }),
     (c) => calls.push(c),
   );
-  await expect(provider.gloss(req)).rejects.toThrow(/quota/);
+  await expect(provider.call(echo, req)).rejects.toThrow(/quota/);
   expect(calls).toMatchObject([{ response: stdout, error: expect.stringMatching(/quota/) }]);
+});
+
+test("call() logs a spec's parse failure under its name, with the reply", async () => {
+  const calls: LlmCall[] = [];
+  const count: CallSpec<{ items: string[] }, number> = {
+    name: "count",
+    tier: "check",
+    prompt: (req) => `Count: ${req.items.join(", ")}`,
+    parse: (text, req) => {
+      const n = Number(text.trim());
+      if (n !== req.items.length)
+        throw new Error(`count ${text.trim()} is not ${req.items.length}`);
+      return n;
+    },
+    stub: (req) => req.items.length,
+  };
+  const provider = new CodexCliProvider(
+    async () => codexJsonl("3"),
+    (c) => calls.push(c),
+    codexTiers({ CODEX_CHECK_MODEL: "gpt-5.5" }),
+  );
+
+  await expect(provider.call(count, { items: ["a", "b"] })).rejects.toThrow(/count 3 is not 2/);
+  expect(calls).toMatchObject([
+    {
+      call: "count",
+      model: "gpt-5.5",
+      prompt: "Count: a, b",
+      response: "3",
+      error: "count 3 is not 2",
+    },
+  ]);
 });

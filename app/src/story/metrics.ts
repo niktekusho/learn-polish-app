@@ -1,5 +1,5 @@
 import type { AnalyzeResponse } from "#/import/sidecar";
-import type { LevelFeedback } from "#/llm/provider";
+import type { LevelFeedback } from "./llm";
 
 const CONTENT_POS = new Set(["NOUN", "VERB", "ADJ", "ADV"]);
 const LETTER = /\p{L}/u;

@@ -118,7 +118,7 @@ const getSummary = createServerFn()
     if (summary?.first) {
       const { relinkDerivedWords, repairLemmaSlips } = await import("#/maintenance/ops");
       const { getImportStatus } = await import("#/dictionary/import-job");
-      const { getGlossProvider } = await import("#/llm/index");
+      const { appLlm } = await import("#/llm/index");
       // A half-loaded dictionary makes real lemmas look like slips. The import repairs once it ends.
       if (getImportStatus().state !== "importing") {
         try {
@@ -126,16 +126,14 @@ const getSummary = createServerFn()
           repairLemmaSlips(db);
           // After the sweep, so a reported slip is repaired and never reaches the LLM.
           const { reviewReports } = await import("#/report/review");
-          reviewReports(db, getGlossProvider()).catch((err) =>
-            console.error("[report-review] failed:", err),
-          );
+          reviewReports(db, appLlm()).catch((err) => console.error("[report-review] failed:", err));
         } catch (err) {
           console.error("[slips] repair failed:", err);
         }
       }
       // Prepare passage questions for the coming days, off the request path.
       const { prepareUpcomingPassages } = await import("#/passage/service");
-      prepareUpcomingPassages(db, getGlossProvider()).catch((err) =>
+      prepareUpcomingPassages(db, appLlm()).catch((err) =>
         console.error("[passage] background prep failed:", err),
       );
     }

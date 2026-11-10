@@ -1,7 +1,8 @@
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import type * as schema from "#/db/schema";
 import { resolveFormulas } from "#/dictionary/formula";
-import { checkInContext, type MweChecker } from "#/dictionary/mwe-check";
+import { checkInContext } from "#/dictionary/mwe-check";
+import type { Llm } from "#/llm/call";
 import { NAME_POS } from "#/reader/name";
 import { resolveCharacterNames, storyCharacters, storyOf } from "#/story/character-names";
 import { analysisMwes, analysisSentence, type ImportResult, persistAnalysis } from "./pipeline";
@@ -16,24 +17,24 @@ type DB = BetterSQLite3Database<typeof schema>;
  */
 export async function importAnalysis(
   db: DB,
-  checker: MweChecker,
+  llm: Llm,
   input: Parameters<typeof persistAnalysis>[1],
   analysis: AnalyzeResponse,
   // Injectable so tests stay dictionary-free.
   mweHeadwords?: Map<string, string[]>,
 ): Promise<ImportResult> {
-  const assigned = await resolveFormulas(db, checker, analysis);
+  const assigned = await resolveFormulas(db, llm, analysis);
   const storyId = input.storyId ?? (input.textId === undefined ? null : storyOf(db, input.textId));
   if (storyId) {
     const characters = storyCharacters(db, storyId);
-    for (const [position, name] of await resolveCharacterNames(db, checker, analysis, characters)) {
+    for (const [position, name] of await resolveCharacterNames(db, llm, analysis, characters)) {
       assigned.set(position, { lemma: name, pos: NAME_POS });
     }
   }
   const matches = analysisMwes(db, analysis, assigned, mweHeadwords);
   const keep = await checkInContext(
     db,
-    checker,
+    llm,
     "MWE",
     matches.map((m) => ({
       headword: m.headword,

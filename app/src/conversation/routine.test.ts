@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { expect, test } from "vitest";
 import * as schema from "#/db/schema";
+import { fakeLlm } from "#/llm/fake";
 import { ScriptedSession } from "#/llm/scripted-session";
 import { saveLearnerProfile } from "#/profile/service";
 import { getRecap, recordActivity } from "#/recap/service";
@@ -30,21 +31,19 @@ function setup({ clock = day(0) } = {}) {
     .all();
   let now = clock;
   const svc = conversationService(db, {
-    provider: {
-      async scene() {
-        return {
+    llm: fakeLlm({
+      answers: {
+        scene: () => ({
           character: 0,
           scene: "Scena",
           steps: ["Passo"],
           roleFacts: null,
           opening: { line: "Otwarcie.", italian: "Apertura.", hint: [], modelLine: "" },
           voices: ["gosia"],
-        };
+        }),
+        debrief: () => ({ corrections: [], memory: [] }),
       },
-      async debrief() {
-        return { corrections: [], memory: [] };
-      },
-    },
+    }),
     voices: async () => [{ id: "gosia", label: "Voce femminile" }],
     analyze: async () => ({ sentences: [] }),
     createSession: () => new ScriptedSession(),

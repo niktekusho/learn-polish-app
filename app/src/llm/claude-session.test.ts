@@ -136,6 +136,13 @@ test("non-JSON, schema-invalid and unknown-step replies fail the attempt", async
   }
 });
 
+test("a turn reply wrapped in a markdown fence still parses", async () => {
+  const s = session();
+  const started = s.start(seed);
+  procs[0].emit(resultEvent("```json\n" + JSON.stringify(turn) + "\n```"));
+  expect(await started).toEqual(turn);
+});
+
 test("an error result event fails the attempt", async () => {
   const s = session();
   const started = s.start(seed);
