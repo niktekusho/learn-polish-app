@@ -236,6 +236,11 @@ function Maintenance() {
         by "Clear imported texts".
       </p>
 
+      {/* PROTOTYPE (#41), throwaway: delete with routes/stt-prototype.tsx. */}
+      <a href="/stt-prototype" className="mt-4 inline-flex min-h-11 items-center text-sm underline">
+        STT prototype: test capture and sidecar settings
+      </a>
+
       {reviews.length > 0 && (
         <div className="mt-8 rounded border border-gray-200 p-4">
           <h2 className="font-semibold">Report reviews ({reviews.length})</h2>

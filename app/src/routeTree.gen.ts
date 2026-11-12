@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SttPrototypeRouteImport } from './routes/stt-prototype'
 import { Route as StoryRouteImport } from './routes/story'
 import { Route as RecapRouteImport } from './routes/recap'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -21,6 +22,11 @@ import { Route as ReadTextIdRouteImport } from './routes/read.$textId'
 import { Route as ApiSpeakRouteImport } from './routes/api/speak'
 import { Route as ApiDeployStatusRouteImport } from './routes/api/deploy-status'
 
+const SttPrototypeRoute = SttPrototypeRouteImport.update({
+  id: '/stt-prototype',
+  path: '/stt-prototype',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StoryRoute = StoryRouteImport.update({
   id: '/story',
   path: '/story',
@@ -86,6 +92,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/recap': typeof RecapRoute
   '/story': typeof StoryRoute
+  '/stt-prototype': typeof SttPrototypeRoute
   '/api/deploy-status': typeof ApiDeployStatusRoute
   '/api/speak': typeof ApiSpeakRoute
   '/read/$textId': typeof ReadTextIdRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/recap': typeof RecapRoute
   '/story': typeof StoryRoute
+  '/stt-prototype': typeof SttPrototypeRoute
   '/api/deploy-status': typeof ApiDeployStatusRoute
   '/api/speak': typeof ApiSpeakRoute
   '/read/$textId': typeof ReadTextIdRoute
@@ -113,6 +121,7 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/recap': typeof RecapRoute
   '/story': typeof StoryRoute
+  '/stt-prototype': typeof SttPrototypeRoute
   '/api/deploy-status': typeof ApiDeployStatusRoute
   '/api/speak': typeof ApiSpeakRoute
   '/read/$textId': typeof ReadTextIdRoute
@@ -128,6 +137,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/recap'
     | '/story'
+    | '/stt-prototype'
     | '/api/deploy-status'
     | '/api/speak'
     | '/read/$textId'
@@ -141,6 +151,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/recap'
     | '/story'
+    | '/stt-prototype'
     | '/api/deploy-status'
     | '/api/speak'
     | '/read/$textId'
@@ -154,6 +165,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/recap'
     | '/story'
+    | '/stt-prototype'
     | '/api/deploy-status'
     | '/api/speak'
     | '/read/$textId'
@@ -168,6 +180,7 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   RecapRoute: typeof RecapRoute
   StoryRoute: typeof StoryRoute
+  SttPrototypeRoute: typeof SttPrototypeRoute
   ApiDeployStatusRoute: typeof ApiDeployStatusRoute
   ApiSpeakRoute: typeof ApiSpeakRoute
   ReadTextIdRoute: typeof ReadTextIdRoute
@@ -175,6 +188,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/stt-prototype': {
+      id: '/stt-prototype'
+      path: '/stt-prototype'
+      fullPath: '/stt-prototype'
+      preLoaderRoute: typeof SttPrototypeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/story': {
       id: '/story'
       path: '/story'
@@ -264,6 +284,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   RecapRoute: RecapRoute,
   StoryRoute: StoryRoute,
+  SttPrototypeRoute: SttPrototypeRoute,
   ApiDeployStatusRoute: ApiDeployStatusRoute,
   ApiSpeakRoute: ApiSpeakRoute,
   ReadTextIdRoute: ReadTextIdRoute,

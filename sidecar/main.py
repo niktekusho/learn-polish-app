@@ -14,6 +14,11 @@ from pydantic import BaseModel
 
 app = FastAPI(title="learn-polish-sidecar")
 
+# PROTOTYPE (#41), throwaway: delete with transcribe_prototype.py.
+from transcribe_prototype import router as _transcribe_prototype  # noqa: E402
+
+app.include_router(_transcribe_prototype)
+
 # Loaded once at import; the model is a project dependency (pl_core_news_sm).
 nlp = spacy.load("pl_core_news_sm")
 
