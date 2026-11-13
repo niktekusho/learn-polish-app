@@ -28,7 +28,7 @@ import type {
 import type { Llm } from "#/llm/call";
 import { getLearnerProfile, type LearnerProfile } from "#/profile/service";
 import { knowledgeFlags } from "#/reader/knowledge";
-import { conversationEpisode, recordActivity } from "#/recap/service";
+import { DAILY_TURNS, conversationEpisode, recordActivity } from "#/recap/service";
 import { heardLineCount } from "./heard-lines";
 import {
   debrief as debriefCall,
@@ -48,8 +48,6 @@ const DUE_LEMMAS = 5;
 // A scene this long gets the Debrief button highlighted; at LAST_TURN the character closes it.
 const NUDGE_TURN = 15;
 const LAST_TURN = 25;
-// Learner turns a debriefed Conversation needs to count for the daily routine.
-const DAILY_TURNS = 3;
 
 export interface ConversationDeps {
   llm: Llm;

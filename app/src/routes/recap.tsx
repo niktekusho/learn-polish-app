@@ -37,16 +37,19 @@ function RecapPage() {
       ? [plural(r.matured.count, "Consolidata oggi", "Consolidate oggi"), r.matured.examples]
       : ["Più solide oggi", r.stronger.examples];
   const item = ITEM[r.item];
+  const short = r.shortConversation;
   const missing = [!r.practiceDone && "la pratica", !r.itemDone && item.missing].filter(Boolean);
-  const action = r.complete ? (
-    <Link to="/" className={BTN_QUIET}>
-      Torna alla Home
-    </Link>
-  ) : (
-    <Link to={r.practiceDone ? item.to : "/practice"} className={BTN_PRIMARY}>
-      {r.practiceDone ? item.go : "Inizia la pratica"}
-    </Link>
-  );
+  // A too-short Conversation cannot be replayed today: the button would open a finished one.
+  const action =
+    r.complete || (short && r.practiceDone) ? (
+      <Link to="/" className={BTN_QUIET}>
+        Torna alla Home
+      </Link>
+    ) : (
+      <Link to={r.practiceDone ? item.to : "/practice"} className={BTN_PRIMARY}>
+        {r.practiceDone ? item.go : "Inizia la pratica"}
+      </Link>
+    );
 
   return (
     <div className="flex h-dvh flex-col bg-recap font-sans text-base text-ink">
@@ -69,7 +72,14 @@ function RecapPage() {
             <h1 className="font-serif text-2xl leading-[1.2] font-normal text-balance">
               {r.complete ? "Giornata completa" : "Riepilogo di oggi"}
             </h1>
-            {missing.length > 0 && (
+            {short && (
+              <p className="font-serif text-[16px] text-ink-2">
+                La conversazione era troppo breve ({short.turns}{" "}
+                {plural(short.turns, "turno", "turni")} su {short.needed}) e non conta. Riprova
+                domani.
+              </p>
+            )}
+            {missing.length > 0 && !short && (
               <p className="font-serif text-[16px] text-ink-2">
                 {plural(missing.length, "Manca", "Mancano")} {missing.join(" e ")} di oggi.
               </p>

@@ -37,6 +37,8 @@ export type RoutineItem = "episode" | "conversation";
 export type ActivityKind = "practice" | RoutineItem;
 
 const EXAMPLES = 3;
+/** Turns a Conversation needs before its Debrief counts for the daily. */
+export const DAILY_TURNS = 3;
 
 /** A word shown in the recap: the track that moved it today and its lemma gloss. */
 export interface RecapWord {
@@ -55,6 +57,8 @@ export interface Recap {
   itemDone: boolean;
   complete: boolean; // giornata completa: Practice and the day's item done
   conversation: { heardLines: number } | null; // the last Conversation debriefed today
+  // A Conversation debriefed today too short to count: it stays the day's item until tomorrow.
+  shortConversation: { turns: number; needed: number } | null;
 }
 
 /** Local calendar day as YYYY-MM-DD. */
@@ -242,16 +246,32 @@ export function getRecap(db: DB, now = new Date()): Recap {
     itemDone: done.has(item),
     complete: isComplete(done, item),
     conversation: done.has("conversation")
-      ? debriefedConversation(db, from, addDays(from, 1))
+      ? heardLines(db, debriefedToday(db, from, addDays(from, 1)))
       : null,
+    shortConversation: shortConversation(db, done, item, from),
   };
 }
 
-/** The last Conversation debriefed in [from, to), with its Heard line count. */
-function debriefedConversation(db: DB, from: Date, to: Date): Recap["conversation"] {
+function shortConversation(
+  db: DB,
+  done: Set<ActivityKind>,
+  item: RoutineItem,
+  from: Date,
+): Recap["shortConversation"] {
+  if (item !== "conversation" || done.has("conversation")) return null;
+  const c = debriefedToday(db, from, addDays(from, 1));
+  return c ? { turns: c.turnCount, needed: DAILY_TURNS } : null;
+}
+
+function heardLines(db: DB, c: { id: number } | undefined): Recap["conversation"] {
+  return c ? { heardLines: heardLineCount(db, c.id) } : null;
+}
+
+/** The last Conversation debriefed in [from, to). */
+function debriefedToday(db: DB, from: Date, to: Date) {
   // A debriefed Conversation is never written again, so updatedAt is its Debrief time.
-  const c = db
-    .select({ id: conversation.id })
+  return db
+    .select({ id: conversation.id, turnCount: conversation.turnCount })
     .from(conversation)
     .where(
       and(
@@ -262,7 +282,6 @@ function debriefedConversation(db: DB, from: Date, to: Date): Recap["conversatio
     )
     .orderBy(desc(conversation.updatedAt))
     .get();
-  return c ? { heardLines: heardLineCount(db, c.id) } : null;
 }
 
 /** One-line note at the end of a Practice session: its lemmas' reviews since it started. */

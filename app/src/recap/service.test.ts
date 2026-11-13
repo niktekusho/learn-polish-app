@@ -298,3 +298,27 @@ test("a day without a counted, debriefed Conversation has no Conversation in the
   addConversation(db, { status: "debriefed", updatedAt: TODAY, openingRevealed: false }, [false]);
   expect(getRecap(db, TODAY).conversation).toBeNull();
 });
+
+test("a Conversation debriefed too short today is reported and stays the day's item", () => {
+  const db = freshDb();
+  addConversation(db, { status: "debriefed", updatedAt: TODAY, openingRevealed: false }, [false]);
+  recordActivity(db, "practice", TODAY);
+
+  expect(getRecap(db, TODAY)).toMatchObject({
+    item: "conversation",
+    complete: false,
+    shortConversation: { turns: 1, needed: 3 },
+  });
+});
+
+test("a counted Conversation is not reported as short", () => {
+  const db = freshDb();
+  addConversation(db, { status: "debriefed", updatedAt: TODAY, openingRevealed: false }, [
+    false,
+    false,
+    false,
+  ]);
+  recordActivity(db, "conversation", TODAY);
+
+  expect(getRecap(db, TODAY).shortConversation).toBeNull();
+});
